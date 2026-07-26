@@ -138,6 +138,34 @@ class CoreAdapter:
         args.append("--json")
         return self._run(args, env={**(env or {}), **_receipt_env(entitlement_receipt)})
 
+    def probe(
+        self,
+        run_request: Path,
+        main_skill: Path,
+        skills: list[Path],
+        headed: bool = False,
+        slow_mo_ms: int = 0,
+        env: dict[str, str] | None = None,
+        entitlement_receipt: Path | str | None = None,
+    ) -> dict[str, Any]:
+        """Exercise a run request only through its pre-commit boundary.
+
+        Credential and session material stays referenced by the run request.
+        The public Core invocation receives artifact paths and presentation
+        options only.
+        """
+        self.require_compatible()
+        args = ["probe", str(run_request), "--skill", str(main_skill)]
+        for skill in skills:
+            if skill != main_skill:
+                args.extend(["--skill", str(skill)])
+        if headed:
+            args.append("--headed")
+        if slow_mo_ms:
+            args.extend(["--slow-mo", str(slow_mo_ms)])
+        args.append("--json")
+        return self._run(args, env={**(env or {}), **_receipt_env(entitlement_receipt)})
+
     def discover(
         self,
         *,

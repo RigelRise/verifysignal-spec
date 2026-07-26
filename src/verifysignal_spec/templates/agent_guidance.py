@@ -34,7 +34,8 @@ PLAYWRIGHT_MCP_GUIDANCE = (
     "still be confirmed by `verifysignal discover` and the use case must still pass `verifysignal run`, and if the "
     "MCP and `discover` disagree, `discover` wins. Without a Playwright MCP, author from source as usual; the "
     "deterministic grounding and gate are unchanged. Never persist or print MCP snapshots, DOM, screenshots, "
-    "cookies, or storage state. On authenticated surfaces load auth only from the environment or a "
-    "developer-controlled `--storage-state` file (never written into `.verifysignal/`); on write surfaces let the "
-    "MCP explore only up to the commit step and never cross it — only the deterministic `run` crosses the commit"
+    "cookies, or storage state. On authenticated surfaces preserve auth only as public run-request "
+    "`credentialRefs` or `sessionRef` resolved by Core from the environment. For authenticated write surfaces, "
+    "use Core's advertised `verifysignal.probe/v1` capability for stateful pre-commit grounding; let the MCP "
+    "explore only up to the commit step and never cross it — only the deterministic `run` crosses the commit"
 )

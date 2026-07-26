@@ -186,6 +186,21 @@ def core_supports_crystallize(version_response: dict[str, Any]) -> bool:
     return False
 
 
+def core_supports_probe(version_response: dict[str, Any]) -> bool:
+    """Return whether Core advertises the exact optional probe v1 contract."""
+    payload = version_response.get("data", {}) if isinstance(version_response, dict) else {}
+    operations = payload.get("operations", []) if isinstance(payload, dict) else []
+    if not isinstance(operations, list):
+        return False
+    return any(
+        isinstance(item, dict)
+        and item.get("name") == "probe"
+        and item.get("schema") == "verifysignal.probe/v1"
+        and item.get("schemaVersion") == 1
+        for item in operations
+    )
+
+
 def _run_operation_modes(version_response: dict[str, Any]) -> list[str]:
     payload = version_response.get("data", {}) if isinstance(version_response, dict) else {}
     operations = payload.get("operations", []) if isinstance(payload, dict) else []

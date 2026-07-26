@@ -39,6 +39,8 @@ def render_run_request(
     }
     if record.credentialRefs:
         document["credentialRefs"] = record.credentialRefs
+    if record.sessionRef:
+        document["sessionRef"] = record.sessionRef
     runtime_input_declarations = [_runtime_input_declaration(item) for item in record.runtimeInputs if item.kind != "credential"]
     if runtime_input_declarations:
         document["runtimeInputs"] = runtime_input_declarations

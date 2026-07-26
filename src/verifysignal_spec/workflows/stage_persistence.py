@@ -495,6 +495,7 @@ def _persist_implementation(project: Path, alias: str, content: dict[str, Any]) 
     if not skills:
         raise ValueError("Implementation requires at least one browser skill.")
     credential_refs = _credential_refs_from_payload(content)
+    session_ref = _session_ref_from_payload(content)
     plan = None
     try:
         plan = load_artifact_plan(project, alias)
@@ -525,6 +526,7 @@ def _persist_implementation(project: Path, alias: str, content: dict[str, Any]) 
     content["runtimeInputs"] = runtime_inputs
     record.runtimeInputs = [_runtime_input(item) for item in runtime_inputs]
     record.credentialRefs = credential_refs
+    record.sessionRef = session_ref
     record.credentialGroups = _credential_groups_from_refs(credential_refs)
     _apply_write_flow_fields(project, record, content)
     _infer_resource_identity_if_possible(record)
@@ -1234,6 +1236,8 @@ def _ensure_run_request_skill_order(content: str, record: Any, *, core_contract:
     parsed["skills"] = [{"id": skill.id or f"skill.{record.alias}", "version": skill.version or "1.0.0"} for skill in decision.executableSkills]
     if record.credentialRefs:
         parsed["credentialRefs"] = record.credentialRefs
+    if record.sessionRef:
+        parsed["sessionRef"] = record.sessionRef
     try:
         import json
 
@@ -1345,6 +1349,39 @@ def _normalize_credential_refs(value: Any) -> dict[str, Any]:
             "keys": normalized_keys,
         }
     return refs
+
+
+def _session_ref_from_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
+    if not isinstance(payload, dict):
+        return None
+    run_request = payload.get("runRequest") if isinstance(payload.get("runRequest"), dict) else {}
+    intent = run_request.get("intent") if isinstance(run_request.get("intent"), dict) else {}
+    candidates: list[Any] = [payload.get("sessionRef"), run_request.get("sessionRef"), intent.get("sessionRef")]
+    content = _artifact_content(run_request)
+    if content:
+        try:
+            import yaml  # type: ignore
+
+            parsed = yaml.safe_load(content) or {}
+        except Exception:
+            parsed = {}
+        if isinstance(parsed, dict):
+            candidates.append(parsed.get("sessionRef"))
+    for candidate in candidates:
+        normalized = _normalize_session_ref(candidate)
+        if normalized:
+            return normalized
+    return None
+
+
+def _normalize_session_ref(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    source = str(value.get("source") or "environment").strip()
+    key = str(value.get("key") or "").strip()
+    if not key:
+        return None
+    return {"source": source, "key": key}
 
 
 def _credential_groups_from_refs(credential_refs: dict[str, Any]) -> list[dict[str, Any]]:

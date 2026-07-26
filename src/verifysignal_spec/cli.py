@@ -15,6 +15,7 @@ from .commands import discover as discover_command
 from .commands import init as init_command
 from .commands import integration as integration_command
 from .commands import list as list_command
+from .commands import probe as probe_command
 from .commands import repair as repair_command
 from .commands import run as run_command
 from .commands import validate as validate_command
@@ -98,6 +99,16 @@ def create_parser(prog: str | None = None) -> argparse.ArgumentParser:
     discover_parser.add_argument("--core-cmd", help="Override configured VerifySignal Core command")
     discover_parser.add_argument("--api-base-url", help="Override the VerifySignal entitlement API base URL for staging, local development, or tests")
     discover_parser.add_argument("--json", action="store_true")
+
+    probe_parser = subparsers.add_parser("probe", help="Exercise a browser run request through its pre-commit boundary via Core")
+    probe_parser.add_argument("run_request", help="Run request path")
+    probe_parser.add_argument("--skill", action="append", required=True, help="Browser skill path; repeat to preserve execution order")
+    probe_parser.add_argument("--project", default=".")
+    probe_parser.add_argument("--headed", action="store_true")
+    probe_parser.add_argument("--slow-mo", dest="slow_mo", type=int, default=0, help="Browser slow motion in milliseconds")
+    probe_parser.add_argument("--core-cmd", help="Override configured VerifySignal Core command")
+    probe_parser.add_argument("--api-base-url", help="Override the VerifySignal entitlement API base URL for staging, local development, or tests")
+    probe_parser.add_argument("--json", action="store_true")
 
     crystallize_parser = subparsers.add_parser("crystallize", help="Crystallize a completed run into a reusable fixture via Core")
     crystallize_parser.add_argument("run_dir", help="Completed run directory to crystallize")
@@ -302,6 +313,16 @@ def dispatch(args: argparse.Namespace) -> tuple[dict[str, Any], bool]:
             Path(args.project).resolve(),
             args.url,
             Path(args.skill),
+            core_cmd=args.core_cmd,
+            api_base_url=args.api_base_url,
+        ), args.json
+    if command == "probe":
+        return probe_command.run(
+            Path(args.project).resolve(),
+            Path(args.run_request),
+            [Path(skill) for skill in args.skill],
+            headed=args.headed,
+            slow_mo_ms=args.slow_mo,
             core_cmd=args.core_cmd,
             api_base_url=args.api_base_url,
         ), args.json

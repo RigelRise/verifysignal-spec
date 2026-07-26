@@ -1026,6 +1026,7 @@ class UseCaseRecord:
     skillComposition: dict[str, Any] | None = None
     runtimeInputs: list[RuntimeInputRequirement] = field(default_factory=list)
     credentialRefs: dict[str, Any] = field(default_factory=dict)
+    sessionRef: dict[str, Any] | None = None
     credentialGroups: list[dict[str, Any] | str] = field(default_factory=list)
     sideEffects: dict[str, Any] | None = None
     sideEffectLifecycle: dict[str, Any] | None = None
@@ -1065,6 +1066,7 @@ class UseCaseRecord:
             skillComposition=data.get("skillComposition") if isinstance(data.get("skillComposition"), dict) else None,
             runtimeInputs=[RuntimeInputRequirement.from_dict(item) for item in data.get("runtimeInputs", [])],
             credentialRefs=dict(data.get("credentialRefs", {})),
+            sessionRef=dict(data["sessionRef"]) if isinstance(data.get("sessionRef"), dict) else None,
             credentialGroups=list(data.get("credentialGroups", [])),
             sideEffects=data.get("sideEffects") if isinstance(data.get("sideEffects"), dict) else None,
             sideEffectLifecycle=data.get("sideEffectLifecycle") if isinstance(data.get("sideEffectLifecycle"), dict) else None,
@@ -1090,6 +1092,7 @@ class UseCaseRecord:
         data["sourceOnlySkills"] = [item.to_dict() for item in self.sourceOnlySkills]
         data["runtimeInputs"] = [item.to_dict() for item in self.runtimeInputs]
         data["credentialRefs"] = dict(self.credentialRefs)
+        data["sessionRef"] = dict(self.sessionRef) if self.sessionRef else None
         data["sideEffectLifecycle"] = dict(self.sideEffectLifecycle) if self.sideEffectLifecycle else None
         data["resourceIdentity"] = dict(self.resourceIdentity) if self.resourceIdentity else None
         data["runtimeOutputs"] = list(self.runtimeOutputs)

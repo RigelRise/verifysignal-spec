@@ -33,6 +33,7 @@ from verifysignal_spec.runtime.resolver import (
 CORE_LACKING_CAPABILITY = {
     "discover": "ok",  # the default fake Core implements discover but never advertises it
     "crystallize": "omits-crystallize",
+    "probe": "ok",
     # run --record/--replay are MODES of run; the default fake Core's run entry has no `modes`,
     # standing in for an older Core that predates the advertisement.
     "run-record": "ok",
@@ -51,7 +52,7 @@ def test_known_optional_operation_contexts_stay_registered() -> None:
     # The gate below is parametrized over the registry, which auto-covers new capabilities but would
     # silently stop testing one that gets DE-registered (the parametrization would just shrink). Pin
     # the contexts known to invoke an optional operation so removing a gate fails loudly here.
-    assert {"discover", "crystallize"} <= set(CONTEXT_REQUIRED_CAPABILITY)
+    assert {"discover", "crystallize", "probe"} <= set(CONTEXT_REQUIRED_CAPABILITY)
 
 
 @pytest.mark.parametrize(("context", "capability"), sorted(CONTEXT_REQUIRED_CAPABILITY.items()))

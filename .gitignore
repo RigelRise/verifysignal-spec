@@ -29,6 +29,7 @@ specs/*
 !specs/009-golden-path-productization/
 !specs/010-golden-path-onboarding/
 !specs/023-auto-loop/
+!specs/024-state-aware-auto-loop/
 
 # local run evidence and workspaces must never be committed
 runs/

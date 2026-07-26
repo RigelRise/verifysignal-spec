@@ -28,6 +28,7 @@ PUBLIC_DIGEST_RE = re.compile(r"^(sha256:)?[a-f0-9]{64}$", re.I)
 DUMMY_VALUES = {"example", "dummy", "placeholder", "changeme", "test", "sample", "qa@example.com"}
 SECRET_QUERY_PARAM_RE = re.compile(r"(token|secret|api[_-]?key|access[_-]?key|client[_-]?secret|authorization|auth|password|pwd)", re.I)
 ENV_VAR_NAME_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
+LOCAL_CONFIG_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]*$")
 ENV_ASSIGNMENT_RE = re.compile(r"\b[A-Z_][A-Z0-9_]*\s*=\s*['\"]?[^'\"\s]+")
 
 
@@ -117,6 +118,8 @@ def validate_no_secret_values(data: Any, path: str = "") -> list[dict[str, str]]
                 findings.extend(validate_no_secret_values(value, child_path))
             elif _is_public_credential_ref_key_name(child_path, value):
                 continue
+            elif _is_public_session_ref_key_name(child_path, value):
+                continue
             elif _is_public_artifact_fingerprint(child_path, value):
                 continue
             elif looks_secret(value, str(key)):
@@ -167,6 +170,13 @@ def _is_public_credential_ref_key_name(path: str, value: Any) -> bool:
     if ".credentialRefs." not in marker_path or ".keys." not in marker_path:
         return False
     return isinstance(value, str) and bool(ENV_VAR_NAME_RE.match(value.strip()))
+
+
+def _is_public_session_ref_key_name(path: str, value: Any) -> bool:
+    marker_path = f".{path}"
+    if not marker_path.endswith(".sessionRef.key"):
+        return False
+    return isinstance(value, str) and bool(LOCAL_CONFIG_KEY_RE.match(value.strip()))
 
 
 def _is_public_artifact_fingerprint(path: str, value: Any) -> bool:
@@ -254,6 +264,7 @@ def validate_use_case(project: Path, record: UseCaseRecord) -> list[dict[str, st
         if profile.slowMoMs < 0:
             findings.append({"severity": "blocking", "code": "invalid-profile-slowmo", "path": record.alias, "message": f"Profile {profile.name} has negative slowMoMs."})
         findings.extend(validate_no_secret_values(profile.to_dict(), f"{record.alias}.profiles.{profile.name}"))
+    findings.extend(validate_session_ref(record.sessionRef, f"{record.alias}.sessionRef"))
     if record.lastRun:
         findings.extend(validate_no_secret_values(record.lastRun, f"{record.alias}.lastRun"))
     if record.sideEffectLifecycle:
@@ -281,6 +292,45 @@ def validate_use_case(project: Path, record: UseCaseRecord) -> list[dict[str, st
         )
     legacy = not bool(record.artifactCapabilities)
     findings.extend(validate_side_effect_lifecycle(record.sideEffectLifecycle or side_effect_data.get("lifecycle"), side_effect_class=side_effect_class, legacy=legacy))
+    return findings
+
+
+def validate_session_ref(session_ref: dict[str, Any] | None, path: str = "sessionRef") -> list[dict[str, str]]:
+    if session_ref is None:
+        return []
+    findings: list[dict[str, str]] = []
+    source = session_ref.get("source")
+    key = session_ref.get("key")
+    if source not in {"environment", "local-config"}:
+        findings.append(
+            {
+                "severity": "blocking",
+                "code": "session-ref-source-unsupported",
+                "path": f"{path}.source",
+                "message": "Session references must use the public environment or local-config source.",
+            }
+        )
+    key_pattern = ENV_VAR_NAME_RE if source == "environment" else LOCAL_CONFIG_KEY_RE
+    if not isinstance(key, str) or not key_pattern.match(key.strip()):
+        findings.append(
+            {
+                "severity": "blocking",
+                "code": "session-ref-key-invalid",
+                "path": f"{path}.key",
+                "message": "Session references must name an environment variable without including session material.",
+            }
+        )
+    extra_fields = sorted(set(session_ref) - {"source", "key"})
+    if extra_fields:
+        findings.append(
+            {
+                "severity": "blocking",
+                "code": "session-ref-material-forbidden",
+                "path": path,
+                "message": f"Session references cannot persist session material or extra fields: {', '.join(extra_fields)}.",
+            }
+        )
+    findings.extend(validate_no_secret_values(session_ref, path))
     return findings
 
 
