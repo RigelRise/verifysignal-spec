@@ -13,8 +13,7 @@
       "status": "passed",
       "gateId": "hero-heading",
       "evidence": [
-        { "id": "hero-visible", "source": "assertion", "status": "passed", "target": "heroHeading" },
-        { "id": "hero-shot", "source": "screenshot", "status": "passed", "path": "browser/screenshots/01-hero.svg" }
+        { "id": "hero-visible", "source": "assertion", "status": "passed", "target": "heroHeading" }
       ]
     },
     {
@@ -38,15 +37,12 @@
           "urlContains": "graphql",
           "expectedStatus": 200,
           "publicMatchKeys": ["urlContains"]
-        },
-        { "id": "ranking-shot", "source": "screenshot", "status": "passed", "path": "browser/screenshots/02-activity-and-ranking.svg" }
+        }
       ]
     }
   ],
   "preconditions": [],
   "evidenceLinks": [
-    { "kind": "screenshot", "path": "browser/screenshots/01-hero.svg" },
-    { "kind": "screenshot", "path": "browser/screenshots/02-activity-and-ranking.svg" },
     { "kind": "network", "path": "browser/network.ndjson" }
   ]
 }

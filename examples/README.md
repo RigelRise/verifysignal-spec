@@ -1,34 +1,21 @@
 # Examples
 
-Two end-to-end VerifySignal use cases, committed **with their evidence** so you
-can see exactly what a run produces before you install anything.
+Two end-to-end use cases, committed with their evidence, so you can see what a
+run produces before installing anything.
 
-> **These are illustrative samples.** The `report.json` files match the real
-> `qa-report/v1` schema and the artifacts mirror a real `.verifysignal/`
-> workspace, but the runs were not executed against a live target. The
-> screenshots are stand-in mockups (`.svg`), not real captures. Your own runs
-> write real PNG screenshots and a real network log under
-> `.verifysignal/runs/<alias>/<run-id>/`.
+> Illustrative samples. The `report.json` files match the real `qa-report/v1`
+> schema and mirror a real `.verifysignal/` workspace, but were not run against a
+> live target. A real run also captures a screenshot per gate and a full network
+> log under `.verifysignal/runs/<alias>/<run-id>/`.
 
-| Example | Flow | Side effects | What it shows |
+| Example | Flow | Side effects | Shows |
 | --- | --- | --- | --- |
-| [`home-page-unauth/`](home-page-unauth/) | Public landing page, signed out | `none` (read-only) | The golden-path first run — hero, live activity, and a ranked table proven with rendered-result evidence. |
-| [`checkout-write/`](checkout-write/) | Place an order | `write` (enforced) | Write-flow safety — a declared side-effect policy, a commit step, a captured `createdResourceUrl`, and a rerun classification. |
+| [`home-page-unauth/`](home-page-unauth/) | public landing page, signed out | none | the golden-path first run, proven gate by gate |
+| [`checkout-write/`](checkout-write/) | place an order | write (enforced) | write safety: a declared policy, a commit step, a captured order URL, a rerun classification |
 
-## What's in each example
+Each example holds the use case (`use-case.yaml`), the executable request
+(`run-request.yaml`), the grounded skill (`<alias>.browser.md`), and the result
+as `report.md` (human) and `report.json` (`qa-report/v1`), plus a sample
+`browser/network.ndjson`.
 
-```
-<alias>/
-├── use-case.yaml        # the registered use case          (verifysignal-spec-use-case/v1)
-├── run-request.yaml     # the executable request the runtime runs (qa-run-request/v1)
-├── <alias>.browser.md   # the grounded browser skill: named targets, steps, assertions
-├── report.md            # human-readable result — step by step, gate by gate
-├── report.json          # machine-readable result           (qa-report/v1)
-└── browser/
-    ├── screenshots/      # captured evidence per gate
-    └── network.ndjson    # redacted network log
-```
-
-New here? Open [`home-page-unauth/report.md`](home-page-unauth/report.md) first —
-it is the shortest path to understanding what "evidence over green checkmarks"
-actually means.
+Start with [`home-page-unauth/report.md`](home-page-unauth/report.md).
