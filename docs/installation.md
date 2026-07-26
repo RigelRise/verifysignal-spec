@@ -4,6 +4,24 @@ VerifySignal uses the public `verifysignal` CLI as the user-facing command.
 `verifysignal-spec` remains a backward-compatible alias for existing projects and
 generated guidance.
 
+## From PyPI (recommended)
+
+Once released, install the CLI from PyPI:
+
+```sh
+uv tool install verifysignal-spec        # or: pipx install verifysignal-spec
+verifysignal --version
+```
+
+Run it once without installing:
+
+```sh
+uvx verifysignal-spec --version
+```
+
+The sections below install directly from the Git repository — useful for the
+bleeding edge, a fork, or before the first tagged release is published to PyPI.
+
 ## Persistent Installation
 
 Install a tagged release (replace `vX.Y.Z` with a real tag — the `@vX.Y.Z` forms below only resolve

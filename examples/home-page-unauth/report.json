@@ -1,0 +1,52 @@
+{
+  "schemaVersion": "qa-report/v1",
+  "runId": "request_home-page-unauth_1780303629096",
+  "status": "passed",
+  "summary": {
+    "status": "passed",
+    "failedStepId": null
+  },
+  "failedStep": null,
+  "steps": [
+    {
+      "id": "assert-hero-heading",
+      "status": "passed",
+      "gateId": "hero-heading",
+      "evidence": [
+        { "id": "hero-visible", "source": "assertion", "status": "passed", "target": "heroHeading" },
+        { "id": "hero-shot", "source": "screenshot", "status": "passed", "path": "browser/screenshots/01-hero.svg" }
+      ]
+    },
+    {
+      "id": "assert-home-activity-slider",
+      "status": "passed",
+      "gateId": "home-activity-slider",
+      "evidence": [
+        { "id": "activity-visible", "source": "assertion", "status": "passed", "target": "activitySlider" }
+      ]
+    },
+    {
+      "id": "assert-leaderboard-table",
+      "status": "passed",
+      "gateId": "leaderboard-table",
+      "evidence": [
+        {
+          "id": "leaderboard-query",
+          "source": "network",
+          "status": "passed",
+          "method": "POST",
+          "urlContains": "graphql",
+          "expectedStatus": 200,
+          "publicMatchKeys": ["urlContains"]
+        },
+        { "id": "ranking-shot", "source": "screenshot", "status": "passed", "path": "browser/screenshots/02-activity-and-ranking.svg" }
+      ]
+    }
+  ],
+  "preconditions": [],
+  "evidenceLinks": [
+    { "kind": "screenshot", "path": "browser/screenshots/01-hero.svg" },
+    { "kind": "screenshot", "path": "browser/screenshots/02-activity-and-ranking.svg" },
+    { "kind": "network", "path": "browser/network.ndjson" }
+  ]
+}

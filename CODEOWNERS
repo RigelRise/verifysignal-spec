@@ -1,0 +1,13 @@
+# Code owners for verifysignal-spec.
+#
+# Owners are automatically requested for review on matching pull requests.
+# Replace the placeholder below with the maintainer's GitHub handle
+# (e.g. `@your-handle`) or an org team (e.g. `@RigelRise/maintainers`).
+# Docs: https://docs.github.com/articles/about-code-owners
+#
+# Default owner for everything in the repo:
+# *                                  @RigelRise/maintainers
+#
+# The public boundary is the most sensitive surface — consider a tighter owner:
+# /src/verifysignal_spec/core/       @RigelRise/maintainers
+# /tests/contract/                   @RigelRise/maintainers

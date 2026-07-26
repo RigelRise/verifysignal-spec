@@ -26,6 +26,7 @@ Thumbs.db
 # internal spec-kit feature specs stay local; golden-path features are the
 # deliberate public exception
 specs/*
+!specs/README.md
 !specs/009-golden-path-productization/
 !specs/010-golden-path-onboarding/
 !specs/023-auto-loop/

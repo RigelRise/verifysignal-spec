@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+### Open-source presentation & packaging
+
+- Rewrote the README around a hero, badges, an evidence-first "see a real run"
+  section, a Mermaid architecture diagram, an open-core boundary table, a
+  project-status matrix, a comparison table, and a "what it is not" section.
+- Added community-health files: `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`,
+  `SECURITY.md`, `GOVERNANCE.md`, `CODEOWNERS`, issue/PR templates, and
+  Dependabot.
+- Added an `examples/` directory with two runnable use cases committed with their
+  evidence bundles (`qa-report/v1`), including a write-flow example, guarded by a
+  contract test.
+- Made the package PyPI-ready — `[project.urls]`, classifiers, and keywords in
+  `pyproject.toml` — plus a Trusted-Publishing release workflow and a
+  version-consistency test.
+- Added brand assets under `docs/assets/`, a documentation index, and a
+  `ROADMAP.md`.
+- No changes to CLI behavior, schemas, templates, or the public Core contract.
+
 ## 0.19.0 - 2026-07-13
 
 - Absorbed Core's new experimental crystallization capability, contract-first and

@@ -1,0 +1,33 @@
+# Illustrative sample — see ../README.md.
+schemaVersion: verifysignal-spec-use-case/v1
+alias: home-page-unauth
+title: Home page renders for a signed-out visitor
+description: >-
+  Validate that the public landing page renders its hero, live activity area,
+  and ranked leaderboard for an unauthenticated visitor — no credentials.
+targetSurface: browser
+status: passed
+sideEffects:
+  class: none
+runRequest:
+  path: .verifysignal/run-requests/home-page-unauth.yaml
+  kind: run-request
+  id: request.home-page-unauth
+  generated: true
+mainSkill:
+  path: .verifysignal/skills/home-page-unauth.browser.md
+  kind: skill
+  id: skill.home-page-unauth
+  generated: true
+skills:
+  - path: .verifysignal/skills/home-page-unauth.browser.md
+    kind: skill
+    id: skill.home-page-unauth
+runtimeInputs:
+  - name: baseUrl
+    kind: parameter
+    required: true
+    source: prompt
+    description: Base URL of the target environment, e.g. https://staging.example.com
+validation:
+  status: passed

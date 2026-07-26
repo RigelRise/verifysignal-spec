@@ -1,0 +1,5 @@
+{"ts":"2026-07-20T14:07:09.512Z","method":"GET","url":"https://staging.example.com/","status":200,"resourceType":"document","durationMs":412}
+{"ts":"2026-07-20T14:07:09.771Z","method":"GET","url":"https://staging.example.com/assets/app.4f19c2.js","status":200,"resourceType":"script","durationMs":221}
+{"ts":"2026-07-20T14:07:09.902Z","method":"GET","url":"https://staging.example.com/assets/app.4f19c2.css","status":200,"resourceType":"stylesheet","durationMs":88}
+{"ts":"2026-07-20T14:07:10.402Z","method":"POST","url":"https://staging.example.com/graphql","status":200,"resourceType":"fetch","operationName":"LeaderboardQuery","durationMs":168,"requestHeaders":{"authorization":"[redacted]"}}
+{"ts":"2026-07-20T14:07:10.640Z","method":"GET","url":"https://staging.example.com/api/activity/live","status":200,"resourceType":"fetch","durationMs":143}

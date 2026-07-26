@@ -1,0 +1,36 @@
+name: Feature request
+description: Suggest a capability or improvement for the open CLI, workflow, or docs.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        VerifySignal is open-core. This tracker covers the **open CLI, workflow,
+        skills, and docs** in this repository. Requests about deterministic
+        execution live in the managed runtime — describe the outcome you want and
+        we will route it.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: The situation or friction, not just the proposed fix.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What would you like VerifySignal to do?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds you have tried or other approaches you weighed.
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - label: This is about the open CLI / workflow / skills / docs in this repo.

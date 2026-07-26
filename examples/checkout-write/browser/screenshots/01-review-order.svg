@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 760" width="1200" height="760" font-family="system-ui,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+  <rect width="1200" height="760" fill="#0e1719"/>
+  <rect x="40" y="40" width="1120" height="680" rx="14" fill="#ffffff" stroke="#dce6e6"/>
+  <rect x="40" y="40" width="1120" height="56" rx="14" fill="#f4f7f7"/>
+  <rect x="40" y="82" width="1120" height="14" fill="#f4f7f7"/>
+  <circle cx="72" cy="68" r="6" fill="#e0533d"/>
+  <circle cx="94" cy="68" r="6" fill="#e0a836"/>
+  <circle cx="116" cy="68" r="6" fill="#43c46e"/>
+  <rect x="150" y="56" width="700" height="24" rx="12" fill="#ffffff" stroke="#dce6e6"/>
+  <text x="168" y="73" font-size="13" fill="#78898b">https://staging.example.com/checkout/review</text>
+  <text x="80" y="156" font-size="30" font-weight="800" fill="#0e1719">Review your order</text>
+  <rect x="80" y="192" width="640" height="240" rx="12" fill="#f8fbfb" stroke="#dce6e6"/>
+  <text x="104" y="232" font-size="16" fill="#0e1719">1 &#215; Annual plan</text>
+  <text x="680" y="232" font-size="16" fill="#0e1719" text-anchor="end">$240.00</text>
+  <line x1="104" y1="256" x2="696" y2="256" stroke="#eef3f3"/>
+  <text x="104" y="292" font-size="16" fill="#46585b">Tax</text>
+  <text x="680" y="292" font-size="16" fill="#46585b" text-anchor="end">$21.60</text>
+  <line x1="104" y1="316" x2="696" y2="316" stroke="#eef3f3"/>
+  <text x="104" y="360" font-size="20" font-weight="700" fill="#0e1719">Total</text>
+  <text x="680" y="360" font-size="20" font-weight="700" fill="#0e1719" text-anchor="end">$261.60</text>
+  <rect x="80" y="474" width="220" height="56" rx="10" fill="#0c9a8c"/>
+  <text x="190" y="509" font-size="18" font-weight="700" fill="#ffffff" text-anchor="middle">Place order</text>
+  <rect x="66" y="460" width="248" height="84" rx="10" fill="none" stroke="#e0a836" stroke-width="2" stroke-dasharray="5 4"/>
+  <rect x="66" y="438" width="234" height="22" rx="4" fill="#e0a836"/>
+  <text x="76" y="454" font-size="12" font-weight="700" fill="#0e1719">commit step · submit-order</text>
+  <text x="1120" y="700" font-size="12" fill="#b6c2c2" text-anchor="end">illustrative capture</text>
+</svg>
