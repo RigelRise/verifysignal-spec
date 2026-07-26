@@ -13,6 +13,7 @@ def main() -> int:
     protected = bool(
         args[:2] == ["authoring-check", "run-request"]
         or (args and args[0] == "run")
+        or (args and args[0] == "probe")
         or args[:2] == ["report", "inspect"]
         or (args and args[0] == "crystallize")
     )
@@ -81,6 +82,8 @@ def main() -> int:
                         operation["schemaVersion"] = 2
             if mode == "advertises-discover":
                 operations.append({"name": "discover", "schema": "verifysignal.discover/v1", "schemaVersion": 1, "status": "experimental"})
+            if mode == "advertises-probe":
+                operations.append({"name": "probe", "schema": "verifysignal.probe/v1", "schemaVersion": 1, "status": "experimental"})
             if mode == "omits-crystallize":
                 # A compatible Core that simply predates crystallization: every REQUIRED operation is
                 # present, only the optional one is absent.
@@ -161,6 +164,34 @@ def main() -> int:
                         "findings": findings,
                         "requiredRuntimeInputs": [],
                         "credentialGroups": [],
+                    },
+                }
+            )
+        )
+        return 0
+    if args and args[0] == "probe":
+        print(
+            json.dumps(
+                {
+                    "schema": "verifysignal.probe/v1",
+                    "schemaVersion": 1,
+                    "operation": "probe",
+                    "status": "passed",
+                    "data": {
+                        "args": args,
+                        "fullFlowExecuted": False,
+                        "boundary": {
+                            "stepId": "publish",
+                            "reached": True,
+                            "executed": False,
+                        },
+                        "targets": [],
+                        "deferred": {
+                            "steps": ["publish"],
+                            "assertions": [],
+                            "runtimeOutputs": [],
+                            "confirmations": [],
+                        },
                     },
                 }
             )

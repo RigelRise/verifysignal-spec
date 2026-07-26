@@ -9,6 +9,7 @@ from verifysignal_spec.core.contracts import (
     PUBLIC_CONTRACT_VERSION,
     core_supports_crystallize,
     core_supports_discover,
+    core_supports_probe,
     core_supports_run_record,
     core_supports_run_replay,
 )
@@ -53,6 +54,7 @@ from .models import (
 OPTIONAL_CAPABILITY_PROBES = {
     "discover": core_supports_discover,
     "crystallize": core_supports_crystallize,
+    "probe": core_supports_probe,
     # run --record / --replay are MODES of run, advertised in its version entry. They are required
     # CONDITIONALLY (only when the flag is passed), so they are registered here but selected by the
     # caller via ensure_core_runtime(required_capability=...), not by CONTEXT_REQUIRED_CAPABILITY.
@@ -62,6 +64,7 @@ OPTIONAL_CAPABILITY_PROBES = {
 CONTEXT_REQUIRED_CAPABILITY = {
     "discover": "discover",
     "crystallize": "crystallize",
+    "probe": "probe",
 }
 
 

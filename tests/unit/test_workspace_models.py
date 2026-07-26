@@ -7,6 +7,7 @@ from verifysignal_spec.workspace.models import ArtifactReference, UseCaseRecord
 from verifysignal_spec.workspace.models import RuntimeInputRequirement
 from verifysignal_spec.workspace.repository import init_workspace, save_use_case
 from verifysignal_spec.workspace.validation import validate_workspace
+from verifysignal_spec.workspace.validation import validate_session_ref
 
 
 class WorkspaceModelTests(CliTestCase):
@@ -91,3 +92,41 @@ class WorkspaceModelTests(CliTestCase):
 
         self.assertEqual(restored.sourceOnlySkills[0].path, ".verifysignal/skills/login.browser.md")
         self.assertEqual(restored.skillComposition["mode"], "inline-into-main")
+
+    def test_session_reference_round_trips_and_renders_without_session_material(self) -> None:
+        record = UseCaseRecord(
+            alias="authenticated-project",
+            title="Authenticated Project",
+            description="Reach a protected project form.",
+            runRequest=ArtifactReference(path=".verifysignal/run-requests/project.yaml", kind="run-request"),
+            mainSkill=ArtifactReference(path=".verifysignal/skills/project.browser.md", kind="skill", id="skill.project"),
+            skills=[ArtifactReference(path=".verifysignal/skills/project.browser.md", kind="skill", id="skill.project")],
+            sessionRef={"source": "environment", "key": "VS_AUTH_STORAGE_STATE"},
+        )
+
+        restored = UseCaseRecord.from_dict(record.to_dict())
+        rendered = artifacts.render_run_request(restored)
+
+        self.assertEqual(restored.sessionRef, {"source": "environment", "key": "VS_AUTH_STORAGE_STATE"})
+        self.assertIn('"sessionRef"', rendered)
+        self.assertIn('"key": "VS_AUTH_STORAGE_STATE"', rendered)
+        self.assertNotIn("cookies", rendered)
+        self.assertNotIn("origins", rendered)
+
+    def test_session_reference_validation_accepts_public_sources_and_rejects_material(self) -> None:
+        self.assertEqual(
+            validate_session_ref({"source": "environment", "key": "VS_AUTH_STORAGE_STATE"}),
+            [],
+        )
+        self.assertEqual(
+            validate_session_ref({"source": "local-config", "key": "session.path"}),
+            [],
+        )
+        findings = validate_session_ref(
+            {
+                "source": "environment",
+                "key": "VS_AUTH_STORAGE_STATE",
+                "cookies": [{"name": "session", "value": "must-not-persist"}],
+            }
+        )
+        self.assertTrue(any(item["code"] == "session-ref-material-forbidden" for item in findings))

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 from helpers import CliTestCase, FAKE_CORE
 from verifysignal_spec.core.adapter import CoreAdapter, readiness, resolve_persistable_core_command
@@ -44,3 +45,35 @@ class CoreAdapterTests(CliTestCase):
         command = CoreAdapter(executable=f"{FAKE_CORE} version-wrapper", cwd=self.project)._base_command()
         self.assertEqual(command[0], str(FAKE_CORE))
         self.assertEqual(command[1], "version-wrapper")
+
+    def test_probe_preserves_skill_order_and_threads_only_public_options(self) -> None:
+        adapter = CoreAdapter(executable=str(FAKE_CORE), cwd=self.project)
+        captured: list[list[str]] = []
+        adapter.require_compatible = lambda: None  # type: ignore[method-assign]
+        adapter._run = lambda args, env=None: captured.append(args) or {"status": "passed"}  # type: ignore[method-assign]
+
+        adapter.probe(
+            Path("request.yaml"),
+            Path("main.browser.md"),
+            [Path("main.browser.md"), Path("login.browser.md")],
+            headed=True,
+            slow_mo_ms=125,
+        )
+
+        self.assertEqual(
+            captured,
+            [
+                [
+                    "probe",
+                    "request.yaml",
+                    "--skill",
+                    "main.browser.md",
+                    "--skill",
+                    "login.browser.md",
+                    "--headed",
+                    "--slow-mo",
+                    "125",
+                    "--json",
+                ]
+            ],
+        )
