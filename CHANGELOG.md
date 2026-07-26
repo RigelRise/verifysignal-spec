@@ -2,20 +2,18 @@
 
 ## Unreleased
 
-### Open-source presentation & packaging
+### Open-source presentation and packaging
 
-- Rewrote the README around a hero, badges, an evidence-first "see a real run"
-  section, a Mermaid architecture diagram, an open-core boundary table, a
-  project-status matrix, a comparison table, and a "what it is not" section.
+- Rewrote the README to be concise and terminal-first: the real hexagon brand
+  mark, badges, an ASCII architecture, an open-core boundary table, and safety
+  and "what it is not" sections.
 - Added community-health files: `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`,
-  `SECURITY.md`, `GOVERNANCE.md`, `CODEOWNERS`, issue/PR templates, and
+  `SECURITY.md`, `GOVERNANCE.md`, `CODEOWNERS`, issue and PR templates, and
   Dependabot.
-- Added an `examples/` directory with two runnable use cases committed with their
-  evidence bundles (`qa-report/v1`), including a write-flow example, guarded by a
-  contract test.
-- Made the package PyPI-ready — `[project.urls]`, classifiers, and keywords in
-  `pyproject.toml` — plus a Trusted-Publishing release workflow and a
-  version-consistency test.
+- Added an `examples/` directory with two use cases and their `qa-report/v1`
+  evidence (a read-only golden path and a write flow), guarded by a contract test.
+- Made the package PyPI-ready (`[project.urls]`, classifiers, keywords) plus a
+  Trusted-Publishing release workflow and a version-consistency test.
 - Added brand assets under `docs/assets/`, a documentation index, and a
   `ROADMAP.md`.
 - No changes to CLI behavior, schemas, templates, or the public Core contract.

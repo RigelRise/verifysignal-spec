@@ -33,8 +33,7 @@
       "status": "passed",
       "gateId": "order-confirmed",
       "evidence": [
-        { "id": "order-confirmed", "source": "assertion", "status": "passed", "target": "confirmationHeading" },
-        { "id": "confirmation-shot", "source": "screenshot", "status": "passed", "path": "browser/screenshots/02-order-confirmed.svg" }
+        { "id": "order-confirmed", "source": "assertion", "status": "passed", "target": "confirmationHeading" }
       ]
     },
     {
@@ -47,8 +46,6 @@
     }
   ],
   "evidenceLinks": [
-    { "kind": "screenshot", "path": "browser/screenshots/01-review-order.svg" },
-    { "kind": "screenshot", "path": "browser/screenshots/02-order-confirmed.svg" },
     { "kind": "network", "path": "browser/network.ndjson" }
   ],
   "sideEffects": {

@@ -19,12 +19,12 @@ Run it once without installing:
 uvx verifysignal-spec --version
 ```
 
-The sections below install directly from the Git repository — useful for the
+The sections below install directly from the Git repository. Useful for the
 bleeding edge, a fork, or before the first tagged release is published to PyPI.
 
 ## Persistent Installation
 
-Install a tagged release (replace `vX.Y.Z` with a real tag — the `@vX.Y.Z` forms below only resolve
+Install a tagged release (replace `vX.Y.Z` with a real tag; the `@vX.Y.Z` forms below only resolve
 once a release has been tagged on the repository; until then use the default-branch form):
 
 ```sh

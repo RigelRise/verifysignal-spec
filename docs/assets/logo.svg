@@ -1,5 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="VerifySignal">
-  <rect width="64" height="64" rx="15" fill="#0C9A8C"/>
-  <path d="M9 38 h6.5 l4.5 -15 l6 25 l4 -12 h3.5" fill="none" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.5"/>
-  <path d="M34 35.5 l7.5 8.5 l13.5 -19.5" fill="none" stroke="#ffffff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="VerifySignal">
+  <rect width="64" height="64" rx="13" fill="#0A0F15"/>
+  <g transform="translate(8.167 3.833) scale(2.1667)" fill="none" stroke="#37E5C4" stroke-linejoin="round">
+    <path d="M11 1 21 7.5v11L11 25 1 18.5v-11L11 1Z" stroke-width="1.9"/>
+    <path d="M11 1v24M1 7.5l10 5 10-5" stroke-width="1.25" opacity=".65"/>
+  </g>
 </svg>
