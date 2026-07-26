@@ -195,6 +195,8 @@ class CoverageInventoryItem:
     exclusionReason: str | None = None
     candidateUseCaseRefs: list[str] = field(default_factory=list)
     priority: Literal["critical", "high", "medium", "low"] = "medium"
+    productSignalRefs: list[str] = field(default_factory=list)
+    provenance: Literal["browser", "repository", "hybrid"] | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "CoverageInventoryItem":
@@ -209,6 +211,8 @@ class CoverageInventoryItem:
             exclusionReason=data.get("exclusionReason"),
             candidateUseCaseRefs=[str(item) for item in data.get("candidateUseCaseRefs", [])],
             priority=data.get("priority", "medium"),
+            productSignalRefs=[str(item) for item in data.get("productSignalRefs", [])],
+            provenance=data.get("provenance"),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -227,6 +231,10 @@ class CandidateValidationUseCase:
     priority: Literal["critical", "high", "medium", "low"] = "medium"
     requiresEnvironment: bool = False
     knownRuntimeRequirements: list[str] = field(default_factory=list)
+    productSignalRefs: list[str] = field(default_factory=list)
+    provenance: Literal["browser", "repository", "hybrid"] | None = None
+    sideEffectClass: Literal["none", "write", "external-notification", "unknown"] | None = None
+    proofStatus: Literal["not-selected", "selected", "blocked", "passed", "failed"] | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any], inventory_status: str = "partial") -> "CandidateValidationUseCase":
@@ -244,6 +252,10 @@ class CandidateValidationUseCase:
             priority=data.get("priority", "medium"),
             requiresEnvironment=bool(data.get("requiresEnvironment", False)),
             knownRuntimeRequirements=[str(item) for item in data.get("knownRuntimeRequirements", [])],
+            productSignalRefs=[str(item) for item in data.get("productSignalRefs", [])],
+            provenance=data.get("provenance"),
+            sideEffectClass=data.get("sideEffectClass"),
+            proofStatus=data.get("proofStatus"),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -511,7 +523,7 @@ WORKFLOW_STAGE_PAYLOAD_CONTRACT_SCHEMA = "verifysignal-spec-stage-payload-contra
 
 @dataclass(slots=True)
 class WorkflowStageContract:
-    stage: Literal["specify", "clarify", "plan", "tasks", "implement"]
+    stage: Literal["understand", "specify", "clarify", "plan", "tasks", "implement"]
     requiredFields: list[str] = field(default_factory=list)
     optionalFields: list[str] = field(default_factory=list)
     defaults: dict[str, Any] = field(default_factory=dict)
@@ -901,6 +913,12 @@ class UnderstandingOnboardingResult:
     trivialCandidateCount: int = 0
     sourceTraceabilityStatus: Literal["complete", "normalized", "missing"] = "missing"
     partialInventoryReasons: list[str] = field(default_factory=list)
+    understandingMode: Literal["repository", "browser-first", "hybrid"] | None = None
+    workspaceKind: Literal["repository", "engagement", "hybrid"] | None = None
+    targetEnvironment: dict[str, Any] | None = None
+    productSignalCount: int = 0
+    provenanceTraceabilityStatus: Literal["complete", "partial", "conflicted"] | None = None
+    gaps: list[str] = field(default_factory=list)
     nextAction: str = ""
     schemaVersion: str = UNDERSTANDING_ONBOARDING_RESULT_SCHEMA
 
@@ -915,6 +933,12 @@ class UnderstandingOnboardingResult:
             trivialCandidateCount=int(data.get("trivialCandidateCount", 0) or 0),
             sourceTraceabilityStatus=data.get("sourceTraceabilityStatus", "missing"),
             partialInventoryReasons=[str(item) for item in data.get("partialInventoryReasons", [])],
+            understandingMode=data.get("understandingMode"),
+            workspaceKind=data.get("workspaceKind"),
+            targetEnvironment=data.get("targetEnvironment"),
+            productSignalCount=int(data.get("productSignalCount", 0) or 0),
+            provenanceTraceabilityStatus=data.get("provenanceTraceabilityStatus"),
+            gaps=[str(item) for item in data.get("gaps", [])],
             nextAction=str(data.get("nextAction", "")),
         )
 

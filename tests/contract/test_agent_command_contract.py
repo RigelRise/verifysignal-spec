@@ -29,6 +29,10 @@ def test_claude_renders_argument_hints_for_workflow_skills(tmp_path) -> None:
     assert "<behavior>" in content
     assert "Invoke this command as `/verifysignal-specify`" in content
 
+    understand = files[".claude/skills/verifysignal-understand/SKILL.md"]
+    assert 'argument-hint: "[--url <url>] [scope or goal]"' in understand
+    assert "live URL without source access" in understand
+
 
 def test_codex_and_claude_validation_guidance_share_live_readiness_facts(tmp_path) -> None:
     codex = {item.path: item.content for item in CodexIntegration().render_files(tmp_path)}
@@ -58,6 +62,9 @@ def test_context_includes_playwright_mcp_authoring_guidance(tmp_path) -> None:
         assert "browser_snapshot" in content or "browser_navigate" in content
         assert "never" in content.lower() and "persist" in content.lower()
         assert "commit" in content.lower()
+        assert "browser-first-understanding/v1" in content
+        assert "headed" in content.lower()
+        assert "user acknowledges the summary" in content
 
 
 def test_onboarding_guide_advertises_auto_enabled_playwright_mcp(tmp_path) -> None:

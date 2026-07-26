@@ -6,7 +6,8 @@ workspace and public VerifySignal Core CLI boundary.
 
 Every staged `/verifysignal-*` template must start with the installed
 `verifysignal workflow check <stage>` command and require the
-`workflow.guardrails/v1` capability before repository inspection or stage work.
+`workflow.guardrails/v1` capability before repository inspection, browser
+mapping, or stage work.
 Templates must not suggest package-manager fallbacks, and they must route all
 managed `.verifysignal/` writes through canonical CLI operations such as
 `verifysignal workflow persist`.
@@ -14,6 +15,15 @@ managed `.verifysignal/` writes through canonical CLI operations such as
 Stage authoring templates must point agents to the public workflow contract from
 `verifysignal workflow info verifysignal-use-case --json`. Payload shape
 guidance comes from `stagePayloadContracts`, not installed package source.
+
+The understand template must also consume
+`stagePayloadContracts.browserFirstUnderstanding` when a live URL is supplied.
+Browser-first mapping uses a headed Playwright MCP or equivalent host browser,
+stays within the approved read-safe origin/scope, pauses for user-entered
+authentication, keeps the browser open through summary acknowledgement, and
+persists only synthesized signals. Raw DOM, MCP snapshots, screenshots, traces,
+response bodies, cookies/storage, form values, credentials, and URL query values
+must never become `.verifysignal/` artifacts.
 
 Executable skill boundary guidance must distinguish executable skills from
 source-only reusable skills. A run request lists only the skills that Spec has

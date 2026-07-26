@@ -20,7 +20,7 @@ class WorkflowSpecifyPrerequisitesTests(CliTestCase):
         self.assertEqual(code, 0, err)
         content = (self.project / ".agents" / "skills" / "verifysignal-specify" / "SKILL.md").read_text(encoding="utf-8")
         self.assertIn("verifysignal workflow check specify --json", content)
-        self.assertIn("repository understanding is required", content)
+        self.assertIn("product understanding is required", content)
         self.assertIn("candidate validation use cases", content)
 
     def test_specify_missing_understanding_routes_to_understand(self) -> None:

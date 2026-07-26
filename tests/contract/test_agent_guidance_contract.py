@@ -36,3 +36,17 @@ def test_workflow_template_documents_canonical_policy_without_legacy_examples() 
     assert "Do not author" in content
     assert "seed plus a run-attempt token" in content
     assert "Resolve `{{parameters.*}}` confirmation expected values before Core execution" in content
+
+
+def test_browser_first_understanding_guidance_uses_the_shared_public_boundary() -> None:
+    content = _template(
+        "src/verifysignal_spec/templates/agent-commands/verifysignal.understand.md"
+    )
+    flattened = " ".join(content.split())
+
+    assert "browser-first-understanding/v1" in flattened
+    assert "Playwright MCP or an equivalent host browser/Playwright interface" in flattened
+    assert "documented public Core `discover`, `probe`, and `run` operations" in flattened
+    assert "verifysignal.probe/v1" in flattened
+    assert ".agents/" not in content
+    assert ".claude/" not in content

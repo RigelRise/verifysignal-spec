@@ -89,7 +89,7 @@ def _normalize_inventory_payload(payload: dict[str, Any]) -> dict[str, Any]:
             normalized["sourceInventoryItems"] = sources
             normalized_traceability = bool(sources) or normalized_traceability
         if not normalized.get("rationale"):
-            normalized["rationale"] = normalized.get("description") or normalized.get("behavior") or "Candidate inferred from repository understanding."
+            normalized["rationale"] = normalized.get("description") or normalized.get("behavior") or "Candidate inferred from product understanding."
         if not normalized.get("behavior"):
             normalized["behavior"] = normalized.get("description") or normalized.get("title") or normalized.get("alias", "")
         normalized_candidates.append(normalized)

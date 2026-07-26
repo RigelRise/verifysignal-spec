@@ -17,7 +17,8 @@
 
 AI multiplied your features. Validating each one is still manual. VerifySignal
 turns a product flow (login, checkout, onboarding) into an automatic, repeatable
-validation with evidence, straight from your repository.
+validation with evidence, starting from your repository or a live product URL
+when source access is unavailable.
 
 Your coding agent (Claude Code or Codex) authors the validation and grounds it
 against your live app. The VerifySignal runtime runs it deterministically and
@@ -50,10 +51,26 @@ Then run the whole flow from your agent, in one line:
 /verifysignal "Validate that a user can sign in against https://staging.example.com"
 ```
 
-The agent drafts the use case, grounds selectors against the live app, validates,
-runs, and repairs. It stops only for real unknowns, missing credentials, or a
-write it should not make on its own. Credentials come from environment variables
-at run time and never touch disk.
+The agent drafts the use case from your source or synthesized browser-first
+product understanding, grounds its selectors against the live app, validates,
+runs, and repairs — stopping only for real unknowns, missing credentials, or
+write side-effects. Credentials come from environment variables at run time and
+never touch disk.
+
+### No source access?
+
+To begin without source access, initialize an empty local engagement directory
+and provide the live target conversationally or with `--url`:
+
+```text
+/verifysignal-understand --url https://staging.example.com
+```
+
+The agent opens a visible browser, lets you authenticate directly, maps a
+bounded read-safe scope, and persists only synthesized product signals and
+candidate journeys. It does not persist DOM snapshots, screenshots, cookies,
+storage state, form values, or URL query values. See
+[Browser-first understanding](docs/browser-first-understanding.md).
 
 <details>
 <summary>Install from source</summary>
@@ -74,11 +91,11 @@ uv tool install verifysignal-spec --from git+https://github.com/RigelRise/verify
 ## How it works
 
 ```text
-  your repo          verifysignal CLI          VerifySignal Core         evidence
-  .verifysignal/  ->  open · Apache-2.0     ->  signed runtime       ->  report.md
-  use cases          authoring · gates          deterministic run        report.json
-  skills · state     workflow · repair          no model at runtime      screenshots
-                                                                          network log
+  repo / engagement   verifysignal CLI          VerifySignal Core         evidence
+  .verifysignal/  ->  open · Apache-2.0      ->  signed runtime       ->  report.md
+  use cases           authoring · gates          deterministic run        report.json
+  skills · state      workflow · repair          no model at runtime      screenshots
+                                                                           network log
 ```
 
 The CLI owns authoring, gates, workflow state, and repair. Core owns execution.
@@ -120,7 +137,8 @@ means the same thing for everyone. See [GOVERNANCE.md](GOVERNANCE.md).
 
 - Not a replacement for your unit tests or CI. It makes manual product validation repeatable.
 - Not an agent that decides pass/fail. Execution is a fixed action set; the agent only authors and repairs.
-- Not a service. Everything it manages lives in your repo under `.verifysignal/`.
+- Not a service. Everything it manages lives in your repository or local
+  engagement directory under `.verifysignal/`.
 
 ## CLI
 
@@ -137,7 +155,9 @@ means the same thing for everyone. See [GOVERNANCE.md](GOVERNANCE.md).
 
 ## Docs and community
 
-- [Documentation](docs/README.md), [Installation](docs/installation.md), [Golden Path](docs/golden-path.md)
+- [Documentation](docs/README.md), [Installation](docs/installation.md),
+  [Golden Path](docs/golden-path.md), and
+  [Browser-first understanding](docs/browser-first-understanding.md)
 - [Contributing](CONTRIBUTING.md), [Governance](GOVERNANCE.md), [Roadmap](ROADMAP.md)
 - [Issues](https://github.com/RigelRise/verifysignal-spec/issues),
   [Discussions](https://github.com/RigelRise/verifysignal-spec/discussions)

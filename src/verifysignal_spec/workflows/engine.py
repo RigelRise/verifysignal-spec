@@ -88,7 +88,7 @@ def create_workflow_run(project: Path, goal: str, alias: str | None = None, inte
     )
     run.stageStates[0].status = "completed"
     run.stageStates[0].completedAt = now_iso()
-    run.stageStates[0].handoffSummary = "Repository understanding initialized."
+    run.stageStates[0].handoffSummary = "Product understanding initialized."
     save_workflow_run(project, run)
     save_workflow_state(project, alias, state_document(project, alias, run, run.currentStage, run.status))
     link_workflow_reference(project, alias, run, run.status)

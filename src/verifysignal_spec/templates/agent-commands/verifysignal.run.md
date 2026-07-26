@@ -11,7 +11,7 @@ Run a validated use case by alias through the managed VerifySignal runtime.
 - If the managed runtime, API, entitlement receipt, or runtime download is blocked, classify it as runtime setup/security and route happy-path recovery to `verifysignal init --here --integration codex`; use `verifysignal core setup --core-cmd <path>` only for diagnostics, offline environments, and development overrides. Do not suggest `/verifysignal-repair` for missing runtime, token exchange, receipt, distribution, package verification, or Core entitlement rejection blockers.
 - Do not perform stage-specific work until the check allows it.
 - If `workflow check run` returns `recommendedAction: approve-rerun`, do not execute the browser run until the owner confirms the write rerun. Use `verifysignal workflow approve-rerun --alias <alias> --confirm-risk <confirmation-id> --json`, then re-check/run. Non-interactive run may use the same documented `--confirm-risk <confirmation-id>` token.
-- Stale repository understanding is not automatically a global understand detour for an existing alias. Follow the check output: continue with warning, validate, refresh, or confirm based on impact and write risk.
+- Stale product understanding is not automatically a global understand detour for an existing alias. Follow the check output: continue with warning, validate, refresh, or confirm based on impact and write risk.
 - Resolve the alias to exactly one run request, main skill, and supporting reusable skills.
 - Use parameter values already declared in the run request. Prompt only for runtime values that are still missing.
 - Resolve generated runtime inputs during run preparation and keep the authored run request generic. Record only safe resolved values for that execution.

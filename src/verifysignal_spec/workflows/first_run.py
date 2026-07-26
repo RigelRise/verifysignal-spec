@@ -138,12 +138,13 @@ def build_understanding_onboarding_preparation(*, stage: str = "specify") -> dic
     next_command = "/verifysignal-understand"
     resume_command = f"/verifysignal-{stage} (resume after `verifysignal workflow check {stage} --json` passes)"
     summary = (
-        "Safe repository understanding is required before VerifySignal can recommend a reliable first run. "
-        "The agent should inspect public project structure and non-sensitive context, persist understanding, then resume this stage."
+        "Safe product understanding is required before VerifySignal can recommend a reliable first run. "
+        "The agent should inspect an available repository or a user-approved live URL, persist secret-safe understanding, "
+        "then resume this stage."
     )
     stage_card = build_stage_card(
         stage_id="understanding-auto-prepare",
-        title="Prepare Repository Understanding",
+        title="Prepare Product Understanding",
         status_marker="[RUNNING]",
         summary="Safe understanding can be prepared automatically before first-run selection.",
         why_it_matters="The first recommendation must be grounded in real user-facing surfaces, not guessed from the latest branch.",
@@ -158,7 +159,7 @@ def build_understanding_onboarding_preparation(*, stage: str = "specify") -> dic
         "nextCommand": next_command,
         "resumeCommand": resume_command,
         "safetyBoundaries": [
-            "Inspect public project structure, docs, source routes, and non-sensitive configuration only.",
+            "Inspect public project structure and non-sensitive source context, or map a user-approved live URL within an explicit read-safe scope.",
             "Do not read local env files, credential stores, cookies, browser storage, or secret-bearing configuration without explicit approval.",
         ],
         "stageCards": [stage_card],
@@ -417,6 +418,18 @@ def summarize_evidence(value: str) -> str:
 
 
 def resolve_target_status(context: dict[str, Any]) -> tuple[str, str | None]:
+    target_environment = context.get("targetEnvironment")
+    if isinstance(target_environment, dict):
+        value = str(target_environment.get("locator") or "")
+        reachability = str(target_environment.get("reachabilityStatus") or "unknown")
+        if value:
+            if looks_secret(value, "target"):
+                return "missing", None
+            if _looks_fake_or_demo(value):
+                return "missing", None
+            if reachability == "unreachable" or _looks_unreachable(value):
+                return "unreachable", summarize_target(value)
+            return "resolved", summarize_target(value)
     for item in context.get("knownRuntimeRequirements", []):
         if not isinstance(item, dict):
             continue

@@ -29,7 +29,8 @@ class UnderstandingOnboardingContractTests(CliTestCase):
         self.assertEqual(code, 0, err)
         data = json.loads(out)
         preparation = data["onboardingPreparation"]
-        self.assertIn("safe repository understanding", preparation["summary"].lower())
+        self.assertIn("safe product understanding", preparation["summary"].lower())
+        self.assertIn("live url", preparation["summary"].lower())
         self.assertIn("sensitive", " ".join(preparation["safetyBoundaries"]).lower())
         self.assertEqual(preparation["resumeCommand"], data["resumeCommand"])
 

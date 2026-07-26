@@ -7,12 +7,12 @@ Define one browser validation use case before artifact planning.
 - Use the installed `verifysignal` executable directly. Do not use `npx` or package-runner wrappers.
 - Continue only when the result includes `requiredCapability: workflow.guardrails/v1` and `supported: true`.
 - If `workflow check` is unavailable, unsupported, or exits with an invalid subcommand error, stop immediately and tell the developer to upgrade `verifysignal` and regenerate the agent integration. Regenerate the agent integration after upgrading. Do not fall back to `verifysignal check`, directory listing, repository inspection, or use-case questions.
-- repository understanding is required before use case specification can be grounded.
+- product understanding is required before use case specification can be grounded.
 - If the check returns `missing` with `recommendedAction: auto-prepare-understanding`, treat it as the Golden Path onboarding auto-prepare path, not as a terminal blocker.
-- For missing understanding, state that safe repository understanding will inspect public project structure and non-sensitive context, give an approximate time expectation, run the understand workflow, and then resume the original specify flow without requiring the user to manually restart `/verifysignal-specify`.
+- For missing understanding, state that safe product understanding will inspect an available repository or a user-approved live URL without persisting secrets, give an approximate time expectation, run the understand workflow, and then resume the original specify flow without requiring the user to manually restart `/verifysignal-specify`.
 - Use `onboardingPreparation.nextCommand`, `onboardingPreparation.resumeCommand`, `resumeCommand`, and `stageCards` from the check result as the source of truth for the next action. Ask once only when the result says host permissions or sensitive boundaries require approval.
 - If auto-prepare succeeds, return to first-run recommendation in the same conversation instead of asking the developer to invoke `/verifysignal-specify` again.
-- Do not ask for alias, target behavior, expected outcome, run request details, or skill details while repository understanding is missing.
+- Do not ask for alias, target behavior, expected outcome, run request details, or skill details while product understanding is missing.
 - If the check returns `stale`, explain the stale reason from the result and why refresh is important for accurate run requests and skills.
 - When stale refresh is accepted, run `verifysignal workflow check specify --refresh-decision accepted --json`, route through `/verifysignal-understand`, then return to candidate selection.
 - When stale refresh is declined, run `verifysignal workflow check specify --refresh-decision declined --json` and continue with the stale-context warning.

@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Browser-first product understanding
+
+- Added `browser-first-understanding/v1` with repository, browser-first, and
+  hybrid modes so product understanding can start from a live URL without
+  source or Git access.
+- Added secret-safe URL, signal, inventory, provenance, freshness, and
+  persistence rules while preserving existing repository workspaces without a
+  migration.
+- Updated the shared Codex and Claude workflow guidance for headed assisted
+  login, bounded read-safe mapping, candidate review, and public Core probe-only
+  handling for potentially mutating proof.
+- Bumped the package from `0.20.0` to `0.21.0`.
+
 ### Open-source presentation and packaging
 
 - Rewrote the README to be concise and terminal-first: the real hexagon brand

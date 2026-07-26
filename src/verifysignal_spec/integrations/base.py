@@ -51,7 +51,11 @@ class WorkflowCommandSpec:
 
 
 WORKFLOW_COMMANDS = [
-    WorkflowCommandSpec("understand", "Capture repository and product context before use case authoring", "[alias or goal]"),
+    WorkflowCommandSpec(
+        "understand",
+        "Capture product context from a repository or live URL without source access",
+        "[--url <url>] [scope or goal]",
+    ),
     WorkflowCommandSpec("specify", "Define one browser validation use case", '<alias> "<behavior>"'),
     WorkflowCommandSpec("clarify", "Resolve high-impact unknowns", "<alias>"),
     WorkflowCommandSpec("plan", "Plan one run request and reusable skills", "<alias>"),
@@ -116,7 +120,7 @@ def build_onboarding_guidance(
     stage_markers = ["[RECOMMENDED]", "[ACCEPTED]", "[RUNNING]", "[REPAIR]", "[PASS]", "[SKIPPED]", "[BLOCKED]", "[FAIL]"]
     safety = [
         "Sensitive files, local env files, cookies, browser storage, and credential values are not inspected or persisted by default.",
-        "Safe understanding inspects public project structure and non-sensitive source context before recommending the first run.",
+        "Safe understanding inspects public project structure and non-sensitive source context or a user-approved live URL before recommending the first run.",
     ]
     success = [
         "Direct strict pass counts as first-run success.",

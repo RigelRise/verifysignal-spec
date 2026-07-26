@@ -50,9 +50,9 @@ Expected guided stages:
 
 ## Missing Understanding
 
-When `/verifysignal-specify` starts in a clean repository, the prerequisite check
+When `/verifysignal-specify` starts in a clean workspace, the prerequisite check
 returns auto-prepare metadata. The integration should inspect safe public
-project structure, persist repository understanding, and resume first-run
+an available repository or user-approved live URL, persist product understanding, and resume first-run
 recommendation without requiring the user to invoke `/verifysignal-specify`
 again. Sensitive files and credential-bearing configuration remain out of scope
 unless the user explicitly approves access.

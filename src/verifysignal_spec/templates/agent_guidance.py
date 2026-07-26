@@ -20,7 +20,7 @@ REAL_TARGET_FIRST_RECOMMENDATION = (
     "do not use fake/demo targets as a user-facing fallback"
 )
 MISSING_UNDERSTANDING_AUTO_PREPARE = (
-    "When specify reports missing repository understanding with auto-prepare metadata, run safe understanding, avoid sensitive files, "
+    "When specify reports missing product understanding with auto-prepare metadata, run safe repository or browser-first understanding, avoid sensitive files, "
     "then resume the original specify flow without requiring the user to manually restart"
 )
 PUBLIC_WORKFLOW_CONTRACT_BOUNDARY = (
@@ -37,5 +37,8 @@ PLAYWRIGHT_MCP_GUIDANCE = (
     "cookies, or storage state. On authenticated surfaces preserve auth only as public run-request "
     "`credentialRefs` or `sessionRef` resolved by Core from the environment. For authenticated write surfaces, "
     "use Core's advertised `verifysignal.probe/v1` capability for stateful pre-commit grounding; let the MCP "
-    "explore only up to the commit step and never cross it — only the deterministic `run` crosses the commit"
+    "explore only up to the commit step and never cross it — only the deterministic `run` crosses the commit. "
+    "For `browser-first-understanding/v1`, use Playwright MCP or an equivalent headed browser, let the user enter "
+    "credentials directly, keep navigation human-observable and read-safe, and keep the browser open until the "
+    "user acknowledges the summary"
 )

@@ -27,6 +27,7 @@ from verifysignal_spec.workspace.validation import validate_credential_readiness
 from .coverage_inventory import candidate_dicts, classify_refresh_impacts, merge_inventory, normalize_scope
 from .authoring_coherence import evaluate_implementation_coherence, normalize_artifact_aliases
 from .browser_authoring import validate_browser_payload
+from .browser_understanding import normalize_browser_understanding_payload
 from .models import (
     WORKFLOW_STAGES,
     ArtifactPlan,
@@ -86,6 +87,17 @@ def persist_stage(
         return _blocked(stage, alias, code="scope.invalid", message=str(exc), invalid=True)
 
     content = _payload_content(payload or {})
+    if stage == "understand":
+        try:
+            content = _normalize_understanding_content(content)
+        except ValueError as exc:
+            return _blocked(
+                stage,
+                None,
+                code="payload.invalid",
+                message=str(exc),
+                invalid=True,
+            )
     resolved_alias = alias or content.get("alias")
     public_contract_warnings = unsupported_field_warnings(stage, content)
     findings = validate_no_secret_values(content)
@@ -152,32 +164,82 @@ def unresolved_blocking_questions(project: Path, alias: str) -> list[dict[str, A
 
 def _persist_understanding(project: Path, content: dict[str, Any], scope: str) -> StagePersistenceResult:
     content = _normalize_understanding_content(content)
-    _require_fields(content, ["repositorySummary", "localStartInstructions", "coverageInventory"])
+    mode = str(content.get("understandingMode") or "repository")
+    if mode == "repository":
+        _require_fields(content, ["repositorySummary", "localStartInstructions", "coverageInventory"])
+    elif mode == "browser-first":
+        _require_fields(
+            content,
+            [
+                "productSummary",
+                "targetEnvironment",
+                "explorationScope",
+                "productSignals",
+                "coverageInventory",
+            ],
+        )
+    else:
+        _require_fields(
+            content,
+            [
+                "repositorySummary",
+                "localStartInstructions",
+                "targetEnvironment",
+                "explorationScope",
+                "productSignals",
+                "coverageInventory",
+            ],
+        )
     context = load_product_context(project)
     existing_inventory = context.get("coverageInventory")
     inventory = merge_inventory(existing_inventory, content.get("coverageInventory"), scope=scope)
+    if mode == "browser-first":
+        inventory.generatedGitHash = None
+        inventory.gitAvailable = False
+        inventory.sourceFilesVisited = 0
+        inventory.sourceTraceabilityStatus = "missing"
     generated_at = inventory.generatedAt or now_iso()
-    generated_git_hash = content.get("generatedGitHash") or inventory.generatedGitHash or current_git_hash(project)
-    git_available = bool(generated_git_hash) or bool(content.get("gitAvailable"))
+    generated_git_hash = None
+    if mode != "browser-first":
+        generated_git_hash = content.get("generatedGitHash") or inventory.generatedGitHash or current_git_hash(project)
+    git_available = mode != "browser-first" and (
+        bool(generated_git_hash) or bool(content.get("gitAvailable"))
+    )
 
     partial_reasons = list(inventory.partialInventoryReasons or content.get("partialInventoryReasons", []))
     source_traceability_status = inventory.sourceTraceabilityStatus
     trivial_candidate_count = _trivial_candidate_count(inventory)
     source_files_visited = inventory.sourceFilesVisited or int(content.get("sourceFilesVisited", 0) or 0)
+    target_environment = content.get("targetEnvironment") if isinstance(content.get("targetEnvironment"), dict) else None
+    product_signals = list(content.get("productSignals", []))
+    gaps = [str(item) for item in content.get("gaps", [])]
+    provenance_status = str(
+        content.get("provenanceTraceabilityStatus")
+        or ("complete" if mode == "repository" else "partial")
+    )
+    runtime_requirements = _understanding_runtime_requirements(
+        content.get("knownRuntimeRequirements"),
+        context.get("knownRuntimeRequirements"),
+        target_environment,
+    )
     context.update(
         {
+            "workspaceKind": content.get("workspaceKind") or ("engagement" if mode == "browser-first" else mode),
+            "understandingMode": mode,
+            "productSummary": content.get("productSummary") or content["repositorySummary"],
             "repositorySummary": content["repositorySummary"],
             "localStartInstructions": content["localStartInstructions"],
             "safeInspectionPaths": content.get("safeInspectionPaths", context.get("safeInspectionPaths", [])),
             "blockedSensitivePaths": content.get("blockedSensitivePaths", context.get("blockedSensitivePaths", [])),
             "validationGoals": content.get("validationGoals", context.get("validationGoals", [])),
-            "knownRuntimeRequirements": content.get("knownRuntimeRequirements", context.get("knownRuntimeRequirements", [])),
+            "knownRuntimeRequirements": runtime_requirements,
             "coverageInventory": inventory.to_dict(),
             "candidateUseCases": candidate_dicts(inventory),
             "understanding": {
                 "generatedAt": generated_at,
                 "generatedGitHash": generated_git_hash,
                 "gitAvailable": git_available,
+                "mode": mode,
                 "staleReasons": [],
                 "inventoryStatus": inventory.status,
                 "inventoryScope": scope,
@@ -185,12 +247,19 @@ def _persist_understanding(project: Path, content: dict[str, Any], scope: str) -
                 "candidateCount": len(inventory.candidateUseCases),
                 "trivialCandidateCount": trivial_candidate_count,
                 "sourceTraceabilityStatus": source_traceability_status,
+                "provenanceTraceabilityStatus": provenance_status,
                 "partialInventoryReasons": partial_reasons,
+                "gaps": gaps,
                 "recommendedFollowUpScope": _recommended_follow_up_scope(inventory.status, scope),
             },
         }
     )
-    if not generated_git_hash and not content.get("gitUnavailableReason"):
+    if target_environment:
+        context["targetEnvironment"] = target_environment
+        context["explorationScope"] = content["explorationScope"]
+        context["productSignals"] = product_signals
+        context["understanding"]["observedAt"] = content.get("observedAt") or target_environment.get("observedAt")
+    if mode != "browser-first" and not generated_git_hash and not content.get("gitUnavailableReason"):
         raise ValueError("Understanding payload requires generatedGitHash or gitUnavailableReason.")
     if content.get("gitUnavailableReason"):
         context["understanding"]["gitUnavailableReason"] = content.get("gitUnavailableReason")
@@ -207,6 +276,12 @@ def _persist_understanding(project: Path, content: dict[str, Any], scope: str) -
         trivialCandidateCount=trivial_candidate_count,
         sourceTraceabilityStatus=source_traceability_status,
         partialInventoryReasons=partial_reasons,
+        understandingMode=mode,
+        workspaceKind=context.get("workspaceKind"),
+        targetEnvironment=target_environment,
+        productSignalCount=len(product_signals),
+        provenanceTraceabilityStatus=provenance_status,
+        gaps=gaps,
         nextAction="/verifysignal-specify" if inventory.status == "complete" else "/verifysignal-understand --scope continue",
     ).to_dict()
     return StagePersistenceResult(
@@ -637,7 +712,28 @@ def _normalize_understanding_content(content: dict[str, Any]) -> dict[str, Any]:
     if normalized.get("partialInventoryReasons") and not inventory.get("partialInventoryReasons"):
         inventory["partialInventoryReasons"] = normalized["partialInventoryReasons"]
     normalized["coverageInventory"] = inventory
-    return normalized
+    return normalize_browser_understanding_payload(normalized)
+
+
+def _understanding_runtime_requirements(
+    supplied: Any,
+    existing: Any,
+    target_environment: dict[str, Any] | None,
+) -> list[Any]:
+    source = supplied if isinstance(supplied, list) else existing
+    requirements = list(source) if isinstance(source, list) else []
+    if not target_environment:
+        return requirements
+    locator = str(target_environment.get("locator") or "")
+    has_target = any(
+        isinstance(item, dict)
+        and str(item.get("name", "")).lower()
+        in {"baseurl", "target", "targeturl"}
+        for item in requirements
+    )
+    if locator and not has_target:
+        requirements.append({"name": "baseUrl", "value": locator})
+    return requirements
 
 
 def _normalize_specification_content(project: Path, alias: str, content: dict[str, Any]) -> dict[str, Any]:
