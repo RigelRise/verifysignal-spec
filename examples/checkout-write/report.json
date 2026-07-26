@@ -1,0 +1,75 @@
+{
+  "schemaVersion": "qa-report/v1",
+  "runId": "request_checkout-write_1780305512001",
+  "status": "passed",
+  "summary": {
+    "status": "passed",
+    "failedStepId": null
+  },
+  "failedStep": null,
+  "preconditions": [
+    { "id": "shopper-signed-in", "status": "passed" }
+  ],
+  "steps": [
+    {
+      "id": "submit-order",
+      "status": "passed",
+      "gateId": "order-commit",
+      "commit": true,
+      "evidence": [
+        {
+          "id": "order-created",
+          "source": "network",
+          "status": "passed",
+          "method": "POST",
+          "urlContains": "/api/orders",
+          "expectedStatus": 201,
+          "publicMatchKeys": ["urlContains"]
+        }
+      ]
+    },
+    {
+      "id": "assert-order-confirmed",
+      "status": "passed",
+      "gateId": "order-confirmed",
+      "evidence": [
+        { "id": "order-confirmed", "source": "assertion", "status": "passed", "target": "confirmationHeading" },
+        { "id": "confirmation-shot", "source": "screenshot", "status": "passed", "path": "browser/screenshots/02-order-confirmed.svg" }
+      ]
+    },
+    {
+      "id": "assert-order-reference",
+      "status": "passed",
+      "gateId": "order-reference",
+      "evidence": [
+        { "id": "order-reference-visible", "source": "assertion", "status": "passed", "target": "orderNumber" }
+      ]
+    }
+  ],
+  "evidenceLinks": [
+    { "kind": "screenshot", "path": "browser/screenshots/01-review-order.svg" },
+    { "kind": "screenshot", "path": "browser/screenshots/02-order-confirmed.svg" },
+    { "kind": "network", "path": "browser/network.ndjson" }
+  ],
+  "sideEffects": {
+    "policy": { "class": "write", "mode": "enforce", "commitStepId": "submit-order" },
+    "commitStep": { "id": "submit-order", "reached": true, "status": "passed" },
+    "observations": [
+      { "method": "POST", "urlContains": "/api/orders", "expectedStatus": 201, "allowed": true }
+    ],
+    "violations": [],
+    "status": "committed-confirmed"
+  },
+  "runtimeOutputs": [
+    { "name": "createdResourceUrl", "source": "finalUrl", "status": "captured", "value": "/orders/VS-2026-4F19" }
+  ],
+  "resultClassification": {
+    "executionStatus": "passed",
+    "verificationStatus": "passed",
+    "sideEffectStatus": "committed-confirmed",
+    "failurePhase": null,
+    "rerunRisk": "requires-confirmation",
+    "recommendedAction": "approve-rerun-refreshes-order-ref",
+    "reasons": ["write-committed-and-verified"]
+  }
+}

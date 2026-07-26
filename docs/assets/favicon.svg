@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="VerifySignal">
+  <rect width="32" height="32" rx="8" fill="#0C9A8C"/>
+  <path d="M5 19 h3 l2.2 -7 l3 12 l2 -6 h1.6" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.5"/>
+  <path d="M17 18 l3.6 4 l6.4 -9.2" fill="none" stroke="#ffffff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

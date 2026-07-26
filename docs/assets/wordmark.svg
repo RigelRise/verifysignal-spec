@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 64" width="320" height="64" role="img" aria-label="VerifySignal" font-family="system-ui,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+  <rect x="4" y="12" width="40" height="40" rx="10" fill="#0C9A8C"/>
+  <path d="M11 34 h4 l3 -9.5 l3.8 16 l2.6 -7.6 h2.2" fill="none" stroke="#ffffff" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.5"/>
+  <path d="M27 32.5 l4.7 5.3 l8.4 -12.1" fill="none" stroke="#ffffff" stroke-width="3.1" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="58" y="41" font-size="27" font-weight="700" letter-spacing="-0.3">
+    <tspan fill="#0E1719">Verify</tspan><tspan fill="#0C9A8C">Signal</tspan>
+  </text>
+</svg>

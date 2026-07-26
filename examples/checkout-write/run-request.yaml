@@ -1,0 +1,18 @@
+# Illustrative sample — see ../README.md.
+schemaVersion: qa-run-request/v1
+request:
+  alias: checkout-write
+  title: A shopper can place an order
+target:
+  baseUrl: "{{parameters.baseUrl}}"
+credentialRefs:
+  shopper:
+    supportedSources: [environment]
+    usernameEnv: SHOP_USER
+    passwordEnv: SHOP_PASSWORD
+parameters:
+  baseUrl: "{{parameters.baseUrl}}"
+  orderRef: "{{generated.orderRef}}"
+skills:
+  - id: skill.checkout-write
+    version: 1.0.0

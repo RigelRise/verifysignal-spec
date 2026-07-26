@@ -1,0 +1,4 @@
+{"ts":"2026-07-20T15:18:31.204Z","method":"GET","url":"https://staging.example.com/checkout/review","status":200,"resourceType":"document","durationMs":389}
+{"ts":"2026-07-20T15:18:31.998Z","method":"GET","url":"https://staging.example.com/api/cart","status":200,"resourceType":"fetch","durationMs":142,"requestHeaders":{"cookie":"[redacted]"}}
+{"ts":"2026-07-20T15:18:34.517Z","method":"POST","url":"https://staging.example.com/api/orders","status":201,"resourceType":"fetch","durationMs":274,"requestHeaders":{"authorization":"[redacted]"},"responseHeaders":{"location":"/orders/VS-2026-4F19"}}
+{"ts":"2026-07-20T15:18:34.902Z","method":"GET","url":"https://staging.example.com/orders/VS-2026-4F19","status":200,"resourceType":"document","durationMs":211}

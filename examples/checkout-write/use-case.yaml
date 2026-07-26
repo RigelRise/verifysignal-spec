@@ -1,0 +1,63 @@
+# Illustrative sample — see ../README.md.
+schemaVersion: verifysignal-spec-use-case/v1
+alias: checkout-write
+title: A shopper can place an order
+description: >-
+  Validate that an authenticated shopper can complete checkout and that the
+  order is actually created. This is a WRITE flow: it mutates product state, so
+  it declares a side-effect policy and gates reruns.
+targetSurface: browser
+status: passed
+sideEffects:
+  class: write
+  mode: enforce
+  commitStepId: submit-order
+  sideEffectPolicy:
+    allowed:
+      - "POST /api/orders"
+    forbidden:
+      - "DELETE *"
+resourceIdentity:
+  resourceType: order
+  identityStrategy: generated-input
+  identityInput: orderRef
+  collisionPolicy: avoid
+rerunPolicy:
+  rerunRisk: requires-confirmation
+  refreshRuntimeInputs:
+    - orderRef
+sideEffectLifecycle:
+  cleanup: manual
+  required: false
+  tracking: runtime-output
+  instructions: >-
+    Created orders are left in place; cancel test orders from the admin console
+    if your environment does not auto-expire them.
+runRequest:
+  path: .verifysignal/run-requests/checkout-write.yaml
+  kind: run-request
+  id: request.checkout-write
+mainSkill:
+  path: .verifysignal/skills/checkout-write.browser.md
+  kind: skill
+  id: skill.checkout-write
+skills:
+  - path: .verifysignal/skills/checkout-write.browser.md
+    kind: skill
+    id: skill.checkout-write
+credentialGroups:
+  - shopper
+runtimeInputs:
+  - name: baseUrl
+    required: true
+    source: prompt
+  - name: orderRef
+    required: true
+    source: generated
+    description: Fresh order reference generated per run to avoid collisions.
+    refreshOnRerunAfterCommit: true
+runtimeOutputs:
+  - name: createdResourceUrl
+    source: finalUrl
+validation:
+  status: passed

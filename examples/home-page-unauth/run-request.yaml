@@ -1,0 +1,13 @@
+# Illustrative sample — see ../README.md.
+# The CLI owns the final qa-run-request/v1 envelope handed to the runtime.
+schemaVersion: qa-run-request/v1
+request:
+  alias: home-page-unauth
+  title: Home page renders for a signed-out visitor
+target:
+  baseUrl: "{{parameters.baseUrl}}"
+parameters:
+  baseUrl: "{{parameters.baseUrl}}"
+skills:
+  - id: skill.home-page-unauth
+    version: 1.0.0

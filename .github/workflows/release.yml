@@ -1,0 +1,51 @@
+# Release — build the distribution and publish it to PyPI via Trusted Publishing.
+#
+# Triggered by pushing a version tag (e.g. `v0.20.0`). The publish job uses
+# OIDC Trusted Publishing (no stored API token). One-time setup on PyPI:
+#   pypi.org > project > Publishing > add a GitHub publisher:
+#     owner=RigelRise, repo=verifysignal-spec, workflow=release.yml, environment=pypi
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build sdist + wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build and check the distribution
+        run: |
+          python -m pip install --upgrade build twine
+          python -m build
+          python -m twine check dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/verifysignal-spec/
+    permissions:
+      id-token: write # required for Trusted Publishing (OIDC)
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
