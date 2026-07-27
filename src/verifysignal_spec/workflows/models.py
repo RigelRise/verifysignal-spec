@@ -409,7 +409,7 @@ class BrowserTargetEnvironment:
     sourceStage: Literal["specify", "clarify", "plan", "implement", "validate", "run"] = "specify"
     sourceText: str | None = None
     secretClassification: Literal["non-secret", "sensitive", "unknown"] = "non-secret"
-    resolutionStatus: Literal["unresolved", "resolved", "stale", "contradictory"] = "unresolved"
+    resolutionStatus: Literal["suggested", "unresolved", "resolved", "stale", "contradictory"] = "unresolved"
     availabilityStatus: Literal["unchecked", "available", "unavailable", "blocked"] = "unchecked"
 
     def to_dict(self) -> dict[str, Any]:
@@ -1261,6 +1261,7 @@ class WorkflowRun:
     gateDecisions: list[WorkflowGateDecision] = field(default_factory=list)
     nextCommand: str | None = None
     resumeCommand: str | None = None
+    targetEnvironmentConfirmation: dict[str, Any] | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "WorkflowRun":
@@ -1279,6 +1280,11 @@ class WorkflowRun:
             gateDecisions=[WorkflowGateDecision.from_dict(item) for item in data.get("gateDecisions", [])],
             nextCommand=data.get("nextCommand"),
             resumeCommand=data.get("resumeCommand"),
+            targetEnvironmentConfirmation=(
+                dict(data["targetEnvironmentConfirmation"])
+                if isinstance(data.get("targetEnvironmentConfirmation"), dict)
+                else None
+            ),
         )
 
     def to_dict(self) -> dict[str, Any]:

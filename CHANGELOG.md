@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Hermetic Core update and test readiness
+
+- Added `core reset` and `core update`: updates remove local Core selection,
+  resolve the backend's latest verified managed runtime, and report any verified
+  managed fallback without silently reusing environment, `PATH`, or sibling
+  checkouts.
+- Made integration regeneration independent from Core discovery or execution.
+- Added a current-WorkflowRun browser target confirmation gate. Repository URLs
+  are suggestions until the user confirms or replaces them.
+- Added `credentials prepare` and explicit `--env-file` support for validate,
+  probe, and run, with declared-key allowlisting, strict non-executable parsing,
+  owner-only permissions, and verified Git exclusion.
+- Updated agent guidance and the identity-neutral authenticated-project dogfood
+  to prove the complete managed-update, target-confirmation, credential,
+  zero-resource probe, and single-resource run sequence.
+- Bumped VerifySignal Spec to `0.21.0`; no VerifySignal Core change is required.
+
 ### Open-source presentation and packaging
 
 - Rewrote the README to be concise and terminal-first: the real hexagon brand

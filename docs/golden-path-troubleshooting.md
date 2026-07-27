@@ -12,12 +12,18 @@ evidence, and provide the exact next action without weakening validation intent.
   scope, and keep the partial reason visible in recommendation output.
 - Explicit acceptance required: no candidate met all ideal first-run criteria.
   Explain the missing criteria and proceed only after the user accepts the risk.
-- Missing target: confirm a real browser target in clarify before planning or
-  running.
+- Missing or unconfirmed target: confirm the suggested browser target or provide
+  another one in clarify before planning, probing, or running. A URL inferred
+  from repository start instructions remains a suggestion and must be confirmed
+  again for each new WorkflowRun.
 - Unreachable target: start the app or correct the target URL, then rerun the
   first-run recommendation.
-- Unresolved credentials: use runtime credential references; never persist
-  credential values.
+- Unresolved credentials: inspect the exact declared environment keys. With
+  owner approval, prepare a project-local file using `verifysignal credentials
+  prepare <alias> --env-file .env.verifysignal.test.local`, fill it locally,
+  and pass the same explicit `--env-file` to validate, probe, and run. Never
+  source or implicitly read `.env`/`.env.local`, and never copy values into
+  managed artifacts.
 - Stale inventory or guidance: rerun repository understanding or regenerate the
   agent integration.
 - Managed runtime blocked: run `verifysignal init --here --integration codex` to

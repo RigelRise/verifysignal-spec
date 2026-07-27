@@ -164,11 +164,14 @@ class WorkflowPrerequisiteCheckContractTests(CliTestCase):
             "--json",
         ])
 
-        self.assertEqual(code, 0, err)
+        self.assertEqual(code, 2, err)
         payload = json.loads(out)
-        self.assertEqual(payload["status"], "missing")
+        self.assertEqual(payload["status"], "blocked")
         self.assertEqual(payload["nextCommand"], "/verifysignal-clarify profile-view-unauth")
-        self.assertIn("authoringQuestions", payload["missingArtifacts"][0])
+        self.assertEqual(
+            payload["blockers"][0]["code"],
+            "clarification.target-environment-confirmation-required",
+        )
 
     def test_ambiguous_alias_requires_selector(self) -> None:
         self.cli(["init", str(self.project), "--integration", "codex", "--json"])

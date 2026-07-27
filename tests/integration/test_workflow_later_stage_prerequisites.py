@@ -74,5 +74,8 @@ def test_browser_target_question_blocks_planning_before_executable_artifacts(tmp
     assert any(question.affects == "runtimeInputs.baseUrl" for question in record.authoringQuestions)
 
     blocked = check_prerequisites(tmp_path, "plan", alias="profile-view-unauth")
-    assert blocked["status"] == "missing"
+    assert blocked["status"] == "blocked"
     assert blocked["nextCommand"] == "/verifysignal-clarify profile-view-unauth"
+    assert blocked["blockers"][0]["code"] == (
+        "clarification.target-environment-confirmation-required"
+    )

@@ -4,6 +4,24 @@ from verifysignal_spec.workflows.stage_persistence import persist_stage
 from verifysignal_spec.workspace.repository import init_workspace, load_document
 
 
+def _confirm_target(project, alias: str, url: str = "https://app.example.test") -> None:
+    result = persist_stage(
+        project,
+        "clarify",
+        alias=alias,
+        payload={
+            "answers": [
+                {
+                    "questionId": "browser-target-environment",
+                    "answerSummary": url,
+                    "confirmationSource": "direct-user",
+                }
+            ]
+        },
+    )
+    assert result["status"] == "persisted"
+
+
 def test_persistence_rejects_secret_looking_payload_values(tmp_path) -> None:
     project = tmp_path / "repo"
     project.mkdir()
@@ -96,6 +114,7 @@ def test_plan_accepts_skills_alias_for_reusable_skills(tmp_path) -> None:
             "customSourceReason": "Fixture.",
         },
     )
+    _confirm_target(project, "search-people")
     result = persist_stage(
         project,
         "plan",
@@ -126,6 +145,7 @@ def test_plan_accepts_supporting_skills_alias_from_real_agent_payload(tmp_path) 
             "customSourceReason": "Fixture.",
         },
     )
+    _confirm_target(project, "search-people")
     result = persist_stage(
         project,
         "plan",
@@ -163,6 +183,7 @@ def test_plan_required_gate_intent_change_requires_recorded_reason(tmp_path) -> 
             "customSourceReason": "Fixture.",
         },
     )
+    _confirm_target(project, "search-people")
     base_plan = {
         "runRequest": ".verifysignal/run-requests/search-people.yaml",
         "reusableSkills": [".verifysignal/skills/validate-search-people.browser.md"],

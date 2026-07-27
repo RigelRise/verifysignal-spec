@@ -187,7 +187,13 @@ class WorkflowStagePersistenceContractTests(CliTestCase):
                         "environmentDependent": True,
                     }
                 ],
-                "answers": [],
+                "answers": [
+                    {
+                        "questionId": "browser-target-environment",
+                        "answerSummary": "Use https://app.example.test for this workflow.",
+                        "confirmationSource": "direct-user",
+                    }
+                ],
                 "blockingQuestionsResolved": False,
             },
         )
@@ -263,6 +269,7 @@ class WorkflowStagePersistenceContractTests(CliTestCase):
                     {
                         "questionId": "browser-target-environment",
                         "answerSummary": "Use https://app.example.test as the staging target.",
+                        "confirmationSource": "direct-user",
                     }
                 ],
             },

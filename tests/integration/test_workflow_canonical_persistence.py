@@ -21,7 +21,13 @@ class WorkflowCanonicalPersistenceIntegrationTests(CliTestCase):
             "clarify": {
                 "alias": "login",
                 "questions": [],
-                "answers": [],
+                "answers": [
+                    {
+                        "questionId": "browser-target-environment",
+                        "answerSummary": "Use https://app.example.test for this workflow.",
+                        "confirmationSource": "direct-user",
+                    }
+                ],
                 "blockingQuestionsResolved": True,
             },
             "plan": {

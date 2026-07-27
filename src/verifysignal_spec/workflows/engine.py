@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import re
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -13,7 +14,7 @@ from verifysignal_spec.commands import repair as repair_command
 from verifysignal_spec.commands import run as run_command
 from verifysignal_spec.commands import validate as validate_command
 from verifysignal_spec.workspace import layout
-from verifysignal_spec.workspace.models import ArtifactReference
+from verifysignal_spec.workspace.models import ArtifactReference, AuthoringQuestion
 from verifysignal_spec.workspace.repository import get_core_command, load_document, load_use_case, now_iso, save_use_case
 
 from .definitions import load_workflow_definition
@@ -70,9 +71,14 @@ def create_workflow_run(project: Path, goal: str, alias: str | None = None, inte
     alias = layout.ensure_path_safe_alias(alias or slug_from_goal(goal))
     integration = choose_integration(project, integration)
     ensure_workflow_workspace(project, alias)
-    create_or_load_use_case(project, alias, goal)
+    record = create_or_load_use_case(project, alias, goal)
+    _reset_target_confirmation_for_new_run(record)
+    save_use_case(project, record)
     initialized = initialize_understanding(project, alias, goal)
-    run_id = f"wf-{now_iso().replace('-', '').replace(':', '').replace('Z', '').replace('T', '-')}-{alias}"
+    run_id = (
+        f"wf-{now_iso().replace('-', '').replace(':', '').replace('Z', '').replace('T', '-')}"
+        f"-{uuid.uuid4().hex[:8]}-{alias}"
+    )
     run = WorkflowRun(
         runId=run_id,
         useCaseAlias=alias,
@@ -93,6 +99,53 @@ def create_workflow_run(project: Path, goal: str, alias: str | None = None, inte
     save_workflow_state(project, alias, state_document(project, alias, run, run.currentStage, run.status))
     link_workflow_reference(project, alias, run, run.status)
     return run
+
+
+def _reset_target_confirmation_for_new_run(record: Any) -> None:
+    workflow = dict(record.workflow or {})
+    decisions = [
+        dict(item)
+        for item in workflow.get("stageHandoffDecisions", [])
+        if isinstance(item, dict)
+    ]
+    prior_target: str | None = None
+    for decision in decisions:
+        if decision.get("key") == "browserTargetEnvironment":
+            prior_target = str(decision.get("valueSummary") or "").strip() or prior_target
+            decision["status"] = "stale"
+    if decisions:
+        workflow["stageHandoffDecisions"] = decisions
+        record.workflow = workflow
+    question = next(
+        (
+            item
+            for item in record.authoringQuestions
+            if item.id == "browser-target-environment"
+        ),
+        None,
+    )
+    if not question and prior_target:
+        question = AuthoringQuestion(
+            id="browser-target-environment",
+            prompt="Which target application environment should this browser validation run against?",
+            reason="Browser validation requires confirmation for each workflow run.",
+            affects="runtimeInputs.baseUrl",
+            requiresConfirmation=True,
+        )
+        record.authoringQuestions.append(question)
+    if question:
+        previous = (
+            str(question.answerSummary or "").strip()
+            or str((question.suggestedAnswer or {}).get("baseUrl") or "").strip()
+            or prior_target
+        )
+        question.status = "pending"
+        question.answerSummary = None
+        question.confirmationSource = None
+        question.requiresConfirmation = True
+        if previous:
+            question.suggestedAnswer = {"baseUrl": previous}
+            question.suggestionSource = "previous-workflow"
 
 
 def resume_workflow(project: Path, run_id: str) -> WorkflowRun:

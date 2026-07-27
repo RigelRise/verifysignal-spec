@@ -9,6 +9,7 @@ from verifysignal_spec.integrations.base import build_onboarding_guidance
 from verifysignal_spec.integrations.manifests import install_rendered_files, load_all_states, remove_integration, set_default
 from verifysignal_spec.integrations.mcp import merge_mcp_servers
 from verifysignal_spec.runtime.resolver import ensure_core_runtime
+from verifysignal_spec.workspace.repository import get_core_configuration
 from verifysignal_spec.workflows.core_setup import onboarding_core_status, run_core_setup
 
 INTEGRATIONS = {
@@ -83,8 +84,69 @@ def upgrade(project: Path, key: str | None = None, force: bool = False) -> dict[
     keys = [key] if key else list(INTEGRATIONS)
     results = []
     for item in keys:
-        results.append(install(project, item, force=force, default=False))
+        results.append(_upgrade_without_core_resolution(project, item, force=force))
     return {"upgraded": results}
+
+
+def _upgrade_without_core_resolution(project: Path, key: str, *, force: bool) -> dict[str, Any]:
+    integration = get_integration(key)
+    stored = get_core_configuration(project)
+    source = stored.get("coreCommandSource")
+    core_status = {
+        "statusMarker": "[NOT CHECKED]",
+        "summary": "Core readiness was not checked during integration upgrade.",
+        "source": source,
+        "coreCommand": None,
+        "selectedCandidate": None,
+        "nextAction": "Run `verifysignal core version --json` when runtime readiness is needed.",
+        "guideText": "Integration files were regenerated without resolving or changing the active Core runtime.",
+    }
+    state = install_rendered_files(
+        project,
+        integration.key,
+        integration.display_name,
+        integration.invoke_style,
+        integration.render_files(project, core_status=core_status),
+        force=force,
+        default=False,
+    )
+    mcp = None
+    servers = integration.mcp_servers()
+    if servers:
+        try:
+            mcp = merge_mcp_servers(project, servers)
+        except OSError as exc:
+            mcp = {
+                "path": ".mcp.json",
+                "skipped": True,
+                "reason": f"could not write .mcp.json: {exc}",
+                "nodeAvailable": False,
+            }
+    not_checked = {
+        "status": "not-checked",
+        "source": source,
+        "message": "Integration upgrade does not resolve or set up Core.",
+    }
+    guide_path = (
+        ".agents/VERIFYSIGNAL_ONBOARDING.md"
+        if integration.key == "codex"
+        else ".claude/VERIFYSIGNAL_ONBOARDING.md"
+    )
+    guide = build_onboarding_guidance(
+        integration_key=integration.key,
+        display_name=integration.display_name,
+        generated_guide_path=guide_path,
+        core_status=core_status,
+    ).to_dict()
+    return {
+        "integration": state.to_dict(),
+        "installedFiles": [item.path for item in state.managedFiles],
+        "coreSetup": dict(not_checked),
+        "runtime": dict(not_checked),
+        "managedRuntimeReadiness": dict(not_checked),
+        "onboardingGuide": guide,
+        "mcp": mcp,
+    }
 
 
 def remove(project: Path, key: str, force: bool = False) -> dict[str, Any]:

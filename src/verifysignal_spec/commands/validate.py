@@ -13,6 +13,12 @@ from verifysignal_spec.core.contracts import core_entitlement_blocker_code
 from verifysignal_spec.core.errors import CoreExecutionError, CoreIncompatibleError, CoreMissingError
 from verifysignal_spec.core.executable_contract import project_core_contract
 from verifysignal_spec.runtime.entitlement import load_receipt, receipt_status
+from verifysignal_spec.runtime.env_file import (
+    EnvironmentFileError,
+    declared_environment_keys,
+    load_environment_file,
+    resolve_environment_file_path,
+)
 from verifysignal_spec.runtime.models import RuntimeSetupBlocker
 from verifysignal_spec.runtime.resolver import ensure_core_runtime
 from verifysignal_spec.workflows.first_run import advance_guided_first_run_state
@@ -26,7 +32,7 @@ from verifysignal_spec.workflows.readiness import (
     validation_readiness,
 )
 from verifysignal_spec.workflows.runtime_readiness import evaluate_runtime_readiness
-from verifysignal_spec.workspace.repository import create_readiness_snapshot_from_validation, load_supersede_reviews, resolve_artifacts, update_validation
+from verifysignal_spec.workspace.repository import create_readiness_snapshot_from_validation, load_supersede_reviews, load_use_case, resolve_artifacts, update_validation
 from verifysignal_spec.workspace.validation import validate_side_effect_declaration
 
 
@@ -48,7 +54,14 @@ def _core_contract_for_coherence(project: Path, core_command: str | None) -> dic
         return None
 
 
-def run(project: Path, alias: str, runtime_readiness: bool = False, core_cmd: str | None = None, api_base_url: str | None = None) -> dict[str, Any]:
+def run(
+    project: Path,
+    alias: str,
+    runtime_readiness: bool = False,
+    core_cmd: str | None = None,
+    api_base_url: str | None = None,
+    env_file: Path | None = None,
+) -> dict[str, Any]:
     structural = structural_validation(project, alias=alias)
     if structural.status == "blocked":
         structural_dict = structural.to_dict()
@@ -68,6 +81,22 @@ def run(project: Path, alias: str, runtime_readiness: bool = False, core_cmd: st
             ]
             + detailed_blockers,
         }
+    environment_values: dict[str, str] = {}
+    if env_file:
+        try:
+            credential_record = load_use_case(project, alias)
+            environment_values = load_environment_file(
+                resolve_environment_file_path(project, env_file),
+                declared_keys=declared_environment_keys(credential_record),
+            )
+        except EnvironmentFileError as exc:
+            return {
+                "schemaVersion": WORKFLOW_VALIDATION_READINESS_SCHEMA,
+                "alias": alias,
+                "status": "blocked",
+                "blockers": [exc.blocker()],
+                "valuesIncluded": False,
+            }
     managed_runtime = ensure_core_runtime(project, explicit_core_cmd=core_cmd, api_base_url=api_base_url, context="validate")
     if managed_runtime.status != "ready":
         contract_blockers = managed_runtime_contract_blockers(managed_runtime)
@@ -220,9 +249,20 @@ def run(project: Path, alias: str, runtime_readiness: bool = False, core_cmd: st
         main_skill,
         skills,
         runtime_readiness=runtime_readiness,
+        env=environment_values,
         entitlement_receipt=_valid_receipt_path(),
     )
-    runtime_check = evaluate_runtime_readiness(project, alias, authoring_result=result, core_contract=core_contract) if runtime_readiness else None
+    runtime_check = (
+        evaluate_runtime_readiness(
+            project,
+            alias,
+            authoring_result=result,
+            core_contract=core_contract,
+            environment_values=environment_values,
+        )
+        if runtime_readiness
+        else None
+    )
     wrapped = {
         "alias": alias,
         "status": result.get("status", "error"),

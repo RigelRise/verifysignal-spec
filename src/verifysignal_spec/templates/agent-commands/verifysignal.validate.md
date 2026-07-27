@@ -21,6 +21,8 @@ Validate draft artifacts through VerifySignal Spec and the managed VerifySignal 
 - `runtime readiness verifies target resolution, target reachability, required runtime prerequisites, and Core authoring readiness` without executing the full browser validation flow.
 - Validation writes a project-local readiness snapshot when it can evaluate the alias. The snapshot is advisory current-readiness metadata for list/run preflight; it is not browser execution.
 - When credentials are missing, name the credential group and required runtime names only. If a credential readiness hint exists, show it as non-executable user guidance; do not read env files or execute the hint text.
+- If the developer approved a prepared test environment file, pass it
+  explicitly with `--env-file`. Do not look for `.env` or `.env.local`.
 - For stale understanding, distinguish discovery/specification from alias-scoped validate/run. Alias-scoped checks should use warning, validation, or structured confirmation based on use-case impact rather than automatically forcing `/verifysignal-understand`.
 - Treat validation output as static readiness: `authoredEvidenceCoverageStatus` means required gates have mapped authored evidence, and `fullBrowserFlowExecuted: false` means the browser flow has not run yet.
 - Report the selected main skill shown by validation output before discussing Core results.
