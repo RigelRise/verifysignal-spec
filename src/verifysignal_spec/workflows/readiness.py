@@ -25,12 +25,37 @@ from .models import (
 from .skill_execution_boundary import resolve_execution_boundary
 
 
+REQUIRED_AUTHORING_GUARDRAILS = {
+    "degenerate-text-target",
+    "unstable-generated-css-target",
+}
+
+
 def validation_readiness(project: Path, alias: str | None = None, core_cmd: str | None = None) -> dict[str, Any]:
     structural = structural_validation(project, alias=alias)
     core = core_readiness(project, core_cmd=core_cmd)
     contract_blockers = executable_contract_blockers(project, core.coreCommand, alias=alias) if core.status == "available" else []
     blockers = [*_blockers(structural, core), *contract_blockers]
     status = "blocked" if contract_blockers else _overall_status(structural, core)
+    runtime_readiness_command = f"verifysignal validate {alias or '<alias>'} --runtime-readiness --json"
+    blocker_recovery = next(
+        (
+            blocker.recoveryCommand
+            for blocker in blockers
+            if blocker.recoveryCommand
+        ),
+        None,
+    )
+    if status == "blocked":
+        readiness_summary = (
+            "Structural readiness is blocked and must be resolved first. "
+            "Protected runtime and entitlement readiness have not run."
+        )
+    else:
+        readiness_summary = (
+            "Structural readiness passed. "
+            "Protected runtime and entitlement readiness have not run."
+        )
     return {
         "schemaVersion": WORKFLOW_VALIDATION_READINESS_SCHEMA,
         "capabilitySchemaVersion": WORKFLOW_CAPABILITY_SCHEMA,
@@ -39,6 +64,12 @@ def validation_readiness(project: Path, alias: str | None = None, core_cmd: str 
         "stage": "validate",
         "alias": alias,
         "status": status,
+        "readinessScope": "structural",
+        "runtimeReadinessRequired": True,
+        "runtimeReadinessStatus": "not-run",
+        "runtimeReadinessCommand": runtime_readiness_command,
+        "nextAction": blocker_recovery or runtime_readiness_command,
+        "readinessSummary": readiness_summary,
         "structuralValidation": structural.to_dict(),
         "coreReadiness": core.to_dict(),
         "blockers": [blocker.to_dict() for blocker in blockers],
@@ -215,6 +246,28 @@ def executable_contract_blockers(
                 message=str(finding.get("message") or "Core executable contract is incompatible."),
                 repairable=False,
                 documentationRef="coreExecutableContract",
+            )
+        )
+    browser = projection.get("sections", {}).get("browserWorkflow", {})
+    warnings = browser.get("authoringWarnings", []) if isinstance(browser, dict) else []
+    blocking_warning_codes = {
+        str(item.get("code"))
+        for item in warnings
+        if isinstance(item, dict) and item.get("runtimeReadinessSeverity") == "blocking"
+    }
+    missing_guardrails = sorted(REQUIRED_AUTHORING_GUARDRAILS - blocking_warning_codes)
+    if missing_guardrails:
+        blockers.append(
+            ReadinessBlocker(
+                code="core.authoring-guardrails-outdated",
+                category="core-contract",
+                message=(
+                    "VerifySignal Core does not announce the required browser authoring guardrails: "
+                    f"{', '.join(missing_guardrails)}."
+                ),
+                recoveryCommand="verifysignal core setup --json",
+                repairable=False,
+                documentationRef="coreExecutableContract.sections.browserWorkflow.authoringWarnings",
             )
         )
     if alias:

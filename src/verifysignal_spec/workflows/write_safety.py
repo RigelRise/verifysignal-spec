@@ -6,7 +6,13 @@ from dataclasses import asdict
 from collections.abc import Callable
 from typing import Any
 
-from verifysignal_spec.workspace.models import ConfirmationSignalSupport, PolicyCompatibilityFinding, RerunPolicy, SupersedeReview
+from verifysignal_spec.workspace.models import (
+    ConfirmationSignalSupport,
+    PolicyCompatibilityFinding,
+    RerunPolicy,
+    SideEffectDeclaration,
+    SupersedeReview,
+)
 from verifysignal_spec.workflows.repair_recommendations import combine_rerun_decision
 
 
@@ -36,6 +42,17 @@ def normalize_side_effect_policy(policy: dict[str, Any] | None) -> tuple[dict[st
         return {}, []
 
     canonical = {key: value for key, value in policy.items() if key != "rules"}
+    side_effect_class = str(
+        canonical.get("class")
+        or canonical.get("sideEffectClass")
+        or "none"
+    )
+    if not canonical.get("mode"):
+        canonical["mode"] = (
+            "enforce"
+            if side_effect_class in {"write", "external-notification"}
+            else "observe"
+        )
     findings: list[dict[str, Any]] = []
     existing_allowed, allowed_findings = _normalize_rule_list(canonical.get("allowed"), "sideEffects.allowed")
     existing_forbidden, forbidden_findings = _normalize_rule_list(canonical.get("forbidden"), "sideEffects.forbidden")
@@ -122,6 +139,26 @@ def normalize_side_effect_policy(policy: dict[str, Any] | None) -> tuple[dict[st
 def policy_compatibility_findings(policy: dict[str, Any] | None) -> list[dict[str, Any]]:
     _canonical, findings = normalize_side_effect_policy(policy)
     return findings
+
+
+def canonical_side_effect_policy_snapshot(policy: dict[str, Any] | None) -> dict[str, Any]:
+    """Return the secret-safe semantic policy shape used to reconcile runs.
+
+    Ordering and owner-facing notes do not change runtime policy semantics, so
+    they cannot be used to bypass a prior observation review.
+    """
+
+    normalized, _findings = normalize_side_effect_policy(policy)
+    snapshot = SideEffectDeclaration.from_dict(normalized).to_dict()
+    snapshot.pop("notes", None)
+    for key in ("allowed", "forbidden", "confirmationSignals"):
+        values = snapshot.get(key)
+        if isinstance(values, list):
+            snapshot[key] = sorted(
+                (item for item in values if isinstance(item, dict)),
+                key=lambda item: json.dumps(item, sort_keys=True, separators=(",", ":")),
+            )
+    return snapshot
 
 
 def resolve_confirmation_signal_placeholders(

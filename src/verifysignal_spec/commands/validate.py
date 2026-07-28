@@ -12,7 +12,7 @@ from verifysignal_spec.core.adapter import CoreAdapter
 from verifysignal_spec.core.contracts import core_entitlement_blocker_code
 from verifysignal_spec.core.errors import CoreExecutionError, CoreIncompatibleError, CoreMissingError
 from verifysignal_spec.core.executable_contract import project_core_contract
-from verifysignal_spec.runtime.entitlement import load_receipt, receipt_status
+from verifysignal_spec.runtime.entitlement import api_base_url_for_runtime, valid_receipt_path
 from verifysignal_spec.runtime.models import RuntimeSetupBlocker
 from verifysignal_spec.runtime.resolver import ensure_core_runtime
 from verifysignal_spec.workflows.first_run import advance_guided_first_run_state
@@ -220,7 +220,9 @@ def run(project: Path, alias: str, runtime_readiness: bool = False, core_cmd: st
         main_skill,
         skills,
         runtime_readiness=runtime_readiness,
-        entitlement_receipt=_valid_receipt_path(),
+        entitlement_receipt=valid_receipt_path(
+            api_base_url_for_runtime(managed_runtime, api_base_url),
+        ),
     )
     runtime_check = evaluate_runtime_readiness(project, alias, authoring_result=result, core_contract=core_contract) if runtime_readiness else None
     wrapped = {
@@ -411,11 +413,3 @@ def _readiness_summary_text(summary: ValidationReadinessSummary) -> str:
         "Validation readiness did not pass. Review structural validation, authoring coherence, "
         "runtime readiness, and mapped authored evidence before running the browser flow."
     )
-
-
-def _valid_receipt_path() -> str | None:
-    receipt = load_receipt()
-    if not receipt:
-        return None
-    status = receipt_status(receipt)
-    return status.receiptPath if status.status == "valid" else None

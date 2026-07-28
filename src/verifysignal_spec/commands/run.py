@@ -13,7 +13,7 @@ from verifysignal_spec.commands.run_request_preparation import (
 from verifysignal_spec.core.adapter import CoreAdapter, core_status
 from verifysignal_spec.core.errors import CoreMissingError
 from verifysignal_spec.core.executable_contract import project_core_contract
-from verifysignal_spec.runtime.entitlement import load_receipt, receipt_status
+from verifysignal_spec.runtime.entitlement import api_base_url_for_runtime, valid_receipt_path
 from verifysignal_spec.runtime.resolver import ensure_core_runtime
 from verifysignal_spec.runtime.telemetry import ping_outcome, send_usage_ping
 from verifysignal_spec.workflows.browser_authoring import resolve_effective_profile_settings
@@ -44,6 +44,7 @@ from verifysignal_spec.workspace.models import PostCommitInterpretation
 from verifysignal_spec.workspace.validation import validate_side_effect_declaration
 from verifysignal_spec.workflows.write_safety import (
     build_rerun_approval_review,
+    canonical_side_effect_policy_snapshot,
     evaluate_rerun_decision as _evaluate_rerun_decision,
 )
 
@@ -165,6 +166,7 @@ def run(
         use_case.runtimeOutputs,
         [item.to_dict() for item in use_case.runtimeInputs],
         core_contract=core_contract,
+        runtime_outcomes=[use_case.lastRun] if isinstance(use_case.lastRun, dict) else [],
     )
     if any(item.get("severity") == "blocking" for item in side_effect_findings):
         blockers = [
@@ -333,7 +335,9 @@ def run(
         record=record,
         replay=replay,
         env=runtime_values,
-        entitlement_receipt=_valid_receipt_path(),
+        entitlement_receipt=valid_receipt_path(
+            api_base_url_for_runtime(managed_runtime, api_base_url),
+        ),
     )
     data = result.get("data", {})
     run_id = data.get("runId") or prepared_run_id
@@ -364,6 +368,8 @@ def run(
     skill_selection_status = _skill_selection_status(selected_main_skill, executed_skill)
     missing_required_gates = _missing_required_gates(gate_coverage_results)
     use_case_status = _use_case_status(core, spec_coverage_status)
+    if _side_effect_violations(side_effects) or str(post_commit.sideEffectStatus or "") == "violated":
+        use_case_status = "failed"
     profile_settings = profile_settings_model.to_dict()
     if not profile_settings.get("overrides"):
         profile_settings.pop("overrides", None)
@@ -390,6 +396,8 @@ def run(
         missing_required_gates,
         next_action,
         _run_request_parameters(run_request).get("baseUrl", ""),
+        side_effect_status=str(post_commit.sideEffectStatus or "not-applicable"),
+        side_effect_violations=_side_effect_violations(side_effects),
     )
     if first_run_payload:
         outcome_summary.update(
@@ -415,6 +423,7 @@ def run(
         partialCoverage=partial_coverage,
         runtimeContradictions=contradictions,
         repairRecommendations=repair_recommendations,
+        sideEffectPolicy=canonical_side_effect_policy_snapshot(use_case.sideEffects),
         sideEffects=side_effects if isinstance(side_effects, dict) else None,
         runtimeOutputs=runtime_outputs if isinstance(runtime_outputs, list) else [],
         resolvedRuntimeInputs=[
@@ -498,6 +507,9 @@ def _first_run_payload(
     missing_required_gates: list[str],
     next_action: str,
     target: str,
+    *,
+    side_effect_status: str = "not-applicable",
+    side_effect_violations: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     state = golden_path_state(project)
     if state.get("selectedCandidate") != alias or state.get("recommendationStatus") != "accepted":
@@ -507,6 +519,8 @@ def _first_run_payload(
         core_browser_status,
         spec_coverage_status,
         missing_required_gates,
+        side_effect_status=side_effect_status,
+        side_effect_violations=side_effect_violations,
         repaired=repaired,
     )
     stage_cards = [
@@ -526,6 +540,8 @@ def _first_run_payload(
         core_browser_status=core_browser_status,
         spec_coverage_status=spec_coverage_status,
         missing_required_gates=missing_required_gates,
+        side_effect_status=side_effect_status,
+        side_effect_violations=side_effect_violations,
         repaired=repaired,
         repair_feedback=list(state.get("repairFeedback", [])),
         stage_cards=stage_cards,
@@ -661,6 +677,16 @@ def _public_result_field(result: dict[str, Any], field_name: str) -> Any:
     if field_name in data:
         return data.get(field_name)
     return report.get(field_name)
+
+
+def _side_effect_violations(side_effects: Any) -> list[dict[str, Any]]:
+    if not isinstance(side_effects, dict):
+        return []
+    return [
+        item
+        for item in side_effects.get("violations", [])
+        if isinstance(item, dict)
+    ]
 
 
 def _prepared_run_request_path(run_request: Path, output_dir: Path, run_id: str, runtime_values: dict[str, str]) -> Path:
@@ -831,11 +857,3 @@ def _run_request_parameters(run_request: Path) -> dict[str, Any]:
             if value is not None and value != ""
         }
     return {}
-
-
-def _valid_receipt_path() -> str | None:
-    receipt = load_receipt()
-    if not receipt:
-        return None
-    status = receipt_status(receipt)
-    return status.receiptPath if status.status == "valid" else None

@@ -5,7 +5,7 @@ from typing import Any
 
 from verifysignal_spec.core.adapter import CoreAdapter
 from verifysignal_spec.integrations.manifests import sha256_text
-from verifysignal_spec.runtime.entitlement import load_receipt, receipt_status
+from verifysignal_spec.runtime.entitlement import api_base_url_for_runtime, valid_receipt_path
 from verifysignal_spec.runtime.resolver import ensure_core_runtime
 from verifysignal_spec.workflows.first_run import advance_guided_first_run_state
 from verifysignal_spec.workflows.models import RepairConfirmation, RepairFeedback, SafeRepairApplication
@@ -30,7 +30,15 @@ def run(project: Path, alias: str, from_report: str | None = None, approve: bool
         if managed_runtime.status != "ready":
             payload = _runtime_setup_blocked_payload(managed_runtime)
             return {"alias": alias, **payload, "repair": payload}
-        result = CoreAdapter(executable=managed_runtime.runtimeCommand, cwd=project).inspect_report(Path(from_report), entitlement_receipt=_valid_receipt_path())
+        result = CoreAdapter(
+            executable=managed_runtime.runtimeCommand,
+            cwd=project,
+        ).inspect_report(
+            Path(from_report),
+            entitlement_receipt=valid_receipt_path(
+                api_base_url_for_runtime(managed_runtime, api_base_url),
+            ),
+        )
         findings = list(result.get("data", {}).get("findings", []))
     else:
         findings = list(
@@ -284,14 +292,6 @@ def _update_first_run_repair_state(project: Path, alias: str, repair_feedback: l
             summary="Safe repair was applied; revalidation and rerun are required before reporting success.",
             status_marker="[REPAIR]",
         )
-
-
-def _valid_receipt_path() -> str | None:
-    receipt = load_receipt()
-    if not receipt:
-        return None
-    status = receipt_status(receipt)
-    return status.receiptPath if status.status == "valid" else None
 
 
 def _apply_safe_artifact_repair(project: Path, record: Any, recommendation: Any) -> dict[str, Any] | None:

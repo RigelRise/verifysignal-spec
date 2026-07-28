@@ -5,16 +5,19 @@ import re
 from pathlib import Path
 from typing import Any
 
-from verifysignal_spec.core.adapter import CoreAdapter
-from verifysignal_spec.core.errors import CoreExecutionError, CoreIncompatibleError, CoreMissingError
-from verifysignal_spec.core.executable_contract import ContractCompatibilityFinding, project_core_contract
+from verifysignal_spec.core.executable_contract import ContractCompatibilityFinding
+from verifysignal_spec.core.runtime_contract import (
+    CoreRuntimeResolutionError,
+    resolve_core_executable_contract,
+)
 from verifysignal_spec.commands import list as list_command
 from verifysignal_spec.commands import repair as repair_command
 from verifysignal_spec.commands import run as run_command
 from verifysignal_spec.commands import validate as validate_command
 from verifysignal_spec.workspace import layout
 from verifysignal_spec.workspace.models import ArtifactReference
-from verifysignal_spec.workspace.repository import get_core_command, load_document, load_use_case, now_iso, save_use_case
+from verifysignal_spec.workspace.repository import load_document, load_use_case, now_iso, save_use_case
+from verifysignal_spec.integrations.invocation import project_integration
 
 from .definitions import load_workflow_definition
 from .browser_authoring import browser_authoring_contract
@@ -50,19 +53,15 @@ def slug_from_goal(goal: str) -> str:
 
 
 def choose_integration(project: Path, requested: str | None = None) -> str:
-    if requested:
-        return requested
-    from verifysignal_spec.integrations.manifests import load_all_states
-
-    states = load_all_states(project).get("integrations", {})
-    for key, value in states.items():
-        if isinstance(value, dict) and value.get("default"):
-            return key
-    return "codex"
+    return project_integration(project, requested)
 
 
 def next_command(stage: str, alias: str, integration: str | None = None) -> str:
-    invocation = native_invocation(stage, "skill")
+    invocation = native_invocation(
+        stage,
+        "skill",
+        integration=integration or "codex",
+    )
     return f"{invocation} {alias}".strip()
 
 
@@ -88,7 +87,7 @@ def create_workflow_run(project: Path, goal: str, alias: str | None = None, inte
     )
     run.stageStates[0].status = "completed"
     run.stageStates[0].completedAt = now_iso()
-    run.stageStates[0].handoffSummary = "Repository understanding initialized."
+    run.stageStates[0].handoffSummary = "Product understanding initialized."
     save_workflow_run(project, run)
     save_workflow_state(project, alias, state_document(project, alias, run, run.currentStage, run.status))
     link_workflow_reference(project, alias, run, run.status)
@@ -214,7 +213,10 @@ def workflow_info(project: Path, workflow_id: str = WORKFLOW_ID, integration: st
         "stages": definition.stages,
         "gates": definition.gates,
         "supportedIntegrations": ["codex", "claude"],
-        "nativeCommands": {stage: native_invocation(stage, "skill") for stage in [*WORKFLOW_STAGES, "list"]},
+        "nativeCommands": {
+            stage: native_invocation(stage, "skill", integration=integration)
+            for stage in [*WORKFLOW_STAGES, "list"]
+        },
         "stagePayloadContracts": stage_contracts_payload(),
         "coreExecutableContract": core_contract,
         "browserAuthoringContract": browser_authoring_contract(core_contract=core_contract),
@@ -224,28 +226,18 @@ def workflow_info(project: Path, workflow_id: str = WORKFLOW_ID, integration: st
 
 
 def _core_executable_contract(project: Path) -> dict[str, Any]:
-    command = get_core_command(project)
-    adapter = CoreAdapter(executable=command, cwd=project)
     try:
-        compatibility = adapter.check_compatibility()
-        if not compatibility.compatible:
-            return _blocked_core_contract(
-                "core-contract.bootstrap-incompatible",
-                compatibility.message,
-                contract_version=compatibility.contractVersion,
-                core_version=compatibility.verifysignalVersion,
-            )
-        raw = adapter.contracts()
-        return _apply_public_redaction_policy(
-            project_core_contract(
-                raw,
-                runtime_identity=adapter.executable,
-                core_version=compatibility.verifysignalVersion,
-                public_contract_version=compatibility.contractVersion,
-            )
+        contract, _runtime = resolve_core_executable_contract(
+            project,
+            context="workflow-info",
         )
-    except (CoreMissingError, CoreIncompatibleError, CoreExecutionError) as exc:
-        return _blocked_core_contract("core-contract.discovery-failed", str(exc))
+        return _apply_public_redaction_policy(contract)
+    except CoreRuntimeResolutionError as exc:
+        return _blocked_core_contract(
+            "core-contract.discovery-failed",
+            str(exc),
+            recovery_action=exc.recovery_action,
+        )
     except Exception as exc:
         return _blocked_core_contract("core-contract.discovery-error", str(exc))
 
@@ -256,8 +248,14 @@ def _blocked_core_contract(
     *,
     contract_version: str | None = None,
     core_version: str | None = None,
+    recovery_action: str | None = None,
 ) -> dict[str, Any]:
-    finding = ContractCompatibilityFinding(code=code, message=message, contractSection="contracts").to_dict()
+    finding = ContractCompatibilityFinding(
+        code=code,
+        message=message,
+        contractSection="contracts",
+        **({"recoveryAction": recovery_action} if recovery_action else {}),
+    ).to_dict()
     return {
         "source": "core-public-contract",
         "runtimeIdentity": None,

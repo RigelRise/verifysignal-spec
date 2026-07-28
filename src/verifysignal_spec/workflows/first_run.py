@@ -30,6 +30,8 @@ def classify_first_run_status(
     spec_coverage_status: str,
     missing_required_gates: list[str],
     *,
+    side_effect_status: str = "not-applicable",
+    side_effect_violations: list[dict[str, Any]] | None = None,
     repaired: bool = False,
 ) -> tuple[str, bool]:
     if core_browser_status in {"blocked", "error"}:
@@ -38,6 +40,8 @@ def classify_first_run_status(
         return "failed", False
     if spec_coverage_status not in {"complete", "passed"} or missing_required_gates:
         return "incomplete", False
+    if side_effect_violations or side_effect_status not in {"not-applicable", "not-observed"}:
+        return "failed", False
     return ("repaired-passed" if repaired else "passed"), True
 
 
@@ -96,7 +100,7 @@ def score_first_run_candidates(
                 sourceInventoryItems=list(first_run_candidate.sourceInventoryItems),
             )
         )
-    scored.sort(key=lambda item: (item.blockers != [], -item.score, item.candidateAlias))
+    scored.sort(key=lambda item: (item.blockers != [], -item.score))
     for index, item in enumerate(scored, start=1):
         item.rank = index
     return scored
@@ -105,8 +109,20 @@ def score_first_run_candidates(
 def evaluate_first_run_ideal_criteria(candidate: FirstRunCandidate) -> FirstRunIdealCriteria:
     text = _candidate_text(candidate)
     requirements = " ".join(candidate.knownRuntimeRequirements).lower()
-    credential_required = any(_requires_credential(item) for item in [text, requirements])
-    read_only = not any(term in text for term in _MUTATING_TERMS)
+    credential_required = (
+        candidate.groundingStatus == "authentication-required"
+        or any(_requires_credential(item) for item in [text, requirements])
+    )
+    if candidate.sideEffectClass == "none":
+        read_only = True
+    elif candidate.sideEffectClass in {
+        "write",
+        "external-notification",
+        "unknown",
+    }:
+        read_only = False
+    else:
+        read_only = not any(term in text for term in _MUTATING_TERMS)
     single_surface = bool(candidate.surface.strip()) and not any(sep in candidate.surface for sep in ["->", ",", "|"]) and "*" not in candidate.surface
     stable_rendered = _simple_rendered_evidence(candidate) and not _data_dependent(
         [requirements],
@@ -114,7 +130,15 @@ def evaluate_first_run_ideal_criteria(candidate: FirstRunCandidate) -> FirstRunI
     )
     low_external = not any(term in f"{text} {requirements}" for term in _EXTERNAL_DEPENDENCY_TERMS)
     public = not credential_required and not any(term in text for term in ["protected", "sign-in", "login"])
-    safe = public and read_only and single_surface and stable_rendered and low_external
+    safe = (
+        public
+        and read_only
+        and single_surface
+        and stable_rendered
+        and low_external
+        and candidate.sideEffectClass == "none"
+        and candidate.groundingStatus == "observed"
+    )
     return FirstRunIdealCriteria(
         publicOrUnauthenticated=public,
         readOnly=read_only,
@@ -138,12 +162,13 @@ def build_understanding_onboarding_preparation(*, stage: str = "specify") -> dic
     next_command = "/verifysignal-understand"
     resume_command = f"/verifysignal-{stage} (resume after `verifysignal workflow check {stage} --json` passes)"
     summary = (
-        "Safe repository understanding is required before VerifySignal can recommend a reliable first run. "
-        "The agent should inspect public project structure and non-sensitive context, persist understanding, then resume this stage."
+        "Safe product understanding is required before VerifySignal can recommend a reliable first run. "
+        "The agent should inspect an available repository or a user-approved live URL, persist secret-safe understanding, "
+        "then resume this stage."
     )
     stage_card = build_stage_card(
         stage_id="understanding-auto-prepare",
-        title="Prepare Repository Understanding",
+        title="Prepare Product Understanding",
         status_marker="[RUNNING]",
         summary="Safe understanding can be prepared automatically before first-run selection.",
         why_it_matters="The first recommendation must be grounded in real user-facing surfaces, not guessed from the latest branch.",
@@ -158,7 +183,7 @@ def build_understanding_onboarding_preparation(*, stage: str = "specify") -> dic
         "nextCommand": next_command,
         "resumeCommand": resume_command,
         "safetyBoundaries": [
-            "Inspect public project structure, docs, source routes, and non-sensitive configuration only.",
+            "Inspect public project structure and non-sensitive source context, or map a user-approved live URL within an explicit read-safe scope.",
             "Do not read local env files, credential stores, cookies, browser storage, or secret-bearing configuration without explicit approval.",
         ],
         "stageCards": [stage_card],
@@ -204,6 +229,8 @@ def build_first_run_recommendation(project: Path) -> FirstRunRecommendation:
         "rationale": top.rationale,
         "sourceInventoryItems": candidate.sourceInventoryItems,
         "knownRuntimeRequirements": candidate.knownRuntimeRequirements,
+        "sideEffectClass": candidate.sideEffectClass,
+        "groundingStatus": candidate.groundingStatus,
         "idealCriteriaMet": list(top.idealCriteriaMet),
         "idealCriteriaMissing": list(top.idealCriteriaMissing),
         "requiresExplicitAcceptance": explicit_required,
@@ -258,8 +285,23 @@ def build_first_run_recommendation(project: Path) -> FirstRunRecommendation:
 
 
 def accept_first_run(project: Path, alias: str) -> dict[str, Any]:
-    record = load_use_case(project, alias)
-    next_action = f"verifysignal author {alias} --json"
+    candidate_details = _candidate_details_from_context(project, alias)
+    record = None
+    try:
+        record = load_use_case(project, alias)
+    except FileNotFoundError:
+        if candidate_details is None:
+            raise FileNotFoundError(
+                f"First-run candidate not found in product context or use cases: {alias}"
+            )
+    if candidate_details is None and record is not None:
+        candidate_details = {
+            "alias": record.alias,
+            "surface": record.targetSurface,
+            "behavior": record.description,
+        }
+    candidate_details = candidate_details or {"alias": alias}
+    next_action = f"/verifysignal-specify {alias}"
     state = GuidedFirstRunState(
         selectedCandidate=alias,
         stage="accepted",
@@ -267,22 +309,21 @@ def accept_first_run(project: Path, alias: str) -> dict[str, Any]:
         firstRunStatus="not-started",
         resumeCommand=next_action,
         stageCards=[acceptance_card(alias, next_action=next_action)],
-        ownedArtifacts=_owned_artifacts_for_record(record),
+        ownedArtifacts=(
+            _owned_artifacts_for_record(record) if record is not None else []
+        ),
         status="accepted",
     ).to_dict()
     state["acceptedAt"] = state["stageStartedAt"]
     state["recommendationStatus"] = "accepted"
+    state["selectedCandidateDetails"] = candidate_details
     _write_state(project, state)
     return {
         "schemaVersion": GUIDED_FIRST_RUN_SCHEMA,
         "status": "accepted",
         "stage": "accepted",
         "selectedCandidate": alias,
-        "selectedCandidateDetails": {
-            "alias": record.alias,
-            "surface": record.targetSurface,
-            "behavior": record.description,
-        },
+        "selectedCandidateDetails": candidate_details,
         "firstRunStatus": "not-started",
         "resumeCommand": next_action,
         "stageCards": state["stageCards"],
@@ -417,6 +458,18 @@ def summarize_evidence(value: str) -> str:
 
 
 def resolve_target_status(context: dict[str, Any]) -> tuple[str, str | None]:
+    target_environment = context.get("targetEnvironment")
+    if isinstance(target_environment, dict):
+        value = str(target_environment.get("locator") or "")
+        reachability = str(target_environment.get("reachabilityStatus") or "unknown")
+        if value:
+            if looks_secret(value, "target"):
+                return "missing", None
+            if _looks_fake_or_demo(value):
+                return "missing", None
+            if reachability == "unreachable" or _looks_unreachable(value):
+                return "unreachable", summarize_target(value)
+            return "resolved", summarize_target(value)
     for item in context.get("knownRuntimeRequirements", []):
         if not isinstance(item, dict):
             continue
@@ -611,6 +664,49 @@ def _owned_artifacts_for_record(record: Any) -> list[str]:
     return paths
 
 
+def _candidate_details_from_context(
+    project: Path, alias: str
+) -> dict[str, Any] | None:
+    context = load_document(layout.product_context_path(project), default={}) or {}
+    inventory = (
+        context.get("coverageInventory")
+        if isinstance(context.get("coverageInventory"), dict)
+        else {}
+    )
+    candidates = inventory.get("candidateUseCases", [])
+    if not isinstance(candidates, list):
+        return None
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        candidate_alias = str(
+            candidate.get("alias") or candidate.get("candidateAlias") or ""
+        )
+        if candidate_alias != alias:
+            continue
+        return {
+            key: candidate[key]
+            for key in [
+                "alias",
+                "surface",
+                "behavior",
+                "sourceInventoryItems",
+                "rationale",
+                "confidence",
+                "inventorySourceStatus",
+                "priority",
+                "requiresEnvironment",
+                "knownRuntimeRequirements",
+                "productSignalRefs",
+                "provenance",
+                "sideEffectClass",
+                "groundingStatus",
+            ]
+            if key in candidate
+        }
+    return None
+
+
 def _stage_from_first_run_status(first_run_status: str) -> str:
     return {
         "passed": "passed",
@@ -637,7 +733,7 @@ def _resume_command_for_status(alias: str, first_run_status: str) -> str:
 
 def _resume_command_for_stage(alias: str, stage: str) -> str:
     return {
-        "authoring": f"verifysignal author {alias} --json",
+        "authoring": f"/verifysignal-specify {alias}",
         "validating": f"verifysignal validate {alias} --runtime-readiness --json",
         "running": f"verifysignal run {alias} --json",
         "repairing": f"verifysignal repair {alias} --json",

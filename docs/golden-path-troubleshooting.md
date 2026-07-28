@@ -5,8 +5,8 @@ evidence, and provide the exact next action without weakening validation intent.
 
 ## Common Blockers
 
-- Missing understanding: run safe repository understanding from the
-  auto-prepare metadata and resume the original specify flow. Do not ask the
+- Missing understanding: run safe product understanding from an available
+  repository or user-approved live URL and resume the original specify flow. Do not ask the
   user to restart manually unless the host cannot continue.
 - Partial inventory: continue understanding with `--scope continue` or a focused
   scope, and keep the partial reason visible in recommendation output.
@@ -18,7 +18,7 @@ evidence, and provide the exact next action without weakening validation intent.
   first-run recommendation.
 - Unresolved credentials: use runtime credential references; never persist
   credential values.
-- Stale inventory or guidance: rerun repository understanding or regenerate the
+- Stale inventory or guidance: rerun product understanding or regenerate the
   agent integration.
 - Managed runtime blocked: run `verifysignal init --here --integration codex` to
   complete email-token unlock and managed runtime acquisition. Use `verifysignal

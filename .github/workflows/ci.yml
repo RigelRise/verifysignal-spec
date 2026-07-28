@@ -19,6 +19,23 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
+      - run: npm install --global @openai/codex@0.145.0
+      - run: npm install --global @anthropic-ai/claude-code@2.1.220
       - run: python -m pip install -e .
       - run: python -m pip install pytest
+      - run: verifysignal integration setup-playwright-mcp --json
+        env:
+          VERIFYSIGNAL_PLAYWRIGHT_MCP_CACHE_DIR: ${{ runner.temp }}/verifysignal-playwright-mcp
       - run: python -m pytest -q
+        env:
+          # PR gate: install the exact pinned provider, start it through the
+          # generated CLI launcher, and require MCP initialize + tools/list.
+          VERIFYSIGNAL_RUN_REAL_MCP_TESTS: "1"
+          # Start Codex from a clean user config and fresh untrusted project,
+          # with no launch overrides, and require the user-scoped Playwright
+          # server plus its browser tools.
+          VERIFYSIGNAL_RUN_REAL_CODEX_TESTS: "1"
+          # Register through Claude's public user-scope MCP command, then
+          # discover the server from a second clean project.
+          VERIFYSIGNAL_RUN_REAL_CLAUDE_TESTS: "1"
+          VERIFYSIGNAL_PLAYWRIGHT_MCP_CACHE_DIR: ${{ runner.temp }}/verifysignal-playwright-mcp

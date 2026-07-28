@@ -1,6 +1,8 @@
 {
   "schemaVersion": "verifysignal-spec-product-context/v1",
   "productName": "",
+  "workspaceKind": "repository",
+  "understandingMode": "repository",
   "repositorySummary": "",
   "localStartInstructions": "",
   "safeInspectionPaths": ["README.md", "src/", "app/", "tests/"],

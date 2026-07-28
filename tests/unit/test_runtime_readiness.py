@@ -5,7 +5,14 @@ from verifysignal_spec.workspace.models import ArtifactReference, RuntimeInputRe
 from verifysignal_spec.workspace.repository import init_workspace, save_document, save_use_case
 
 
-def _workspace_with_run_request(tmp_path, parameters: dict[str, str], *, workflow=None) -> None:
+def _workspace_with_run_request(
+    tmp_path,
+    parameters: dict[str, str],
+    *,
+    workflow=None,
+    side_effects=None,
+    last_run=None,
+) -> None:
     init_workspace(tmp_path)
     run_request = ".verifysignal/run-requests/profile.yaml"
     skill = ".verifysignal/skills/profile.browser.md"
@@ -31,6 +38,8 @@ def _workspace_with_run_request(tmp_path, parameters: dict[str, str], *, workflo
             skills=[ArtifactReference(path=skill, kind="skill", id="skill.profile")],
             runtimeInputs=[RuntimeInputRequirement(name="baseUrl", required=True)],
             workflow=workflow,
+            sideEffects=side_effects,
+            lastRun=last_run,
         ),
     )
 
@@ -78,6 +87,47 @@ def test_runtime_readiness_passes_without_full_browser_execution(tmp_path) -> No
     assert readiness.targetReachabilityStatus == "reachable"
     assert readiness.authoringReadinessStatus == "passed"
     assert readiness.fullBrowserFlowExecuted is False
+
+
+def test_runtime_readiness_reconciles_the_last_read_only_side_effect_outcome(tmp_path) -> None:
+    policy = {
+        "class": "none",
+        "mode": "observe",
+        "allowed": [],
+        "forbidden": [],
+    }
+    _workspace_with_run_request(
+        tmp_path,
+        {"baseUrl": "https://app.example.test"},
+        side_effects=policy,
+        last_run={
+            "runId": "run-policy-violation",
+            "sideEffectPolicy": policy,
+            "sideEffects": {
+                "violations": [
+                    {
+                        "code": "side-effect-class-none-violation",
+                        "severity": "warning",
+                        "message": "Unexpected POST",
+                    }
+                ]
+            },
+            "postCommitInterpretation": {
+                "sideEffectStatus": "violated",
+                "rerunRisk": "blocked",
+            },
+        },
+    )
+
+    readiness = evaluate_runtime_readiness(
+        tmp_path,
+        "profile",
+        authoring_result={"status": "passed"},
+        reachability_checker=lambda _locator: True,
+    )
+
+    assert readiness.status == "blocked"
+    assert "runtime.side-effect-observation-review-required" in readiness.findingIds
 
 
 def test_runtime_readiness_flags_empty_target_after_stage_handoff_resolution(tmp_path) -> None:

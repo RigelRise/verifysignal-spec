@@ -42,6 +42,131 @@ def test_read_only_declaration_does_not_require_write_metadata() -> None:
     assert findings == []
 
 
+def test_read_only_declaration_blocks_when_the_unchanged_policy_has_an_unreviewed_violation() -> None:
+    declaration = {
+        "class": "none",
+        "mode": "observe",
+        "allowed": [],
+        "forbidden": [],
+    }
+    findings = validate_side_effect_declaration(
+        declaration,
+        core_contract=_supported_contract(),
+        runtime_outcomes=[
+            {
+                "runId": "run-policy-violation",
+                "sideEffectPolicy": declaration,
+                "sideEffects": {
+                    "policy": {"class": "none", "mode": "observe"},
+                    "violations": [
+                        {
+                            "code": "side-effect-class-none-violation",
+                            "severity": "warning",
+                            "message": "Unexpected POST",
+                        }
+                    ],
+                },
+                "postCommitInterpretation": {
+                    "sideEffectStatus": "violated",
+                    "rerunRisk": "blocked",
+                },
+            }
+        ],
+    )
+
+    assert any(
+        item["code"] == "side-effect-observation-review-required"
+        and item["severity"] == "blocking"
+        for item in findings
+    )
+
+
+def test_read_only_declaration_allows_rerun_after_an_explicit_policy_change_but_requires_clean_evidence() -> None:
+    previous_policy = {
+        "class": "none",
+        "mode": "observe",
+        "allowed": [],
+        "forbidden": [],
+    }
+    current_policy = {
+        "class": "none",
+        "mode": "observe",
+        "allowed": [
+            {
+                "id": "allow-analytics",
+                "kind": "network",
+                "methods": ["POST"],
+                "urlContains": "/collect",
+                "timing": "any",
+            }
+        ],
+        "forbidden": [],
+    }
+    findings = validate_side_effect_declaration(
+        current_policy,
+        core_contract=_supported_contract(),
+        runtime_outcomes=[
+            {
+                "runId": "run-policy-violation",
+                "sideEffectPolicy": previous_policy,
+                "sideEffects": {
+                    "violations": [
+                        {
+                            "code": "side-effect-class-none-violation",
+                            "severity": "warning",
+                            "message": "Unexpected POST",
+                        }
+                    ]
+                },
+                "postCommitInterpretation": {
+                    "sideEffectStatus": "violated",
+                    "rerunRisk": "blocked",
+                },
+            }
+        ],
+    )
+
+    assert not any(item["severity"] == "blocking" for item in findings)
+    assert any(
+        item["code"] == "side-effect-policy-changed-rerun-required"
+        and item["severity"] == "warning"
+        for item in findings
+    )
+
+
+def test_clean_read_only_run_supersedes_an_older_policy_violation() -> None:
+    declaration = {
+        "class": "none",
+        "mode": "observe",
+        "allowed": [],
+        "forbidden": [],
+    }
+    findings = validate_side_effect_declaration(
+        declaration,
+        core_contract=_supported_contract(),
+        runtime_outcomes=[
+            {
+                "runId": "run-clean",
+                "sideEffectPolicy": declaration,
+                "sideEffects": {"violations": []},
+                "postCommitInterpretation": {
+                    "sideEffectStatus": "not-observed",
+                    "rerunRisk": "safe",
+                },
+            }
+        ],
+    )
+
+    assert not any(
+        item["code"]
+        in {
+            "side-effect-observation-review-required",
+            "side-effect-policy-changed-rerun-required",
+        }
+        for item in findings
+    )
+
+
 def test_write_requires_commit_step_rerun_policy_and_local_envelope() -> None:
     declaration = SideEffectDeclaration.from_dict({"class": "write"})
 

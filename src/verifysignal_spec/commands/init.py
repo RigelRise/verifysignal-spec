@@ -14,6 +14,7 @@ from verifysignal_spec.runtime.resolver import ensure_core_runtime
 from verifysignal_spec.workflows.models import CoreCandidateAttempt, CoreSetupResult
 from verifysignal_spec.workflows.core_setup import run_core_setup
 from verifysignal_spec.workspace.repository import init_workspace
+from verifysignal_spec.integrations.invocation import native_invocation
 
 CORE_SETUP_ATTEMPT_SOURCES = {"explicit", "workspace", "env", "path", "ancestor-sibling"}
 
@@ -35,8 +36,20 @@ def run(project: Path, integration: str, force: bool = False, core_cmd: str | No
         integration=integration,
         context="init",
     )
-    if runtime.status != "ready" and email and not token and sys.stdin.isatty():
-        token = _prompt("VerifySignal email unlock token: ").strip() or None
+    delivery_pending = (
+        runtime.entitlement.status == "token-delivery-pending"
+    )
+    if (
+        runtime.status != "ready"
+        and delivery_pending
+        and email
+        and not token
+        and sys.stdin.isatty()
+    ):
+        token = _prompt(
+            "VerifySignal email unlock token "
+            "(press Enter if it did not arrive): "
+        ).strip() or None
         if token:
             runtime = ensure_core_runtime(
                 project,
@@ -56,6 +69,27 @@ def run(project: Path, integration: str, force: bool = False, core_cmd: str | No
         core_setup = _core_setup_from_blocked_runtime(runtime)
     workspace = init_workspace(project, force=False, core_cmd=workspace_core_cmd, api_base_url=persisted_api_base_url)
     installed = install_integration(project, integration, force=force, default=True)
+    mcp = installed.get("mcp")
+    mcp_runtime = (
+        mcp.get("runtime")
+        if isinstance(mcp, dict)
+        else None
+    )
+    mcp_registration = (
+        mcp.get("userRegistration")
+        if isinstance(mcp, dict)
+        else None
+    )
+    mcp_blocked = bool(
+        (
+            isinstance(mcp_runtime, dict)
+            and mcp_runtime.get("status") == "blocked"
+        )
+        or (
+            isinstance(mcp_registration, dict)
+            and mcp_registration.get("status") == "blocked"
+        )
+    )
     if runtime.status == "ready":
         core = readiness(executable=runtime.runtimeCommand, cwd=project)
     else:
@@ -67,16 +101,38 @@ def run(project: Path, integration: str, force: bool = False, core_cmd: str | No
             "incompatibleOperations": runtime.incompatibleOperations,
         }
     return {
-        "status": "passed" if runtime.status == "ready" else "blocked",
+        "status": (
+            "passed"
+            if runtime.status == "ready" and not mcp_blocked
+            else "blocked"
+        ),
         "workspacePath": str(project / ".verifysignal"),
         "workspace": workspace,
         "integration": installed["integration"]["key"],
         "installedFiles": installed["installedFiles"],
+        "mcp": mcp,
         "coreSetup": core_setup.to_dict(),
         "runtime": runtime.to_dict(),
         "managedRuntimeReadiness": runtime.to_dict(),
         "core": core,
-        "next": "Run `/verifysignal-specify` in your agent, or use `verifysignal workflow run verifysignal-use-case --goal \"<behavior>\"`.",
+        "next": (
+            str(
+                (
+                    mcp_registration
+                    if (
+                        isinstance(mcp_registration, dict)
+                        and mcp_registration.get("status") == "blocked"
+                    )
+                    else mcp_runtime
+                ).get("nextAction")
+            )
+            if mcp_blocked
+            else (
+                f"Run `{native_invocation('specify', integration)}` in your "
+                "agent, or use `verifysignal workflow run "
+                'verifysignal-use-case --goal "<behavior>"`.'
+            )
+        ),
     }
 
 

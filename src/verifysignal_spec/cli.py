@@ -239,6 +239,16 @@ def create_parser(prog: str | None = None) -> argparse.ArgumentParser:
     upgrade.add_argument("--project", default=".")
     upgrade.add_argument("--force", action="store_true")
     upgrade.add_argument("--json", action="store_true")
+    integration_sub.add_parser(
+        "playwright-mcp",
+        help="Run the managed isolated Playwright MCP stdio server",
+    )
+    setup_playwright_mcp = integration_sub.add_parser(
+        "setup-playwright-mcp",
+        help="Install the pinned Playwright MCP provider for offline startup",
+    )
+    setup_playwright_mcp.add_argument("--project", default=".")
+    setup_playwright_mcp.add_argument("--json", action="store_true")
 
     return parser
 
@@ -262,6 +272,11 @@ def main(argv: list[str] | None = None) -> int:
     if not args.command:
         parser.print_help()
         return EXIT_SUCCESS
+    if (
+        args.command == "integration"
+        and args.integration_command == "playwright-mcp"
+    ):
+        return integration_command.playwright_mcp()
     try:
         result, json_output = dispatch(args)
         emit(result, json_output=json_output)
@@ -272,6 +287,36 @@ def main(argv: list[str] | None = None) -> int:
     except (CoreMissingError, CoreIncompatibleError) as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_CORE_FAILED
+    except PermissionError:
+        payload = {
+            "schemaVersion": "verifysignal-spec-cli-error/v1",
+            "status": "blocked",
+            "blockers": [
+                {
+                    "code": "workspace.permission-denied",
+                    "severity": "blocker",
+                    "category": "environment",
+                    "message": (
+                        "VerifySignal could not write required project "
+                        "artifacts."
+                    ),
+                    "repairable": False,
+                }
+            ],
+            "nextAction": (
+                "Grant write access to the target project and rerun the "
+                "same command."
+            ),
+        }
+        if getattr(args, "json", False):
+            print(json.dumps(payload, indent=2))
+        else:
+            print(
+                f"{payload['blockers'][0]['message']} "
+                f"{payload['nextAction']}",
+                file=sys.stderr,
+            )
+        return EXIT_VALIDATION_FAILED
     except FileNotFoundError as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_VALIDATION_FAILED
@@ -336,11 +381,19 @@ def dispatch(args: argparse.Namespace) -> tuple[dict[str, Any], bool]:
         ), args.json
     if command == "core":
         from .core.adapter import CoreAdapter
-        from .workspace.repository import get_core_command
+        from .core.runtime_contract import resolve_core_runtime
 
         project = Path(args.project).resolve()
         if args.core_command == "version":
-            return CoreAdapter(executable=args.core_cmd or get_core_command(project), cwd=project).version(), args.json
+            runtime = resolve_core_runtime(
+                project,
+                explicit_core_cmd=args.core_cmd,
+                context="core-version",
+            )
+            return CoreAdapter(
+                executable=runtime.runtimeCommand,
+                cwd=project,
+            ).version(), args.json
         if args.core_command == "setup":
             return core_setup_command.run(project, core_cmd=args.core_cmd, persist=not args.no_persist), args.json
     if command == "policy":
@@ -396,18 +449,61 @@ def dispatch(args: argparse.Namespace) -> tuple[dict[str, Any], bool]:
             return integration_command.upgrade(project, args.key, force=args.force), args.json
         if args.integration_command == "remove":
             return integration_command.remove(project, args.key, force=args.force), args.json
+        if args.integration_command == "setup-playwright-mcp":
+            return integration_command.setup_playwright_mcp(), args.json
     raise ValueError(f"Unsupported command: {command}")
 
 
 def _emit_mcp(mcp: dict[str, Any] | None) -> None:
     if not mcp:
         return
+    path = str(mcp.get("path") or "the project MCP configuration")
+    integration = str(mcp.get("integrationKey") or "claude")
     if mcp.get("skipped"):
-        print(f"Live authoring: .mcp.json left untouched ({mcp.get('reason', 'not safely mergeable')}).")
+        print(
+            f"Live authoring: {path} left untouched "
+            f"({mcp.get('reason', 'not safely mergeable')})."
+        )
         return
-    print("Live authoring: Playwright MCP written to .mcp.json — approve it in Claude Code on first session.")
+    if mcp.get("unchanged"):
+        print(f"Live authoring: {path} left unchanged.")
+    else:
+        print(
+            f"Live authoring: compatibility fallback written to {path}."
+        )
+    for warning in mcp.get("warnings", []):
+        print(f"  warning: {warning}")
     if not mcp.get("nodeAvailable", True):
-        print("  warning: Node/npx not found — install Node so the Playwright MCP can run.")
+        print("  warning: Node/npm not found — install Node so the Playwright MCP can be prepared.")
+    runtime = mcp.get("runtime")
+    if isinstance(runtime, dict):
+        if runtime.get("status") == "ready":
+            print(
+                "  provider: pinned Playwright MCP is installed and "
+                "offline-ready."
+            )
+        elif runtime.get("status") == "blocked":
+            print(
+                "  provider: setup blocked; run "
+                f"`{runtime.get('nextAction')}` before starting the agent."
+            )
+    registration = mcp.get("userRegistration")
+    if isinstance(registration, dict):
+        if registration.get("status") == "ready":
+            state = (
+                "already registered"
+                if registration.get("unchanged")
+                else "registered"
+            )
+            print(
+                "  agent: Playwright MCP "
+                f"{state} in {integration} user scope."
+            )
+        elif registration.get("status") == "blocked":
+            print(
+                "  agent: user-scope registration blocked; "
+                f"{registration.get('nextAction')}"
+            )
 
 
 def emit(result: dict[str, Any], json_output: bool = False) -> None:
@@ -466,6 +562,7 @@ def emit(result: dict[str, Any], json_output: bool = False) -> None:
         print(f"Workspace: {result['workspacePath']}")
         print(f"Integration: {result['integration']}")
         print(f"Core: {result['core'].get('message')}")
+        _emit_mcp(result.get("mcp"))
         print(result.get("next", ""))
         return
     if "status" in result and "workspace" in result:
@@ -630,9 +727,19 @@ def _load_payload(args: argparse.Namespace) -> dict[str, Any]:
     if args.payload:
         from .workspace.repository import load_document
 
+        raw_payload = str(args.payload).strip()
+        if raw_payload.startswith(("{", "[")):
+            raise ValueError(
+                "--payload expects a JSON/YAML file path; pipe inline JSON "
+                "through --stdin instead."
+            )
         path = Path(args.payload).resolve()
         if f"{Path(args.project).resolve() / '.verifysignal'}" in str(path):
             raise ValueError("Payload file must be outside managed .verifysignal artifacts.")
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"Workflow persistence payload file not found: {path}"
+            )
         payload = load_document(path, default={})
         if not isinstance(payload, dict):
             raise ValueError("Workflow persistence payload must be an object.")

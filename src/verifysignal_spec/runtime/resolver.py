@@ -108,6 +108,7 @@ def _entitlement_free_discover_from_cache(
     platform: str,
     attempts: list[RuntimeSourceAttempt],
     api_status: RuntimeApiStatus,
+    api_base_url: str,
 ) -> ManagedRuntimeReadinessResult | None:
     """Resolve a cached managed Core for entitlement-free `discover`.
 
@@ -116,7 +117,10 @@ def _entitlement_free_discover_from_cache(
     to the normal entitlement-gated path — when there is no usable cache or the cached Core does not
     advertise discover, so protected operations and non-discover Cores keep blocking without a receipt.
     """
-    entry = load_cache_entry(platform=platform)
+    entry = load_cache_entry(
+        platform=platform,
+        api_base_url=api_base_url,
+    )
     if not entry:
         return None
     try:
@@ -125,7 +129,7 @@ def _entitlement_free_discover_from_cache(
         return None
     if not compatibility.compatible or not core_supports_discover(compatibility.raw or {}):
         return None
-    mark_cache_used(entry)
+    mark_cache_used(entry, api_base_url=api_base_url)
     attempts.append(
         RuntimeSourceAttempt(
             source="managed-cache",
@@ -251,7 +255,13 @@ def ensure_core_runtime(
     # receipt gates paid operations and the managed download, not grounding against a Core the user
     # already has. Protected contexts and non-discover Cores fall through to the gate below.
     if context == "discover":
-        discover_ready = _entitlement_free_discover_from_cache(project, platform, attempts, api_status)
+        discover_ready = _entitlement_free_discover_from_cache(
+            project,
+            platform,
+            attempts,
+            api_status,
+            config.apiBaseUrl,
+        )
         if discover_ready is not None:
             return discover_ready
 
@@ -294,7 +304,10 @@ def ensure_core_runtime(
         )
         result.api = api_status
         return result
-    entry = load_cache_entry(platform=platform)
+    entry = load_cache_entry(
+        platform=platform,
+        api_base_url=config.apiBaseUrl,
+    )
     if entry:
         if entry.entitlementReceiptId and entitlement.receiptId and entry.entitlementReceiptId != entitlement.receiptId:
             attempts.append(
@@ -312,7 +325,10 @@ def ensure_core_runtime(
             attempt = _verify_command(project, "managed-cache", entry.runtimeCommand, platform=platform, required_capability=required_capability)
             attempts.append(attempt)
             if attempt.status == "compatible":
-                mark_cache_used(entry)
+                mark_cache_used(
+                    entry,
+                    api_base_url=config.apiBaseUrl,
+                )
                 return ManagedRuntimeReadinessResult(
                     status="ready",
                     source="managed-cache",
@@ -360,9 +376,13 @@ def ensure_core_runtime(
             result.api = api_status
             return result
         runtime_core_version = str(selected.get("coreVersion"))
-        runtime_command, blocker = install_from_manifest(selected, entitlement_receipt_id=entitlement.receiptId)
+        runtime_command, blocker = install_from_manifest(
+            selected,
+            entitlement_receipt_id=entitlement.receiptId,
+            api_base_url=config.apiBaseUrl,
+        )
     else:
-        receipt = load_receipt()
+        receipt = load_receipt(config.apiBaseUrl)
         if not receipt:
             blocker = RuntimeSetupBlocker(code="entitlement.malformed", message="Entitlement receipt file is unavailable after unlock.")
             attempts.append(RuntimeSourceAttempt(source="managed-download", status="blocked", terminal=True, platform=platform, message=blocker.message, blockerCode=blocker.code))
@@ -404,7 +424,11 @@ def ensure_core_runtime(
             result.api = api_status
             return result
         runtime_core_version = str(grant.data.get("coreVersion", requested_version))
-        runtime_command, blocker = install_from_authorization(grant.data, entitlement_receipt_id=entitlement.receiptId)
+        runtime_command, blocker = install_from_authorization(
+            grant.data,
+            entitlement_receipt_id=entitlement.receiptId,
+            api_base_url=config.apiBaseUrl,
+        )
     if blocker or not runtime_command:
         actual = blocker or RuntimeSetupBlocker(code="distribution.unavailable", message="Managed runtime installation failed.")
         attempts.append(RuntimeSourceAttempt(source="managed-download", status="blocked", terminal=True, platform=platform, message=actual.message, blockerCode=actual.code))
@@ -476,7 +500,7 @@ def _override_entitlement_status(
 ) -> tuple[RuntimeEntitlementStatus | None, bool]:
     token_available = bool(token or os.environ.get("VERIFYSIGNAL_EMAIL_UNLOCK_TOKEN"))
     email_available = bool(email or os.environ.get("VERIFYSIGNAL_EMAIL"))
-    receipt_available = load_receipt() is not None
+    receipt_available = load_receipt(config.apiBaseUrl) is not None
     should_resolve = token_available or receipt_available or (context == "init" and email_available)
     if not should_resolve:
         return None, False

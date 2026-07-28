@@ -51,7 +51,7 @@ def _candidate_use_cases(context: dict[str, Any], goal: str | None = None) -> li
                 "behavior": goal,
                 "targetSurface": "Primary browser surface",
                 "expectedOutcome": "The user-visible success condition is confirmed.",
-                "rationale": "The requested validation goal should be grounded in the repository understanding before artifact planning.",
+                "rationale": "The requested validation goal should be grounded in product understanding before artifact planning.",
                 "sourceContext": source_context,
                 "confidence": "medium",
             }

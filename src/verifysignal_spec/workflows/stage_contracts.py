@@ -2,12 +2,94 @@ from __future__ import annotations
 
 from typing import Any
 
+from .browser_understanding import browser_first_capability_contract
 from .models import StagePayloadValidationFinding, WorkflowStageContract
 
 
 STAGE_CONTRACTS_SCHEMA = "verifysignal-spec-stage-payload-contracts/v1"
 
 _STAGE_CONTRACTS: dict[str, WorkflowStageContract] = {
+    "understand": WorkflowStageContract(
+        stage="understand",
+        requiredFields=["coverageInventory"],
+        optionalFields=[
+            "understandingMode",
+            "workspaceKind",
+            "productSummary",
+            "repositorySummary",
+            "localStartInstructions",
+            "startInstructions",
+            "targetEnvironment",
+            "targetUrl",
+            "url",
+            "explorationScope",
+            "productSignals",
+            "gaps",
+            "provenanceTraceabilityStatus",
+            "observedAt",
+            "git",
+            "generatedGitHash",
+            "gitAvailable",
+            "gitUnavailableReason",
+            "gitHash",
+            "commitHash",
+            "generatedCommitHash",
+            "gitBranch",
+            "safeInspectionPaths",
+            "safePaths",
+            "blockedSensitivePaths",
+            "validationGoals",
+            "knownRuntimeRequirements",
+            "candidateUseCases",
+            "sourceFilesVisited",
+            "partialInventoryReasons",
+            "refreshImpacts",
+        ],
+        defaults={
+            "understandingMode": "repository",
+            "explorationScope": {
+                "maxPagesOrStates": 20,
+                "maxDepth": 3,
+                "candidateRange": {"minimum": 3, "maximum": 5},
+                "softTimeBudgetMinutes": 15,
+                "readSafeOnly": True,
+            },
+        },
+        examples=[
+            {
+                "understandingMode": "browser-first",
+                "productSummary": "A project tracking application.",
+                "targetEnvironment": {
+                    "kind": "live-url",
+                    "locator": "https://app.example.test/projects",
+                    "reachabilityStatus": "authentication-required",
+                    "observedAt": "2026-07-26T18:00:00Z",
+                },
+                "explorationScope": {
+                    "allowedOrigins": ["https://app.example.test"],
+                    "status": "complete",
+                },
+                "productSignals": [
+                    {
+                        "id": "projects-list",
+                        "kind": "surface",
+                        "surface": "/projects",
+                        "summary": "The signed-in user can view projects.",
+                        "evidence": ["A Projects heading was visible."],
+                        "provenance": "browser",
+                        "observedAt": "2026-07-26T18:00:00Z",
+                        "confidence": "high",
+                    }
+                ],
+                "coverageInventory": {
+                    "status": "partial",
+                    "items": [],
+                    "candidateUseCases": [],
+                },
+            }
+        ],
+        nextAction="verifysignal workflow persist understand --scope <scope> --payload <payload.json> --json",
+    ),
     "specify": WorkflowStageContract(
         stage="specify",
         requiredFields=["surface", "behavior", "expectedOutcome"],
@@ -173,6 +255,7 @@ _STAGE_CONTRACTS: dict[str, WorkflowStageContract] = {
 }
 
 _ALIASES: dict[str, set[str]] = {
+    "understand": {"mode", "targetUrl", "url", "safePaths"},
     "specify": {"route", "targetSurface", "purpose", "description", "intent", "expectedOutcomes", "baseUrl", "targetUrl", "url", "stagingUrl", "environmentUrl"},
     "plan": {"skills", "supportingSkills", "mainSkill"},
     "implement": {"artifacts"},
@@ -200,6 +283,7 @@ def stage_contracts_payload() -> dict[str, Any]:
             "Fresh generated write values preserve the seed plus a run-attempt token. "
             "Resolve `{{parameters.*}}` confirmation expected values before Core execution."
         ),
+        "browserFirstUnderstanding": browser_first_capability_contract(),
         "skillExecutionBoundary": {
             "source": "spec-public-workflow-contract",
             "defaultMode": "single-main",

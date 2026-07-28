@@ -14,6 +14,16 @@ def test_validate_template_mentions_structural_validation_and_core_requirement()
     assert "VerifySignal Core is required for the complete VerifySignal validation and browser execution experience" in content
     assert "runtime readiness verifies target resolution, target reachability, required runtime prerequisites, and Core authoring readiness" in content
     assert "verifysignal workflow migrate --approve <migration-id> --json" in content
+    assert "Treat `workflow check validate` as structural readiness only" in content
+    assert "does not validate protected-runtime entitlement readiness" in content
+    assert "follow its `nextAction` exactly" in content
+
+
+def test_validate_does_not_loop_setup_for_key_unknown_entitlement() -> None:
+    content = agent_template("validate")
+    assert "`entitlement.key-unknown`" in content
+    assert "do not rerun `init`, `init --force`, or `core setup`" in content
+    assert "use that blocker's exact `recoveryCommand`" in content
 
 
 def test_implement_template_uses_canonical_skill_shape_and_cli_persistence() -> None:
@@ -86,6 +96,27 @@ def test_repair_template_documents_mcp_readonly_investigation() -> None:
     assert "read-only" in content.lower()
     assert "discover" in content  # discover confirms the repair, not the MCP
     assert "MCP accessibility snapshots" in content  # extended no-persist list
+
+
+def test_browser_templates_preserve_selector_and_side_effect_safety_feedback() -> None:
+    implement = agent_template("implement")
+    validate = agent_template("validate")
+    run = agent_template("run")
+    repair = agent_template("repair")
+
+    assert "Do not hide an ambiguous locator with `.first()` or `:visible`" in implement
+    assert "Do not add a broad `/graphql` allow rule merely because the endpoint uses POST" in implement
+
+    assert "`authoringWarnings`" in validate
+    assert "`degenerate-text-target`" in validate
+    assert "`unstable-generated-css-target`" in validate
+    assert "must block runtime readiness before browser navigation" in validate
+
+    assert "A side-effect policy violation makes the Spec run failed" in run
+    assert "Only a later clean rerun can restore `strictPass: true`" in run
+
+    assert "Never automatically change `sideEffects.class`, `sideEffects.mode`, `allowed`, or `forbidden`" in repair
+    assert "Never add an allow rule merely to make an observed request pass" in repair
 
 
 def test_auto_loop_mcp_credential_safety() -> None:

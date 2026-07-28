@@ -5,6 +5,8 @@ import io
 import json
 from unittest.mock import patch
 
+import pytest
+
 from helpers import FAKE_CORE
 from verifysignal_spec.runtime.distribution import load_verification_keys, save_verification_keys
 from verifysignal_spec.runtime.entitlement import load_receipt, receipt_path
@@ -104,6 +106,94 @@ def test_init_cli_with_override_core_exchanges_interactive_token(tmp_path, monke
     ]
     assert "qa@example.com" not in out
     assert "vs_valid" not in out
+
+
+@pytest.mark.parametrize(
+    ("delivery_status", "blocker_code"),
+    [
+        ("unavailable", "entitlement.delivery-unavailable"),
+        ("throttled", "entitlement.delivery-throttled"),
+    ],
+)
+def test_init_cli_does_not_prompt_for_token_when_delivery_was_not_accepted(
+    tmp_path,
+    monkeypatch,
+    delivery_status,
+    blocker_code,
+) -> None:
+    monkeypatch.setenv("VERIFYSIGNAL_RUNTIME_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setenv("FAKE_VERIFYSIGNAL_MODE", "requires-entitlement")
+    monkeypatch.delenv("VERIFYSIGNAL_EMAIL", raising=False)
+    monkeypatch.delenv("VERIFYSIGNAL_EMAIL_UNLOCK_TOKEN", raising=False)
+    monkeypatch.delenv("VERIFYSIGNAL_ENTITLEMENT_RECEIPT", raising=False)
+    monkeypatch.delenv("VERIFYSIGNAL_ENTITLEMENT_RECEIPT_PATH", raising=False)
+
+    with serve_fake_entitlement_backend() as (api_base_url, state):
+        state.delivery_status = delivery_status
+        code, out, err = _cli(
+            [
+                "init",
+                str(tmp_path),
+                "--integration",
+                "codex",
+                "--core-cmd",
+                str(FAKE_CORE),
+                "--api-base-url",
+                api_base_url,
+                "--json",
+            ],
+            stdin="qa@example.com\nvs_invalid\n",
+        )
+
+    assert code == 2, err
+    payload = json.loads(out)
+    assert payload["status"] == "blocked"
+    assert payload["runtime"]["entitlement"]["blockerCode"] == blocker_code
+    assert [request["path"] for request in state.requests] == [
+        "/entitlements/request-token",
+    ]
+    assert "VerifySignal email unlock token" not in err
+
+
+def test_init_cli_preserves_pending_delivery_when_token_did_not_arrive(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("VERIFYSIGNAL_RUNTIME_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setenv("FAKE_VERIFYSIGNAL_MODE", "requires-entitlement")
+    monkeypatch.delenv("VERIFYSIGNAL_EMAIL", raising=False)
+    monkeypatch.delenv("VERIFYSIGNAL_EMAIL_UNLOCK_TOKEN", raising=False)
+    monkeypatch.delenv("VERIFYSIGNAL_ENTITLEMENT_RECEIPT", raising=False)
+    monkeypatch.delenv("VERIFYSIGNAL_ENTITLEMENT_RECEIPT_PATH", raising=False)
+
+    with serve_fake_entitlement_backend() as (api_base_url, state):
+        code, out, err = _cli(
+            [
+                "init",
+                str(tmp_path),
+                "--integration",
+                "codex",
+                "--core-cmd",
+                str(FAKE_CORE),
+                "--api-base-url",
+                api_base_url,
+                "--json",
+            ],
+            stdin="qa@example.com\n\n",
+        )
+
+    assert code == 2, err
+    payload = json.loads(out)
+    assert payload["runtime"]["entitlement"]["status"] == (
+        "token-delivery-pending"
+    )
+    assert payload["runtime"]["entitlement"]["blockerCode"] == (
+        "entitlement.unlock-required"
+    )
+    assert [request["path"] for request in state.requests] == [
+        "/entitlements/request-token",
+    ]
+    assert "press Enter if it did not arrive" in err
 
 
 def test_validate_cli_with_override_core_uses_cached_entitlement_receipt(tmp_path, monkeypatch) -> None:
@@ -385,7 +475,13 @@ def test_runtime_readiness_reports_key_unknown_when_fetched_keys_omit_receipt_ke
     assert payload["status"] == "blocked"
     assert payload["verificationKeys"]["status"] == "blocked"
     assert payload["verificationKeys"]["blockerCode"] == "entitlement.key-unknown"
-    assert payload["blockers"][0]["code"] == "entitlement.key-unknown"
+    blocker = payload["blockers"][0]
+    assert blocker["code"] == "entitlement.key-unknown"
+    assert blocker["repairable"] is False
+    assert payload["nextAction"] == blocker["recoveryCommand"]
+    assert "public verification keys" in blocker["recoveryCommand"]
+    assert "init" not in blocker["recoveryCommand"].lower()
+    assert "core setup" not in blocker["recoveryCommand"].lower()
 
 
 def test_cached_matching_verification_keys_are_reused_when_key_service_is_unavailable(tmp_path, monkeypatch) -> None:

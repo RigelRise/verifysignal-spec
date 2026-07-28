@@ -14,7 +14,8 @@ class WorkflowStageContractGuidanceTests(CliTestCase):
         contracts = payload["stagePayloadContracts"]
 
         self.assertEqual(contracts["schemaVersion"], "verifysignal-spec-stage-payload-contracts/v1")
-        self.assertEqual(set(contracts["stages"]), {"specify", "clarify", "plan", "tasks", "implement"})
+        self.assertEqual(set(contracts["stages"]), {"understand", "specify", "clarify", "plan", "tasks", "implement"})
+        self.assertIn("coverageInventory", contracts["byStage"]["understand"]["requiredFields"])
         self.assertIn("expectedOutcome", contracts["byStage"]["specify"]["requiredFields"])
         self.assertIn("validationGates", contracts["byStage"]["plan"]["optionalFields"])
         self.assertEqual(contracts["byStage"]["implement"]["unsupportedFieldsPolicy"], "warn")

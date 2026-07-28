@@ -10,13 +10,14 @@ from verifysignal_spec.templates.agent_guidance import (
 )
 
 from .base import AgentIntegration, RenderedFile, build_onboarding_guidance, render_onboarding_guide, render_workflow_skill_files
-from .mcp import PLAYWRIGHT_MCP_SERVER
+from .mcp import managed_playwright_mcp_server
 
 
 class ClaudeIntegration(AgentIntegration):
     key = "claude"
     display_name = "Claude Code"
     invoke_style = "Claude Code slash skills under .claude/skills/verifysignal-*; invoke as /verifysignal-*"
+    mcp_config_format = "claude-json"
 
     def render_files(self, project: Path, core_status: dict[str, object] | None = None) -> list[RenderedFile]:
         files = [
@@ -29,12 +30,19 @@ class ClaudeIntegration(AgentIntegration):
             core_status=core_status,
         )
         files.append(RenderedFile(".claude/VERIFYSIGNAL_ONBOARDING.md", render_onboarding_guide(guide), "claude/onboarding-guide", "onboarding-guide"))
-        files.extend(render_workflow_skill_files(".claude/skills", "Claude Code", include_argument_hint=True))
+        files.extend(
+            render_workflow_skill_files(
+                ".claude/skills",
+                "Claude Code",
+                include_argument_hint=True,
+                integration=self.key,
+            )
+        )
         return files
 
     def mcp_servers(self) -> dict[str, object]:
         # Live authoring is enabled on install: VerifySignal merges this into the project `.mcp.json`.
-        return {"playwright": PLAYWRIGHT_MCP_SERVER}
+        return {"playwright": managed_playwright_mcp_server()}
 
 
 def _context() -> str:

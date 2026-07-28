@@ -2,6 +2,98 @@
 
 ## Unreleased
 
+### Browser-first product understanding
+
+- Added `browser-first-understanding/v1` with repository, browser-first, and
+  hybrid modes so product understanding can start from a live URL without
+  source or Git access.
+- Added secret-safe URL, signal, inventory, provenance, freshness, and
+  persistence rules while preserving existing repository workspaces without a
+  migration.
+- Updated the shared Codex and Claude workflow guidance for headed assisted
+  login, bounded read-safe mapping, candidate review, and public Core probe-only
+  handling for potentially mutating proof.
+- Bumped the package from `0.20.0` to `0.21.0`.
+
+### Codex browser and invocation parity
+
+- Added user-scoped Playwright MCP setup through the public Codex and Claude
+  MCP commands, plus a project-scoped compatibility fallback with
+  comment-preserving merge, safe handling of existing configuration,
+  install/upgrade support, and preservation of the workspace's selected
+  default integration.
+- Rendered Codex skills and public workflow guidance with `$verifysignal-*`
+  while preserving Claude Code's `/verifysignal-*` syntax and normalizing
+  legacy Codex responses without rewriting historical workflow documents.
+- Hardened browser-first persistence with a complete public payload schema,
+  bounded aliases, field-path diagnostics, cross-reference validation, and
+  atomic rejection of lossy or unknown payloads.
+- Added explicit candidate grounding and authoritative side-effect scoring,
+  stable ranked handoff, inventory-only acceptance, and staged
+  integration-native `specify` continuation.
+- Routed managed Playwright MCP configuration through a pinned isolated
+  launcher with private temporary output and cleanup across normal, failure,
+  interrupt, and termination paths while preserving user-owned configuration.
+- Fixed a Codex P0 where the configured MCP disappeared when `npx` could not
+  reach the registry during agent startup: integration setup now installs the
+  pinned provider into a private versioned user cache, the stdio launcher is
+  offline-only, and PR CI requires a real MCP `initialize` plus `tools/list`
+  handshake exposing browser navigation and snapshot tools.
+- Made the managed Codex Playwright project fallback required and added a real
+  clean-user Codex app-server acceptance that proves session discovery of
+  navigation, snapshot, and click tools without a model turn, project trust,
+  or a configuration override.
+- Prevented an empty Codex Browser Plugin/in-app inventory from masking an
+  already loaded project Playwright MCP; browser-first guidance now resolves
+  the MCP first and recommends setup/restart only after both inventories fail.
+- Fixed clean-project startup for both Codex and Claude by registering the
+  managed Playwright launcher in agent user scope through each agent's public
+  MCP command. PR acceptance now starts Codex without trust/config overrides
+  and discovers the Claude entry from a second clean project.
+- Made integration install and upgrade fail closed when user-scope MCP
+  registration is blocked, instead of returning a successful exit code with a
+  browser that the next plain agent session cannot discover.
+- Prevented pre-observation host browser failures from being persisted as
+  product understanding, made missing workflow prerequisites explicit
+  blockers, and added actionable payload enum/`--stdin` diagnostics.
+- Added structured JSON permission failures and prevented
+  `entitlement.key-unknown` from entering init/Core-setup recovery loops.
+- Prevented interactive initialization from requesting or exchanging an unlock
+  token after email delivery failed or was throttled; accepted delivery now
+  explains that Enter preserves the pending state when the token did not arrive.
+- Isolated managed runtime receipts, verification keys, and installed packages
+  by entitlement API endpoint so a production cache cannot satisfy or poison a
+  local/staging initialization. The production cache layout and explicit cache
+  override remain backward compatible.
+- Added a manual-smoke RED/GREEN regression matrix covering every defect
+  observed while validating this pull request.
+- Made structural validation scope explicit and separated it from protected
+  runtime and entitlement readiness.
+- Bumped the package from `0.21.0` to `0.21.1`.
+- Bumped the package from `0.21.1` to `0.21.2`.
+- Fixed managed-runtime reuse after initialization so `core version`, workflow
+  contract discovery, and browser authoring resolve the endpoint-isolated
+  cached Core instead of recursively invoking the public Spec CLI.
+- Bumped the package from `0.21.2` to `0.21.3`.
+- Prevented Spec from injecting cached development/test verification keys into
+  packaged runtimes. Managed stable runtimes now use their packaged trust
+  material, while source-checkout development retains the existing environment
+  handoff.
+- Materialized Core-required side-effect policy modes in generated run
+  requests: read-only classes default to `observe`, while write and external
+  notification classes default to `enforce`.
+- Bumped the package from `0.21.3` to `0.21.4`.
+- Made Core-advertised degenerate-text and generated-CSS authoring warnings
+  block runtime readiness before browser navigation while keeping validation
+  static.
+- Preserved side-effect-policy attribution across run, validation, first-run,
+  and repair: a violation fails the Spec result, an unchanged policy blocks a
+  rerun, an explicit owner policy change requires a clean rerun, and repair
+  never auto-whitelists observed traffic.
+- Added a full regression lifecycle for the manual failure: violation, blocked
+  unchanged rerun, explicit policy review, clean rerun, and strict pass.
+- Bumped the package from `0.21.4` to `0.21.5`.
+
 ### Open-source presentation and packaging
 
 - Rewrote the README to be concise and terminal-first: the real hexagon brand

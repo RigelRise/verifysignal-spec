@@ -120,6 +120,27 @@ def classify_repair_findings(findings: list[dict[str, object]]) -> list[RepairRe
             continue
 
         classified = classify_runtime_feedback(finding)
+        if classified.category == "side-effect-policy-issue":
+            recommendations.append(
+                RepairRecommendation(
+                    id=f"repair-{index}-side-effect-policy-review",
+                    category="runtime-setup",
+                    runtimeCategory=classified.category,
+                    summary=classified.summary,
+                    action=(
+                        "Review the observed requests and update the declared policy explicitly when justified; "
+                        "VerifySignal will not modify policy automatically. Revalidate, then rerun to collect clean evidence."
+                    ),
+                    affectedArtifacts=affected,
+                    blockedReason="Observed network activity requires an owner policy decision before rerun.",
+                    requiresUserDecision=True,
+                    sourceFeedback=[*source_feedback, *classified.evidence],
+                    autonomy="blocked",
+                    safeMechanical=False,
+                    intentPreserved=False,
+                )
+            )
+            continue
         if classified.category == "wait-flow-issue":
             # One local for both the prose and the field: they are rendered from the same value, so
             # they cannot drift the way the old hand-written sentence did.

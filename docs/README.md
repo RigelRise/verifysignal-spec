@@ -6,6 +6,8 @@ Guides and references for VerifySignal. New here? Start with the
 ## Guides
 
 - [Golden Path](golden-path.md): what the first run does, and its guarantees
+- [Browser-first understanding](browser-first-understanding.md): map a live
+  product without source or Git access
 - [Golden Path troubleshooting](golden-path-troubleshooting.md): first-run recovery
 - [Installation](installation.md): install, upgrade, and runtime overrides
 

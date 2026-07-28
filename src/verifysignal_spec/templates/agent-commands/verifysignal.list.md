@@ -2,7 +2,7 @@
 
 List use cases and workflow status.
 
-- No repository understanding prerequisite is required for this command.
+- No product understanding prerequisite is required for this command.
 - Start by running `verifysignal workflow check list --json` for a deterministic no-prerequisite status before listing.
 - Use the installed `verifysignal` executable directly. Do not use `npx` or package-runner wrappers.
 - Continue only when the result includes `requiredCapability: workflow.guardrails/v1` and `supported: true`.

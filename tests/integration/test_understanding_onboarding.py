@@ -58,7 +58,13 @@ def test_understand_persist_accepts_public_git_hash_and_normalizes_traceability(
 
     assert result["status"] == "persisted"
     context = load_document(tmp_path / ".verifysignal/product-context.yaml", default={})
+    assert context["schemaVersion"] == "verifysignal-spec-product-context/v1"
+    assert context["workspaceKind"] == "repository"
+    assert context["understandingMode"] == "repository"
+    assert context["repositorySummary"] == representative_understanding_payload()["repositorySummary"]
+    assert context["localStartInstructions"] == "npm run dev"
     assert context["understanding"]["generatedGitHash"].startswith("eb58ef8")
+    assert context["understanding"]["mode"] == "repository"
     assert context["understanding"]["sourceTraceabilityStatus"] == "normalized"
     assert context["understanding"]["partialInventoryReasons"] == ["Admin routes not inspected."]
     aliases = [item["alias"] for item in context["candidateUseCases"]]

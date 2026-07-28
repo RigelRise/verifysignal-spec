@@ -46,6 +46,22 @@ class WorkflowStagePersistenceContractTests(CliTestCase):
         self.assertIn("sideEffectLifecycle", implement)
         self.assertIn("artifactCapabilities", implement)
 
+    def test_workflow_info_includes_browser_first_understanding_fields(self) -> None:
+        self.cli(["init", str(self.project), "--integration", "codex", "--json"])
+
+        code, out, err = self.cli(["workflow", "info", "--project", str(self.project), "--json"])
+
+        self.assertEqual(code, 0, err)
+        result = json.loads(out)
+        understand = result["stagePayloadContracts"]["byStage"]["understand"]
+        self.assertIn("coverageInventory", understand["requiredFields"])
+        self.assertIn("understandingMode", understand["optionalFields"])
+        self.assertIn("targetEnvironment", understand["optionalFields"])
+        self.assertIn("productSignals", understand["optionalFields"])
+        browser = result["stagePayloadContracts"]["browserFirstUnderstanding"]
+        self.assertEqual(browser["capability"], "browser-first-understanding/v1")
+        self.assertEqual(browser["providerBoundary"], "playwright-mcp-or-equivalent-host-browser")
+
     def test_workflow_info_projects_current_core_contract_shape(self) -> None:
         os.environ["FAKE_VERIFYSIGNAL_MODE"] = "current-contract"
         self.cli(["init", str(self.project), "--integration", "codex", "--json"])

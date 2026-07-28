@@ -195,6 +195,8 @@ class CoverageInventoryItem:
     exclusionReason: str | None = None
     candidateUseCaseRefs: list[str] = field(default_factory=list)
     priority: Literal["critical", "high", "medium", "low"] = "medium"
+    productSignalRefs: list[str] = field(default_factory=list)
+    provenance: Literal["browser", "repository", "hybrid"] | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "CoverageInventoryItem":
@@ -209,6 +211,8 @@ class CoverageInventoryItem:
             exclusionReason=data.get("exclusionReason"),
             candidateUseCaseRefs=[str(item) for item in data.get("candidateUseCaseRefs", [])],
             priority=data.get("priority", "medium"),
+            productSignalRefs=[str(item) for item in data.get("productSignalRefs", [])],
+            provenance=data.get("provenance"),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -227,6 +231,17 @@ class CandidateValidationUseCase:
     priority: Literal["critical", "high", "medium", "low"] = "medium"
     requiresEnvironment: bool = False
     knownRuntimeRequirements: list[str] = field(default_factory=list)
+    productSignalRefs: list[str] = field(default_factory=list)
+    provenance: Literal["browser", "repository", "hybrid"] | None = None
+    sideEffectClass: Literal["none", "write", "external-notification", "unknown"] | None = None
+    groundingStatus: Literal[
+        "observed",
+        "partial",
+        "authentication-required",
+        "blocked",
+        "unknown",
+    ] = "unknown"
+    proofStatus: Literal["not-selected", "selected", "blocked", "passed", "failed"] | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any], inventory_status: str = "partial") -> "CandidateValidationUseCase":
@@ -244,6 +259,11 @@ class CandidateValidationUseCase:
             priority=data.get("priority", "medium"),
             requiresEnvironment=bool(data.get("requiresEnvironment", False)),
             knownRuntimeRequirements=[str(item) for item in data.get("knownRuntimeRequirements", [])],
+            productSignalRefs=[str(item) for item in data.get("productSignalRefs", [])],
+            provenance=data.get("provenance"),
+            sideEffectClass=data.get("sideEffectClass"),
+            groundingStatus=data.get("groundingStatus", "unknown"),
+            proofStatus=data.get("proofStatus"),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -511,7 +531,7 @@ WORKFLOW_STAGE_PAYLOAD_CONTRACT_SCHEMA = "verifysignal-spec-stage-payload-contra
 
 @dataclass(slots=True)
 class WorkflowStageContract:
-    stage: Literal["specify", "clarify", "plan", "tasks", "implement"]
+    stage: Literal["understand", "specify", "clarify", "plan", "tasks", "implement"]
     requiredFields: list[str] = field(default_factory=list)
     optionalFields: list[str] = field(default_factory=list)
     defaults: dict[str, Any] = field(default_factory=dict)
@@ -682,6 +702,16 @@ class FirstRunCandidate:
     confidence: Literal["high", "medium", "low"] = "medium"
     requiresEnvironment: bool = False
     knownRuntimeRequirements: list[str] = field(default_factory=list)
+    sideEffectClass: Literal[
+        "none", "write", "external-notification", "unknown"
+    ] | None = None
+    groundingStatus: Literal[
+        "observed",
+        "partial",
+        "authentication-required",
+        "blocked",
+        "unknown",
+    ] = "unknown"
 
     @classmethod
     def from_candidate_use_case(cls, candidate: CandidateValidationUseCase) -> "FirstRunCandidate":
@@ -694,6 +724,8 @@ class FirstRunCandidate:
             confidence=candidate.confidence,
             requiresEnvironment=candidate.requiresEnvironment,
             knownRuntimeRequirements=list(candidate.knownRuntimeRequirements),
+            sideEffectClass=candidate.sideEffectClass,
+            groundingStatus=candidate.groundingStatus,
         )
 
     @classmethod
@@ -707,6 +739,8 @@ class FirstRunCandidate:
             confidence=data.get("confidence", "medium"),
             requiresEnvironment=bool(data.get("requiresEnvironment", False)),
             knownRuntimeRequirements=[str(item) for item in data.get("knownRuntimeRequirements", [])],
+            sideEffectClass=data.get("sideEffectClass"),
+            groundingStatus=data.get("groundingStatus", "unknown"),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -901,6 +935,12 @@ class UnderstandingOnboardingResult:
     trivialCandidateCount: int = 0
     sourceTraceabilityStatus: Literal["complete", "normalized", "missing"] = "missing"
     partialInventoryReasons: list[str] = field(default_factory=list)
+    understandingMode: Literal["repository", "browser-first", "hybrid"] | None = None
+    workspaceKind: Literal["repository", "engagement", "hybrid"] | None = None
+    targetEnvironment: dict[str, Any] | None = None
+    productSignalCount: int = 0
+    provenanceTraceabilityStatus: Literal["complete", "partial", "conflicted"] | None = None
+    gaps: list[str] = field(default_factory=list)
     nextAction: str = ""
     schemaVersion: str = UNDERSTANDING_ONBOARDING_RESULT_SCHEMA
 
@@ -915,6 +955,12 @@ class UnderstandingOnboardingResult:
             trivialCandidateCount=int(data.get("trivialCandidateCount", 0) or 0),
             sourceTraceabilityStatus=data.get("sourceTraceabilityStatus", "missing"),
             partialInventoryReasons=[str(item) for item in data.get("partialInventoryReasons", [])],
+            understandingMode=data.get("understandingMode"),
+            workspaceKind=data.get("workspaceKind"),
+            targetEnvironment=data.get("targetEnvironment"),
+            productSignalCount=int(data.get("productSignalCount", 0) or 0),
+            provenanceTraceabilityStatus=data.get("provenanceTraceabilityStatus"),
+            gaps=[str(item) for item in data.get("gaps", [])],
             nextAction=str(data.get("nextAction", "")),
         )
 
@@ -1029,6 +1075,8 @@ class GoldenPathRunState:
         core_browser_status: str,
         spec_coverage_status: str,
         missing_required_gates: list[str],
+        side_effect_status: str = "not-applicable",
+        side_effect_violations: list[dict[str, Any]] | None = None,
         repaired: bool = False,
         repair_feedback: list[dict[str, Any]] | None = None,
         stage_cards: list[dict[str, Any]] | None = None,
@@ -1039,6 +1087,8 @@ class GoldenPathRunState:
             core_browser_status,
             spec_coverage_status,
             missing_required_gates,
+            side_effect_status=side_effect_status,
+            side_effect_violations=side_effect_violations,
             repaired=repaired,
         )
         return cls(
@@ -1085,6 +1135,7 @@ class RuntimeFeedbackFinding:
         "environment-recovery",
         "wait-flow-issue",
         "selector-issue",
+        "side-effect-policy-issue",
         "data-product-state-issue",
         "coverage-mapping-issue",
         "unsupported-feedback",
@@ -1625,6 +1676,14 @@ class AuthoringTaskSet:
         return clean(data)
 
 
-def native_invocation(stage: str, style: str = "skill") -> str:
-    separator = "-" if style == "skill" else "."
-    return f"/verifysignal{separator}{stage}"
+def native_invocation(
+    stage: str,
+    style: str = "skill",
+    *,
+    integration: str = "claude",
+) -> str:
+    """Render an agent-native command while preserving the legacy Claude default."""
+
+    from verifysignal_spec.integrations.invocation import native_invocation as render
+
+    return render(stage, integration, style)

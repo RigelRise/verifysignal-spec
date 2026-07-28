@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from unittest.mock import patch
 
 from helpers import CliTestCase, FAKE_CORE
 from verifysignal_spec.core.adapter import CoreAdapter, readiness, resolve_persistable_core_command
-from verifysignal_spec.core.errors import CoreIncompatibleError
+from verifysignal_spec.core.errors import CoreIncompatibleError, CoreMissingError
+from verifysignal_spec.runtime.distribution import save_verification_keys
 
 
 class CoreAdapterTests(CliTestCase):
@@ -23,6 +25,15 @@ class CoreAdapterTests(CliTestCase):
         result = readiness(executable="definitely-not-verifysignal", cwd=self.project)
         self.assertFalse(result["available"])
         self.assertFalse(result["compatible"])
+
+    def test_unconfigured_adapter_never_falls_back_to_public_spec_cli(self) -> None:
+        os.environ.pop("VERIFYSIGNAL_CORE_CMD", None)
+
+        with self.assertRaisesRegex(
+            CoreMissingError,
+            "Core command is not configured",
+        ):
+            CoreAdapter(cwd=self.project).version()
 
     def test_directory_core_command_maps_to_npm_repo(self) -> None:
         core_repo = self.project / "verifysignal"
@@ -77,3 +88,76 @@ class CoreAdapterTests(CliTestCase):
                 ]
             ],
         )
+
+    def test_packaged_runtime_uses_packaged_trust_instead_of_cached_environment_keys(self) -> None:
+        save_verification_keys(
+            {
+                "schema": "verifysignal.entitlement-keys/v1",
+                "schemaVersion": 1,
+                "keys": [
+                    {
+                        "keyId": "verifysignal-local-entitlement",
+                        "algorithm": "ed25519",
+                        "publicKeyPem": "public-only-test-material",
+                        "status": "active",
+                    }
+                ],
+            }
+        )
+        compatibility = CoreAdapter(executable=str(FAKE_CORE), cwd=self.project).check_compatibility()
+        assert compatibility.raw is not None
+        compatibility.raw["data"]["runtime"] = {
+            "executable": "verifysignal-core",
+            "packageId": "verifysignal-core-0.6.0-test",
+            "platform": "test",
+        }
+        adapter = CoreAdapter(executable=str(FAKE_CORE), cwd=self.project)
+        captured: list[dict[str, str]] = []
+        adapter.require_compatible = lambda: compatibility  # type: ignore[method-assign]
+        adapter._run = lambda args, env=None: captured.append(env or {}) or {"status": "passed"}  # type: ignore[method-assign]
+
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("VERIFYSIGNAL_ENTITLEMENT_PUBLIC_KEYS_JSON", None)
+            adapter.authoring_check(
+                Path("request.yaml"),
+                Path("main.browser.md"),
+                [Path("main.browser.md")],
+                runtime_readiness=True,
+                entitlement_receipt=Path("receipt.json"),
+            )
+
+        self.assertEqual(captured[0]["VERIFYSIGNAL_ENTITLEMENT_RECEIPT"], "receipt.json")
+        self.assertNotIn("VERIFYSIGNAL_ENTITLEMENT_PUBLIC_KEYS_JSON", captured[0])
+
+    def test_source_runtime_keeps_cached_environment_key_handoff(self) -> None:
+        save_verification_keys(
+            {
+                "schema": "verifysignal.entitlement-keys/v1",
+                "schemaVersion": 1,
+                "keys": [
+                    {
+                        "keyId": "verifysignal-local-entitlement",
+                        "algorithm": "ed25519",
+                        "publicKeyPem": "public-only-test-material",
+                        "status": "active",
+                    }
+                ],
+            }
+        )
+        compatibility = CoreAdapter(executable=str(FAKE_CORE), cwd=self.project).check_compatibility()
+        adapter = CoreAdapter(executable=str(FAKE_CORE), cwd=self.project)
+        captured: list[dict[str, str]] = []
+        adapter.require_compatible = lambda: compatibility  # type: ignore[method-assign]
+        adapter._run = lambda args, env=None: captured.append(env or {}) or {"status": "passed"}  # type: ignore[method-assign]
+
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("VERIFYSIGNAL_ENTITLEMENT_PUBLIC_KEYS_JSON", None)
+            adapter.authoring_check(
+                Path("request.yaml"),
+                Path("main.browser.md"),
+                [Path("main.browser.md")],
+                runtime_readiness=True,
+                entitlement_receipt=Path("receipt.json"),
+            )
+
+        self.assertIn("VERIFYSIGNAL_ENTITLEMENT_PUBLIC_KEYS_JSON", captured[0])
