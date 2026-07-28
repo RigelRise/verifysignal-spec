@@ -25,6 +25,8 @@ def test_artifact_plan_requires_single_run_request_reference() -> None:
     plan = ArtifactPlan(useCaseAlias="login", runRequest=".verifysignal/run-requests/login.yaml", mainSkill=".verifysignal/skills/login.browser.md")
     assert plan.to_dict()["runRequest"] == ".verifysignal/run-requests/login.yaml"
     assert native_invocation("plan") == "/verifysignal-plan"
+    assert native_invocation("plan", integration="codex") == "$verifysignal-plan"
+    assert native_invocation("plan", integration="claude") == "/verifysignal-plan"
 
 
 def test_browser_runtime_readiness_models_round_trip_without_secret_values() -> None:

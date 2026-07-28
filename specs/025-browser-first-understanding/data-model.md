@@ -80,6 +80,8 @@ Invariants:
 - `observedAt`: UTC timestamp;
 - `confidence`: `high`, `medium`, or `low`;
 - `inventoryItemRefs`: optional coverage inventory item IDs.
+- `fromSurface`: required sanitized source surface when `kind=transition`;
+- `toSurface`: required sanitized destination surface when `kind=transition`.
 
 Forbidden keys/content include raw DOM/HTML, snapshots, screenshot data or
 paths, traces, response bodies, cookies, storage state, headers containing
@@ -103,8 +105,38 @@ Additive optional item/candidate fields may include:
 - `provenance`: `browser`, `repository`, or `hybrid`;
 - `sideEffectClass`: `none`, `write`, `external-notification`, or `unknown`;
 - `proofStatus`: `not-selected`, `selected`, `blocked`, `passed`, or `failed`.
+- `groundingStatus`: `observed`, `partial`, `authentication-required`,
+  `blocked`, or `unknown`.
 
 Legacy deserialization ignores absent additions and preserves current behavior.
+For legacy candidates, absent grounding normalizes to `unknown`. Browser-first
+submission requires explicit grounding for new candidates.
+
+Grounding invariants:
+
+1. An `observed` multi-surface candidate references a `transition` signal whose
+   `fromSurface` and `toSurface` match the journey surfaces.
+2. Direct destination navigation is a surface observation, not transition
+   evidence.
+3. `authentication-required` references a runtime-requirement or gap signal.
+4. Only `observed` plus `sideEffectClass=none` can satisfy automatic first-run
+   safety; all other states remain selectable only through explicit review.
+
+## Bounded Compatibility Aliases
+
+Aliases are normalized before model construction:
+
+- inventory item: `surface` to `path`, `summary` to `title`, `kind` to
+  `surfaceType`, and `status` to `inventoryStatus`;
+- candidate: `id` to `alias`, `title` to `behavior`, `expectedOutcome` to
+  `rationale`, and `sideEffects.class` to `sideEffectClass`;
+- product signal: `inventoryReferences` to `inventoryItemRefs`;
+- top-level `candidateUseCases` to
+  `coverageInventory.candidateUseCases` only when the canonical field is absent.
+
+Canonical and alias values that disagree are invalid. Unknown keys and missing
+required fields are invalid; normalization never fills semantic identity fields
+with empty strings.
 
 ## Understanding Metadata
 

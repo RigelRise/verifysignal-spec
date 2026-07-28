@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from verifysignal_spec.core.adapter import CoreAdapter
-from verifysignal_spec.runtime.entitlement import load_receipt, receipt_status
+from verifysignal_spec.runtime.entitlement import api_base_url_for_runtime, valid_receipt_path
 from verifysignal_spec.runtime.resolver import ensure_core_runtime
 
 
@@ -35,7 +35,9 @@ def run(
         skills=skills,
         headed=headed,
         slow_mo_ms=slow_mo_ms,
-        entitlement_receipt=_valid_receipt_path(),
+        entitlement_receipt=valid_receipt_path(
+            api_base_url_for_runtime(managed_runtime, api_base_url),
+        ),
     )
 
 
@@ -52,11 +54,3 @@ def _runtime_setup_blocked_payload(managed_runtime: Any) -> dict[str, Any]:
         "blockers": blockers,
         "nextCommand": managed_runtime.nextAction,
     }
-
-
-def _valid_receipt_path() -> str | None:
-    receipt = load_receipt()
-    if not receipt:
-        return None
-    status = receipt_status(receipt)
-    return status.receiptPath if status.status == "valid" else None

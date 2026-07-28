@@ -61,6 +61,62 @@ class ValidationReadinessContractTests(CliTestCase):
         self.assertEqual(result["coreReadiness"]["missingOperations"], [])
         self.assertEqual(result["coreReadiness"]["requiredOperationsByName"]["authoring-check"]["schemaName"], "verifysignal.authoring-check/v1")
 
+    def test_structural_readiness_exposes_runtime_boundary_and_exact_next_action(self) -> None:
+        create_ready_use_case_workspace(self.project, "login")
+
+        code, out, err = self.cli([
+            "workflow",
+            "check",
+            "validate",
+            "--alias",
+            "login",
+            "--project",
+            str(self.project),
+            "--json",
+        ])
+
+        self.assertEqual(code, 0, err)
+        result = json.loads(out)
+        self.assertEqual(result["readinessScope"], "structural")
+        self.assertTrue(result["runtimeReadinessRequired"])
+        self.assertEqual(result["runtimeReadinessStatus"], "not-run")
+        self.assertEqual(
+            result["runtimeReadinessCommand"],
+            "verifysignal validate login --runtime-readiness --json",
+        )
+        self.assertEqual(result["nextAction"], result["runtimeReadinessCommand"])
+        self.assertIn("entitlement readiness have not run", result["readinessSummary"])
+        self.assertNotIn("complete runtime readiness passed", result["readinessSummary"].lower())
+
+    def test_blocked_structural_readiness_preserves_recovery_before_runtime_validation(self) -> None:
+        create_ready_use_case_workspace(self.project, "login")
+        workspace_path = self.project / ".verifysignal/workspace.yaml"
+        workspace = load_document(workspace_path)
+        workspace["coreCommand"] = "missing-verifysignal-core-for-test"
+        save_document(workspace_path, workspace)
+
+        code, out, err = self.cli([
+            "workflow",
+            "check",
+            "validate",
+            "--alias",
+            "login",
+            "--project",
+            str(self.project),
+            "--json",
+        ])
+
+        self.assertEqual(code, 2, err)
+        result = json.loads(out)
+        self.assertEqual(result["readinessScope"], "structural")
+        self.assertEqual(result["runtimeReadinessStatus"], "not-run")
+        self.assertEqual(
+            result["runtimeReadinessCommand"],
+            "verifysignal validate login --runtime-readiness --json",
+        )
+        self.assertEqual(result["nextAction"], "verifysignal core setup --json")
+        self.assertIn("must be resolved first", result["readinessSummary"])
+
     def test_core_incompatible_schema_reports_public_operation_details(self) -> None:
         create_ready_use_case_workspace(self.project, "login")
         os.environ["FAKE_VERIFYSIGNAL_MODE"] = "incompatible-run-schema"

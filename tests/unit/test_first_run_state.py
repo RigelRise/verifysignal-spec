@@ -19,6 +19,8 @@ def test_first_run_candidate_and_score_round_trip() -> None:
         confidence="high",
         requiresEnvironment=True,
         knownRuntimeRequirements=["baseUrl"],
+        sideEffectClass="none",
+        groundingStatus="observed",
     )
     score = FirstRunCandidateScore(
         candidateAlias=candidate.alias,
@@ -34,6 +36,8 @@ def test_first_run_candidate_and_score_round_trip() -> None:
     )
 
     assert candidate.to_dict()["alias"] == "home-page-unauth"
+    assert candidate.to_dict()["sideEffectClass"] == "none"
+    assert candidate.to_dict()["groundingStatus"] == "observed"
     assert score.to_dict()["scoringSignals"]["lowSetupRisk"] == 25
 
 
@@ -72,6 +76,20 @@ def test_golden_path_run_state_classifies_strict_pass_and_repaired_pass() -> Non
     assert classify_first_run_status("passed", "complete", [], repaired=True) == ("repaired-passed", True)
     assert classify_first_run_status("passed", "incomplete", ["home-activity-slider"]) == ("incomplete", False)
     assert classify_first_run_status("failed", "diagnostic", []) == ("failed", False)
+    assert classify_first_run_status(
+        "passed",
+        "complete",
+        [],
+        side_effect_status="violated",
+        side_effect_violations=[{"code": "side-effect-class-none-violation"}],
+    ) == ("failed", False)
+    assert classify_first_run_status(
+        "passed",
+        "complete",
+        [],
+        side_effect_status="not-observed",
+        side_effect_violations=[],
+    ) == ("passed", True)
 
     state = GoldenPathRunState.from_run_result(
         use_case_alias="home-page-unauth",

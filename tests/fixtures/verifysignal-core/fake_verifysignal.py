@@ -211,7 +211,7 @@ def main() -> int:
         gate_evidence = []
         if mode == "helper-only":
             executed_skill = "skill.discover-profile"
-        elif mode == "full-coverage":
+        elif mode in {"full-coverage", "full-coverage-side-effect-violation", "full-coverage-clean-side-effects"}:
             executed_skill = skill_args[0] if skill_args else "skill.validate-profile-view-unauth-flow"
             gate_evidence = [
                 {"id": "profile-name", "source": "assertion", "gateId": "overview-data-card", "status": "passed", "target": "profileName"},
@@ -257,6 +257,72 @@ def main() -> int:
                 "rerunRisk": "blocked" if mode == "rerun-risk-report" else "requires-confirmation",
                 "recommendedAction": "review-created-resource-before-rerun",
                 "reasons": ["write-flow-safety-fixture"],
+            }
+            _write_report(
+                ".verifysignal/runs/login/fake-run-1/report.json",
+                gate_evidence,
+                side_effects=side_effects,
+                runtime_outputs=runtime_outputs,
+                result_classification=result_classification,
+            )
+        elif mode == "full-coverage-side-effect-violation":
+            side_effects = {
+                "policy": {"class": "none", "mode": "observe", "allowed": [], "forbidden": []},
+                "commitStep": {"reached": False},
+                "status": "violated",
+                "observations": [
+                    {
+                        "method": "POST",
+                        "redactedUrl": "https://app.example.test/api/telemetry",
+                        "timing": "unknown",
+                        "responseStatus": 200,
+                        "matchedAllowedRuleIds": [],
+                        "matchedForbiddenRuleIds": [],
+                        "status": "unexpected",
+                    }
+                ],
+                "violations": [
+                    {
+                        "code": "side-effect-class-none-violation",
+                        "severity": "warning",
+                        "timing": "unknown",
+                        "message": "A side effect was observed although the policy class is none.",
+                        "remediation": "Review the request and update policy explicitly only when justified.",
+                    }
+                ],
+            }
+            result_classification = {
+                "executionStatus": "passed",
+                "verificationStatus": "passed",
+                "sideEffectStatus": "violated",
+                "failurePhase": "unknown",
+                "rerunRisk": "blocked",
+                "recommendedAction": "review-side-effect-violation-before-rerun",
+                "reasons": ["side-effect-class-none-violation"],
+            }
+            _write_report(
+                ".verifysignal/runs/login/fake-run-1/report.json",
+                gate_evidence,
+                side_effects=side_effects,
+                runtime_outputs=runtime_outputs,
+                result_classification=result_classification,
+            )
+        elif mode in {"full-coverage", "full-coverage-clean-side-effects"}:
+            side_effects = {
+                "policy": {"class": "none", "mode": "observe"},
+                "commitStep": {"reached": False},
+                "status": "not-observed",
+                "observations": [],
+                "violations": [],
+            }
+            result_classification = {
+                "executionStatus": "passed",
+                "verificationStatus": "passed",
+                "sideEffectStatus": "not-observed",
+                "failurePhase": "unknown",
+                "rerunRisk": "safe",
+                "recommendedAction": "none",
+                "reasons": [],
             }
             _write_report(
                 ".verifysignal/runs/login/fake-run-1/report.json",
@@ -352,15 +418,15 @@ def main() -> int:
         return 0
     if args[:2] == ["report", "inspect"]:
         if mode == "report-main-skill":
-            finding = {
+            findings = [{
                 "severity": "error",
                 "artifact": ".verifysignal/run-requests/login.yaml",
                 "path": "skills",
                 "code": "main-skill-ordering",
                 "message": "Helper skill executed before main skill.",
-            }
+            }]
         elif mode == "aborted-activity-wait":
-            finding = {
+            findings = [{
                 "severity": "error",
                 "artifact": ".verifysignal/skills/validate-home-page-unauth-flow.browser.md",
                 "path": "steps.scroll-to-activity",
@@ -368,14 +434,31 @@ def main() -> int:
                 "message": "Step scroll-to-activity timed out waiting for .chakra-container .swiper-slide while activity skeletons were visible.",
                 "failedStepId": "scroll-to-activity",
                 "gateId": "home-activity-slider",
-            }
+            }]
+        elif mode == "report-selector-and-side-effect":
+            findings = [
+                {
+                    "severity": "error",
+                    "artifact": ".verifysignal/skills/login.browser.md",
+                    "path": "steps[1]",
+                    "code": "browser-step-failed",
+                    "message": "Strict mode violation: locator matched multiple elements.",
+                },
+                {
+                    "severity": "warning",
+                    "artifact": ".verifysignal/runs/login/fake-run-1/report.json",
+                    "path": "sideEffects.violations[0]",
+                    "code": "side-effect-class-none-violation",
+                    "message": "A side effect was observed although the policy class is none.",
+                },
+            ]
         else:
-            finding = {
+            findings = [{
                 "severity": "error",
                 "artifact": ".verifysignal/skills/login.browser.md",
                 "path": "steps[1]",
                 "message": "Selector did not match.",
-            }
+            }]
         print(
             json.dumps(
                 {
@@ -389,7 +472,7 @@ def main() -> int:
                         "reproductionSteps": ["Navigate to /login", "Submit login"],
                         "observedFailure": "Dashboard did not appear.",
                         "expectedBehavior": "Dashboard appears.",
-                        "findings": [finding],
+                        "findings": findings,
                     },
                 }
             )
@@ -546,6 +629,7 @@ def _contracts_payload(mode: str) -> dict[str, object]:
                 {"name": "privateHeaderContains", "status": "experimental"},
             ],
             "metadataKeys": [{"name": "operationName", "status": "stable"}, {"name": "expectedStatus", "status": "stable"}],
+            "warnings": _browser_authoring_warnings(),
             "gateEvidenceRules": {
                 "gateId": "UI assertions, network waits, and screenshots must declare gateId to count toward planned gate coverage.",
                 "renderedResult": "Required page-view gates need a specific target plus expected text/state/count.",
@@ -676,6 +760,7 @@ def _contracts_payload(mode: str) -> dict[str, object]:
             "targetSignals": ["testId", "label", "text", "css", "semanticLocator"],
             "targets": {"composition": {"supportedSignals": ["testId", "css"]}},
             "metadataKeys": [{"name": "operationName", "status": "supported"}, {"name": "expectedStatus", "status": "supported"}],
+            "warnings": _browser_authoring_warnings(),
             "gateEvidenceRules": {
                 "gateId": "UI assertions, network waits, and screenshots must declare gateId to count toward planned gate coverage.",
                 "renderedResult": "Required page-view gates need a specific target plus expected text/state/count.",
@@ -712,6 +797,27 @@ def _contracts_payload(mode: str) -> dict[str, object]:
         "status": "passed",
         "data": {"sections": data},
     }
+
+
+def _browser_authoring_warnings() -> list[dict[str, object]]:
+    return [
+        {
+            "code": "degenerate-text-target",
+            "severity": "warning",
+            "runtimeReadinessSeverity": "blocking",
+            "message": "A text assertion must not search for the same text inside a text-only target.",
+            "remediation": "Use a stable parent target and keep expected text in the step or assertion.",
+            "appliesTo": ["waitForText", "checkText", "assertions.text"],
+        },
+        {
+            "code": "unstable-generated-css-target",
+            "severity": "warning",
+            "runtimeReadinessSeverity": "blocking",
+            "message": "Generated or positional CSS targets are unstable.",
+            "remediation": "Use a stable semantic locator.",
+            "appliesTo": ["targets"],
+        },
+    ]
 
 
 def _side_effect_guardrails_section() -> dict[str, object]:

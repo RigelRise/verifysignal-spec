@@ -404,6 +404,7 @@ def record_run(project: Path, entry: RunHistoryEntry) -> None:
         "partialCoverage": entry.partialCoverage,
         "runtimeContradictions": entry.runtimeContradictions,
         "repairRecommendations": entry.repairRecommendations,
+        "sideEffectPolicy": entry.sideEffectPolicy,
         "sideEffects": entry.sideEffects,
         "runtimeOutputs": entry.runtimeOutputs,
         "resolvedRuntimeInputs": entry.resolvedRuntimeInputs,

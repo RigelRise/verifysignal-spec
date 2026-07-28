@@ -27,6 +27,8 @@ Run a validated use case by alias through the managed VerifySignal runtime.
 - Delegate execution through `verifysignal run <alias> --profile normal` unless the user requests another profile. Use-case-specific profile names are allowed when declared by that use case; unknown profiles must block and list available profiles.
 - For human-observable browser debugging, use `--profile debug`; the default debug pacing is `--slow-mo 900` unless the user explicitly overrides it.
 - Report Core/browser status separately from Spec coverage status using `coreBrowserStatus` and `specCoverageStatus`. A Core `passed` result can still be `specCoverageStatus: incomplete` when planned gates are missing, network-only, screenshot-only, or unmapped.
+- A side-effect policy violation makes the Spec run failed even when Core/browser execution and authored gate coverage otherwise pass. Keep the violation attributed to side-effect policy, block a rerun under the unchanged policy, and require an explicit owner policy change before another attempt.
+- Only a later clean rerun can restore `strictPass: true`; changing policy alone produces a rerun-required warning and never rewrites the earlier failed result.
 - Backward-compatible summary wording may still mention that a Core `passed` result can still be `coverageStatus: incomplete`; interpret that as Spec coverage, not browser execution.
 - When Core/browser execution fails, call Spec coverage diagnostic; do not summarize diagnostic coverage as browser validation passed.
 - When public Core result fields show the commit step was reached, summarize the normalized side-effect/rerun assertion instead of enumerating every raw field name. Do not call it a safe pre-commit failure.

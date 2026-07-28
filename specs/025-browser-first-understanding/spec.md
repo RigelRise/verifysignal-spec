@@ -23,6 +23,23 @@
 - Q: Can exploration mutate customer data? → A: Mapping is read-safe. Potentially mutating proof is allowed only after explicit confirmation and only through the public Core probe boundary, which must not commit the write.
 - Q: Where does browser automation live? → A: The host integration performs exploration through Playwright MCP or an equivalent browser/Playwright interface; VerifySignal Spec owns the portable contract and durable synthesized evidence.
 
+### Session 2026-07-27
+
+- Q: How is the required headed browser made available in Codex? → A: Codex installation and upgrade prepare the pinned provider and register the VerifySignal-managed Playwright MCP in the agent's user scope through the agent's public MCP command. The project-scoped entry remains as a backward-compatible fallback, but a fresh session MUST NOT depend on project trust to discover the managed browser.
+- Q: How are generated VerifySignal skills invoked in each supported agent? → A: Codex guidance and public workflow responses use `$verifysignal-*`; Claude Code guidance and responses continue to use `/verifysignal-*`.
+- Q: How are existing Codex workspaces handled? → A: `integration upgrade` refreshes managed guidance and project MCP configuration. Existing historical workflow documents are not rewritten, but user-facing responses normalize legacy slash-prefixed commands to Codex's dollar-prefixed syntax.
+- Q: Does integration upgrade change the workspace's selected agent? → A: No. Upgrade preserves the current default integration while refreshing its managed files and MCP configuration.
+- Q: How are intuitive but non-canonical browser payload fields handled? → A: The public contract documents a bounded alias set. Aliases normalize losslessly, canonical/alias conflicts fail, and all other unknown or missing fields fail atomically with actionable paths.
+- Q: How is an observed surface distinguished from an observed journey? → A: Browser candidates carry an explicit grounding status. A multi-surface observed journey requires a referenced transition signal; direct navigation proves only the destination surface.
+- Q: Which component owns first-run ordering? → A: `workflow recommend-first-run` is the sole ranking authority. Agent guidance presents its ranked result unchanged and selection resumes through the staged specify workflow.
+- Q: How are Playwright MCP artifacts kept out of the target project? → A: Managed integrations invoke a VerifySignal-owned stdio launcher that runs a pinned MCP in an isolated private temporary working directory and removes it on termination.
+
+### Session 2026-07-28
+
+- Q: What happens when Core browser execution passes but observes a side-effect policy violation? → A: The Spec run fails, preserves the policy snapshot and violation attribution, and does not grant Golden Path strict pass.
+- Q: May repair automatically whitelist the observed request? → A: No. An unchanged or unknown prior policy blocks rerun; only an explicit owner policy change permits a new attempt, and only a later clean run restores strict pass.
+- Q: Should static runtime readiness execute browser navigation to discover selector ambiguity? → A: No. It consumes Core's public authoring warnings and blocks on the categories Core advertises as blocking before browser navigation.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Map a Live Product Without Source Access (Priority: P1)
@@ -112,6 +129,34 @@ Existing users continue to understand products from repositories, while users wi
 - **FR-024**: After mapping, the system MUST let the user review candidates and select one approved journey for proof; it MUST not automatically choose a mutating journey.
 - **FR-025**: The browser MUST remain open after exploration until the user acknowledges the understanding summary or explicitly asks to close it.
 - **FR-026**: Existing repository understanding, readiness, planning, and validation behavior MUST remain compatible and covered by regression tests.
+- **FR-027**: Installing or upgrading a Codex or Claude integration MUST register the VerifySignal-managed Playwright MCP in that agent's user scope through the agent's public MCP command, MUST preserve unrelated and user-owned MCP configuration, MUST be idempotent, and MUST preserve the workspace's current default integration. Existing exact project-scoped managed entries MAY remain as a backward-compatible fallback.
+- **FR-028**: Every generated or returned agent command MUST use the selected integration's native invocation syntax: `$verifysignal-*` for Codex and `/verifysignal-*` for Claude Code. Existing persisted history MUST remain readable without a destructive migration.
+- **FR-029**: The public understand contract MUST expose complete nested field shapes, enums, required fields, bounded aliases, and a usable canonical example; callers MUST NOT need installed source inspection to construct a valid payload.
+- **FR-030**: Browser payload normalization MUST reject unknown fields, missing required values, invalid references, and canonical/alias conflicts before writing any artifact, and MUST report the failing field path.
+- **FR-031**: The bounded compatibility aliases MUST include inventory `surface`, `summary`, `kind`, and `status`; candidate `id`, `title`, `expectedOutcome`, and `sideEffects.class`; signal `inventoryReferences`; and top-level `candidateUseCases` when its canonical nested field is absent.
+- **FR-032**: Browser candidate journeys MUST carry an explicit grounding status. Missing legacy grounding MUST normalize conservatively to `unknown` and MUST NOT qualify for automatic guidance.
+- **FR-033**: A multi-surface candidate marked `observed` MUST reference a structured transition signal with source and destination surfaces. Authentication boundaries MUST be represented as runtime requirements or gaps and MUST NOT be reported as unauthenticated observed transitions.
+- **FR-034**: Declared side-effect classification MUST be authoritative for first-run safety. `write`, `external-notification`, and `unknown` candidates MUST NOT qualify as read-only.
+- **FR-035**: First-run ranking MUST have one public authority, preserve deterministic meaningful tie order, accept inventory-only candidates, and continue through the selected integration's staged `specify` invocation rather than the legacy `author` command.
+- **FR-036**: Managed Playwright MCP execution MUST use a pinned tested version, an isolated private temporary working directory, and cleanup on normal exit, error, interrupt, and termination; it MUST NOT create raw browser artifacts in the target project.
+- **FR-037**: Integration upgrade MUST migrate the exact legacy VerifySignal Playwright entry, preserve a differing user-owned Playwright entry with a warning, and leave invalid host configuration untouched.
+- **FR-038**: Structural validation readiness MUST identify its scope and next runtime-readiness action and MUST NOT be described as successful protected-runtime validation.
+- **FR-039**: Managed Codex and Claude integration setup MUST install the exact pinned Playwright MCP provider into a private user cache before the agent session starts; the stdio launcher MUST execute that cached provider without package-registry access and MUST fail quickly with an exact setup command when the provider is unavailable.
+- **FR-040**: Pull-request CI MUST start the pinned provider through the public VerifySignal launcher, complete MCP `initialize`, request `tools/list`, and require the browser navigation and snapshot tools before browser-first changes can merge.
+- **FR-041**: Browser-first guidance MUST verify that headed browser tools are actually available in the current host session before navigation or persistence. A pre-observation host integration failure MUST NOT call understand persistence or create/update product-understanding artifacts.
+- **FR-042**: The managed Codex Playwright MCP server MUST be discoverable from a fresh untrusted project through user-scoped agent configuration, exact earlier managed entries MUST upgrade safely, user-owned overrides MUST remain untouched, and pull-request CI MUST prove discovery through a real ephemeral Codex app-server thread without a trust or configuration override.
+- **FR-043**: A workflow prerequisite response with `canProceed: false` because artifacts are missing MUST include a structured blocker with the missing artifact list and exact recovery command; it MUST NOT expose an empty `blockers` list.
+- **FR-044**: Raw JSON passed to the file-only `--payload` option MUST fail with an actionable `--stdin` alternative instead of being treated as a path or empty payload. Invalid browser enums MUST report their allowed public values.
+- **FR-045**: Non-repairable runtime blockers MUST retain their exact public recovery command. In particular, `entitlement.key-unknown` MUST NOT be routed through repeated `init`, forced init, or Core setup attempts.
+- **FR-046**: Permission denial during JSON-mode integration initialization MUST return a structured non-success response with a stable blocker code and recovery guidance rather than an unstructured exception string.
+- **FR-047**: Every product defect observed in the manual PR smoke MUST have a regression test demonstrated RED against the original PR head and GREEN against the correction before the pull request can be approved.
+- **FR-048**: Interactive initialization MUST request an unlock token only after the entitlement API reports accepted email delivery. Delivery failure and throttling MUST preserve their original blocker without prompting for or attempting to exchange a token that was not sent.
+- **FR-049**: Managed runtime receipts, refresh credentials, verification keys, and installed packages MUST be isolated by canonical entitlement API endpoint. The default production endpoint and explicit runtime-cache override MUST remain backward compatible, while local or staging initialization MUST NOT consume trust material cached for another endpoint.
+- **FR-050**: A successful integration initialization MUST make a subsequent plain `codex` or `claude` launch use the managed browser without a wrapper, `-c` flag, synthetic project trust, or backend-specific launch command. Initialization MUST NOT report browser setup as ready when user-scope registration is missing or conflicting.
+- **FR-051**: Runtime readiness MUST consume Core's public authoring-warning metadata and MUST block before browser navigation when `degenerate-text-target` or `unstable-generated-css-target` is advertised with blocking runtime-readiness severity.
+- **FR-052**: A Core/browser result with any side-effect policy violation MUST produce an overall failed Spec run and MUST NOT produce Golden Path `strictPass: true`, even when browser execution and authored gate coverage otherwise pass.
+- **FR-053**: Run history MUST preserve a secret-safe semantic snapshot of the side-effect policy used by each run. An unchanged or unavailable prior policy MUST block rerun after a violation; an explicit owner policy change MAY permit rerun with a warning, but only a later clean result may supersede the violation for readiness and strict pass.
+- **FR-054**: Repair MUST classify side-effect policy violations separately from selector findings and MUST require an owner decision. It MUST NOT automatically change side-effect class, mode, allowed rules, or forbidden rules.
 
 ### Key Entities
 
@@ -134,11 +179,33 @@ Existing users continue to understand products from repositories, while users wi
 - **SC-006**: Workflow capability inspection exposes a versioned browser-first understanding contract that can be consumed without reading VerifySignal Spec source code.
 - **SC-007**: Repeating persistence with the same normalized browser observations produces stable identifiers and equivalent durable understanding.
 - **SC-008**: All missing-capability, unreachable-target, insufficient-coverage, and expired-authentication reference scenarios finish with explicit partial or blocked status and no false proof claim.
+- **SC-009**: A fresh Codex or Claude install and an existing integration upgrade expose Playwright through idempotent user-scoped MCP registration while preserving unrelated and user-owned agent configuration.
+- **SC-010**: Generated Codex guidance and Codex-selected public workflow responses contain no slash-prefixed VerifySignal agent commands, while Claude Code retains slash-prefixed commands.
+- **SC-011**: Canonical and documented-alias forms of the reference browser payload persist equivalent non-empty inventory, signal references, side-effect classification, and candidate grounding; malformed forms produce no workspace writes.
+- **SC-012**: No candidate whose transition was not observed, whose authentication boundary is unresolved, or whose side-effect class is not `none` is labeled safe for automatic first-run guidance.
+- **SC-013**: Recommendation, user presentation, acceptance, and staged specify resume use the same candidate order and details for both Codex and Claude.
+- **SC-014**: Fresh install, legacy upgrade, subprocess failure, interrupt, and termination fixtures leave no `.playwright-mcp`, screenshot, snapshot, trace, log, or storage-state artifact in the target project.
+- **SC-015**: Structural readiness and runtime readiness remain independently inspectable, and a structural pass cannot hide an entitlement or runtime-readiness blocker.
+- **SC-016**: After one successful integration setup, disabling package resolution during agent startup still permits the managed launcher to answer MCP `initialize` and expose `browser_navigate` and `browser_snapshot` within the host handshake deadline.
+- **SC-017**: The real pinned-provider handshake test is a required pull-request CI check, while deterministic local tests exercise the same launcher boundary without network access.
+- **SC-018**: An ephemeral Codex app-server thread started from a fresh untrusted project with no `-c` override reports the user-scoped `playwright` server and exposes `browser_navigate`, `browser_snapshot`, and `browser_click` without a model turn.
+- **SC-019**: A pre-observation “no headed browser available” scenario writes no `.verifysignal/product-context.yaml` or understanding workflow document and directs the user to repair user-scoped host setup and restart the session.
+- **SC-020**: The manual-smoke regression set fails before its corresponding fixes for browser discovery, candidate acceptance, invalid author handoff, invocation syntax, payload contract, readiness scope, missing-prerequisite blockers, entitlement recovery, packaged-runtime trust handoff, generated side-effect policy mode, and permission reporting, then passes on the corrected branch.
+- **SC-021**: Inline JSON misuse, invalid reachability, invalid signal kind, and equivalent duplicated candidate aliases each produce one deterministic outcome without silent data loss or trial-and-error persistence.
+- **SC-022**: A missing-plan run check includes a non-empty blocker and exact plan recovery, while `entitlement.key-unknown` retains a recovery command that contains neither init nor Core setup.
+- **SC-023**: Unavailable and throttled email-delivery fixtures make zero exchange requests and expose their original blocker, while an accepted delivery permits an empty token response that preserves `token-delivery-pending`.
+- **SC-024**: With a valid production receipt, key set, and runtime package already cached, initializing against a local entitlement API uses a distinct deterministic namespace and observes none of those production artifacts; the same endpoint reuses its own namespace across runs.
+- **SC-025**: When a Codex session exposes the project Playwright MCP navigation and snapshot tools while the Browser Plugin inventory is empty, browser-first understanding uses the MCP and neither reruns setup nor recommends a restart.
+- **SC-026**: In a clean user configuration and a new non-Git project, integration initialization followed by the unmodified `codex` or `claude` executable discovers the managed Playwright MCP; the same acceptance fails when initialization is omitted.
+- **SC-027**: Static runtime readiness blocks both degenerate-text and unstable-generated-CSS fixtures without opening a browser.
+- **SC-028**: A deterministic full-coverage fixture with a side-effect violation reports overall failure and no strict pass.
+- **SC-029**: The same fixture cannot rerun under an unchanged policy, may rerun only after an explicit semantic policy change, and reaches strict pass only after a clean subsequent run.
+- **SC-030**: Repair may propose selector correction from the same report but never proposes or applies an automatic side-effect allow rule.
 
 ## Assumptions
 
 - The user is authorized to inspect and validate the supplied target environment.
-- The host integration can provide a headed browser through Playwright MCP or an equivalent browser/Playwright API; VerifySignal Spec does not ship a second browser runtime in v1.
+- The host integration can provide a headed browser through Playwright MCP or an equivalent browser/Playwright API. VerifySignal installs the pinned host MCP provider ahead of agent startup, but does not replace Core's deterministic browser-validation runtime.
 - Same-origin read-safe exploration is sufficient for the first release; broad crawling, arbitrary third-party origins, and whole-product coverage claims are out of scope.
 - The user remains present for assisted authentication and candidate approval.
 - The existing coverage inventory schema remains the compatibility bridge for downstream specify/plan/tasks/implement stages.

@@ -9,13 +9,37 @@ Before writing any workspace artifact, Spec:
 3. sanitizes the target URL and allowed origins;
 4. applies and validates exploration-scope defaults;
 5. validates product-signal shape and forbidden data;
-6. normalizes the existing coverage inventory;
-7. derives compatibility fields and understanding metadata;
-8. runs existing secret-value validation;
-9. writes canonical project-local artifacts.
+6. resolves bounded aliases and rejects conflicts/unknown fields;
+7. validates signal, inventory, candidate, and grounding references;
+8. derives compatibility fields and understanding metadata;
+9. runs existing secret-value validation;
+10. writes canonical project-local artifacts.
 
 Any failing step returns an invalid persistence result or existing public error
-without partially writing browser content.
+with the exact failing field path and without partially writing browser content.
+
+## Bounded Aliases
+
+The public compatibility aliases are:
+
+- inventory `surface`, `summary`, `kind`, and `status`;
+- candidate `id`, `title`, `expectedOutcome`, and `sideEffects.class`;
+- signal `inventoryReferences`;
+- top-level `candidateUseCases` when the canonical nested field is absent.
+
+When canonical and alias fields both exist they must be equivalent. All other
+unknown fields fail validation rather than being ignored.
+
+## Grounding
+
+- Candidate grounding values are `observed`, `partial`,
+  `authentication-required`, `blocked`, and `unknown`.
+- An observed multi-surface journey requires a referenced transition signal
+  with matching `fromSurface` and `toSurface`.
+- An authentication-required candidate requires a referenced
+  runtime-requirement or gap signal.
+- Legacy candidates without grounding normalize to `unknown` and are not safe
+  for automatic first-run guidance.
 
 ## URL Rules
 
@@ -65,7 +89,9 @@ For `hybrid`, repository and browser fields coexist. Conflicting evidence sets
 - `complete`: requested scope completed and candidate minimum met.
 - `partial`: scope/coverage/authentication limit reached, candidate minimum not
   met, or recoverable capability unavailable.
-- `blocked`: no meaningful safe observation can be persisted.
+- `blocked`: observed product evidence exists but cannot safely progress.
+- a host browser failure before the first product signal is not a persistable
+  understanding status; persistence rejects zero-signal browser payloads.
 - Existing `stale` status remains a later freshness evaluation.
 
 The system never upgrades a caller's partial/blocked evidence to complete.

@@ -17,6 +17,7 @@ class ClaudeIntegration(AgentIntegration):
     key = "claude"
     display_name = "Claude Code"
     invoke_style = "Claude Code slash skills under .claude/skills/verifysignal-*; invoke as /verifysignal-*"
+    mcp_config_format = "claude-json"
 
     def render_files(self, project: Path, core_status: dict[str, object] | None = None) -> list[RenderedFile]:
         files = [
@@ -29,7 +30,14 @@ class ClaudeIntegration(AgentIntegration):
             core_status=core_status,
         )
         files.append(RenderedFile(".claude/VERIFYSIGNAL_ONBOARDING.md", render_onboarding_guide(guide), "claude/onboarding-guide", "onboarding-guide"))
-        files.extend(render_workflow_skill_files(".claude/skills", "Claude Code", include_argument_hint=True))
+        files.extend(
+            render_workflow_skill_files(
+                ".claude/skills",
+                "Claude Code",
+                include_argument_hint=True,
+                integration=self.key,
+            )
+        )
         return files
 
     def mcp_servers(self) -> dict[str, object]:

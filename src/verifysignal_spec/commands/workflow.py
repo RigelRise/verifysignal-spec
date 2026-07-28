@@ -15,37 +15,53 @@ from verifysignal_spec.workflows.write_safety import build_rerun_approval_review
 from verifysignal_spec.workspace.models import SupersedeReview
 from verifysignal_spec.workspace.repository import load_supersede_reviews, load_use_case, now_iso, save_supersede_review
 from verifysignal_spec.workspace.validation import validate_no_secret_values
+from verifysignal_spec.integrations.invocation import (
+    project_integration,
+    render_agent_invocations_in_value,
+)
+
+
+def _agent_output(
+    project: Path,
+    value: dict[str, Any],
+    integration: str | None = None,
+) -> dict[str, Any]:
+    selected = integration or value.get("integration") or project_integration(project)
+    return render_agent_invocations_in_value(value, str(selected))
 
 
 def run_workflow(project: Path, workflow_id: str, goal: str, alias: str | None = None, integration: str | None = None) -> dict[str, Any]:
     if workflow_id != WORKFLOW_ID:
         raise ValueError(f"Unsupported workflow: {workflow_id}")
     run = engine.create_workflow_run(project, goal=goal, alias=alias, integration=integration)
-    return run.to_dict()
+    return _agent_output(project, run.to_dict(), run.integration)
 
 
 def resume(project: Path, run_id: str) -> dict[str, Any]:
-    return engine.resume_workflow(project, run_id).to_dict()
+    run = engine.resume_workflow(project, run_id)
+    return _agent_output(project, run.to_dict(), run.integration)
 
 
 def status(project: Path, run_id: str | None = None, alias: str | None = None) -> dict[str, Any]:
     if run_id and alias:
         raise ValueError("Use workflow status with either a run_id or --alias, not both.")
     if alias:
-        return engine.workflow_status_for_alias(project, alias)
+        result = engine.workflow_status_for_alias(project, alias)
+        return _agent_output(project, result)
     if run_id:
         try:
-            return engine.workflow_status(project, run_id)
+            result = engine.workflow_status(project, run_id)
         except FileNotFoundError as original:
             try:
-                return engine.workflow_status_for_alias(project, run_id)
+                result = engine.workflow_status_for_alias(project, run_id)
             except FileNotFoundError:
                 raise original
-    return engine.workflow_status(project, run_id)
+        return _agent_output(project, result)
+    return _agent_output(project, engine.workflow_status(project, run_id))
 
 
 def show(project: Path, alias: str) -> dict[str, Any]:
-    return engine.workflow_show(project, alias)
+    return _agent_output(project, engine.workflow_show(project, alias))
 
 
 def list_runs(project: Path) -> dict[str, Any]:
@@ -53,17 +69,38 @@ def list_runs(project: Path) -> dict[str, Any]:
 
 
 def info(project: Path, workflow_id: str = WORKFLOW_ID, integration: str | None = None) -> dict[str, Any]:
-    return engine.workflow_info(project, workflow_id, integration=integration)
+    selected = project_integration(project, integration)
+    return _agent_output(
+        project,
+        engine.workflow_info(project, workflow_id, integration=selected),
+        selected,
+    )
 
 
 def check(project: Path, stage: str, alias: str | None = None, refresh_decision: str | None = None) -> dict[str, Any]:
     if stage == "validate":
-        return workflow_readiness.validation_readiness(project, alias=alias)
-    return check_prerequisites(project, stage, alias=alias, refresh_decision=refresh_decision)
+        result = workflow_readiness.validation_readiness(project, alias=alias)
+    else:
+        result = check_prerequisites(
+            project,
+            stage,
+            alias=alias,
+            refresh_decision=refresh_decision,
+        )
+    return _agent_output(project, result)
 
 
 def persist(project: Path, stage: str, alias: str | None = None, scope: str | None = None, payload: dict[str, Any] | None = None) -> dict[str, Any]:
-    return stage_persistence.persist_stage(project, stage, alias=alias, scope=scope, payload=payload)
+    return _agent_output(
+        project,
+        stage_persistence.persist_stage(
+            project,
+            stage,
+            alias=alias,
+            scope=scope,
+            payload=payload,
+        ),
+    )
 
 
 def supersede_write_outcome(project: Path, alias: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -164,20 +201,27 @@ def migrate(project: Path, migration_id: str) -> dict[str, Any]:
 
 
 def recommend_first_run(project: Path) -> dict[str, Any]:
-    return build_first_run_recommendation(project).to_dict()
+    return _agent_output(project, build_first_run_recommendation(project).to_dict())
 
 
 def accept_golden_path_first_run(project: Path, alias: str) -> dict[str, Any]:
-    return accept_first_run(project, alias)
+    return _agent_output(project, accept_first_run(project, alias))
 
 
 def skip_golden_path_first_run(project: Path) -> dict[str, Any]:
-    return skip_first_run(project)
+    return _agent_output(project, skip_first_run(project))
 
 
 def inspect_golden_path_state(project: Path) -> dict[str, Any]:
-    return inspect_golden_path_workspace_state(project)
+    return _agent_output(project, inspect_golden_path_workspace_state(project))
 
 
 def reset_golden_path_state(project: Path, *, preview: bool = False, confirm: bool = False) -> dict[str, Any]:
-    return reset_golden_path_workspace_state(project, preview=preview, confirm=confirm)
+    return _agent_output(
+        project,
+        reset_golden_path_workspace_state(
+            project,
+            preview=preview,
+            confirm=confirm,
+        ),
+    )

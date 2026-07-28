@@ -15,6 +15,7 @@ the operations Spec requires. The local well-formedness check runs regardless. A
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -22,9 +23,14 @@ import pytest
 
 from verifysignal_spec.core.contracts import REQUIRED_OPERATIONS
 
+CORE_REPOSITORY = Path(
+    os.environ.get(
+        "VERIFYSIGNAL_REAL_CORE_REPOSITORY",
+        str(Path(__file__).resolve().parents[3] / "verifysignal"),
+    )
+).expanduser()
 CORE_PUBLIC_CONTRACT = (
-    Path(__file__).resolve().parents[3]
-    / "verifysignal"
+    CORE_REPOSITORY
     / "apps"
     / "verifysignal-cli"
     / "src"

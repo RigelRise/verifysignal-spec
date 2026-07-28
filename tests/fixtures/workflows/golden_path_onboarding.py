@@ -26,6 +26,8 @@ def candidate(
     confidence: str = "high",
     requirements: list[str] | None = None,
     rationale: str | None = None,
+    side_effect_class: str = "none",
+    grounding_status: str = "observed",
 ) -> dict[str, Any]:
     return {
         "alias": alias,
@@ -37,6 +39,8 @@ def candidate(
         "confidence": confidence,
         "requiresEnvironment": True,
         "knownRuntimeRequirements": requirements or ["baseUrl"],
+        "sideEffectClass": side_effect_class,
+        "groundingStatus": grounding_status,
     }
 
 
@@ -85,6 +89,8 @@ def inventory_with_public_and_branch_candidates() -> dict[str, Any]:
                 priority="critical",
                 requirements=["baseUrl", "credential:ba-marketing-user", "write operation", "active branch"],
                 rationale="Branch-relevant feature but setup-heavy for a first run.",
+                side_effect_class="write",
+                grounding_status="authentication-required",
             ),
             candidate(
                 AUTH_ALIAS,
@@ -93,6 +99,7 @@ def inventory_with_public_and_branch_candidates() -> dict[str, Any]:
                 source="route-settings",
                 priority="high",
                 requirements=["baseUrl", "credential:user"],
+                grounding_status="authentication-required",
             ),
         ],
     }

@@ -24,7 +24,7 @@ class WorkflowPrerequisiteCheckContractTests(CliTestCase):
         self.assertIsNone(payload["useCaseAlias"])
         self.assertEqual(payload["status"], "missing")
         self.assertFalse(payload["canProceed"])
-        self.assertEqual(payload["nextCommand"], "/verifysignal-understand")
+        self.assertEqual(payload["nextCommand"], "$verifysignal-understand")
 
     def test_ready_stale_accepted_and_declined_refresh_responses(self) -> None:
         create_current_understanding_workspace(self.project)
@@ -59,7 +59,7 @@ class WorkflowPrerequisiteCheckContractTests(CliTestCase):
         self.assertEqual(accepted["status"], "stale")
         self.assertFalse(accepted["canProceed"])
         self.assertEqual(accepted["recordedDecision"]["decision"], "accepted")
-        self.assertEqual(accepted["nextCommand"], "/verifysignal-understand")
+        self.assertEqual(accepted["nextCommand"], "$verifysignal-understand")
 
         code, out, err = self.cli([
             "workflow",
@@ -107,7 +107,7 @@ class WorkflowPrerequisiteCheckContractTests(CliTestCase):
         self.assertEqual(code, 0, err)
         clarify = json.loads(out)
         self.assertEqual(clarify["status"], "missing")
-        self.assertEqual(clarify["nextCommand"], "/verifysignal-specify login")
+        self.assertEqual(clarify["nextCommand"], "$verifysignal-specify login")
 
         self.cli(["workflow", "check", "specify", "--project", str(self.project), "--json"])
         from verifysignal_spec.workflows.engine import specify
@@ -126,7 +126,7 @@ class WorkflowPrerequisiteCheckContractTests(CliTestCase):
         self.assertEqual(code, 0, err)
         tasks = json.loads(out)
         self.assertEqual(tasks["status"], "missing")
-        self.assertEqual(tasks["nextCommand"], "/verifysignal-plan login")
+        self.assertEqual(tasks["nextCommand"], "$verifysignal-plan login")
 
     def test_unresolved_browser_target_blocks_plan_check(self) -> None:
         create_current_understanding_workspace(self.project)
@@ -167,7 +167,7 @@ class WorkflowPrerequisiteCheckContractTests(CliTestCase):
         self.assertEqual(code, 0, err)
         payload = json.loads(out)
         self.assertEqual(payload["status"], "missing")
-        self.assertEqual(payload["nextCommand"], "/verifysignal-clarify profile-view-unauth")
+        self.assertEqual(payload["nextCommand"], "$verifysignal-clarify profile-view-unauth")
         self.assertIn("authoringQuestions", payload["missingArtifacts"][0])
 
     def test_ambiguous_alias_requires_selector(self) -> None:

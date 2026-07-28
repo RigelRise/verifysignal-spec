@@ -54,6 +54,55 @@ def test_validate_missing_generated_artifacts_points_to_implement(tmp_path) -> N
     assert result["nextCommand"] == "/verifysignal-implement login"
 
 
+def test_run_missing_plan_is_an_explicit_blocker_with_recovery(
+    tmp_path,
+) -> None:
+    create_current_understanding_workspace(tmp_path)
+    create_workflow_run(
+        tmp_path,
+        "Validate a public project.",
+        alias="public-project-discovery",
+        integration="codex",
+    )
+    specify(
+        tmp_path,
+        "public-project-discovery",
+        "Validate a public project.",
+    )
+
+    result = check_prerequisites(
+        tmp_path,
+        "run",
+        alias="public-project-discovery",
+    )
+
+    assert result["status"] == "missing"
+    assert result["canProceed"] is False
+    assert result["missingArtifacts"] == [
+        (
+            ".verifysignal/workflows/use-cases/"
+            "public-project-discovery/plan.md"
+        ),
+        (
+            ".verifysignal/workflows/use-cases/"
+            "public-project-discovery/plan.yaml"
+        ),
+    ]
+    assert result["blockers"] == [
+        {
+            "code": "workflow.prerequisite-missing",
+            "severity": "blocker",
+            "category": "workflow",
+            "message": (
+                "The run stage cannot proceed because required workflow "
+                "artifacts are missing."
+            ),
+            "missingArtifacts": result["missingArtifacts"],
+            "recoveryCommand": "/verifysignal-plan public-project-discovery",
+        }
+    ]
+
+
 def test_browser_target_question_blocks_planning_before_executable_artifacts(tmp_path) -> None:
     create_current_understanding_workspace(tmp_path)
     result = persist_stage(

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from tests.fixtures.workflows.browser_first_understanding import browser_understanding_payload
+from tests.fixtures.workflows.browser_first_understanding import (
+    browser_understanding_alias_payload,
+    browser_understanding_payload,
+)
 from verifysignal_spec.workspace.repository import load_document
 from verifysignal_spec.workflows.first_run import build_first_run_recommendation
 from verifysignal_spec.workflows.prerequisites import check_prerequisites
@@ -27,7 +30,7 @@ def test_browser_first_understanding_persists_in_non_git_engagement(tmp_path) ->
 
     assert result["status"] == "persisted"
     assert result["understandingOnboarding"]["understandingMode"] == "browser-first"
-    assert result["understandingOnboarding"]["productSignalCount"] == 3
+    assert result["understandingOnboarding"]["productSignalCount"] == 4
 
     context = load_document(tmp_path / ".verifysignal/product-context.yaml", default={})
     assert context["schemaVersion"] == "verifysignal-spec-product-context/v1"
@@ -44,6 +47,9 @@ def test_browser_first_understanding_persists_in_non_git_engagement(tmp_path) ->
     assert context["coverageInventory"]["sourceFilesVisited"] == 0
     assert context["coverageInventory"]["sourceTraceabilityStatus"] == "missing"
     assert context["candidateUseCases"][0]["productSignalRefs"]
+    assert context["candidateUseCases"][0]["groundingStatus"] == (
+        "authentication-required"
+    )
     assert context["knownRuntimeRequirements"] == [
         {"name": "baseUrl", "value": "https://app.example.test/projects"}
     ]
@@ -136,3 +142,87 @@ def test_hybrid_understanding_preserves_git_and_records_provenance_conflict(tmp_
     assert context["coverageInventory"]["sourceTraceabilityStatus"] == "complete"
     assert context["understanding"]["provenanceTraceabilityStatus"] == "conflicted"
     assert context["understanding"]["gaps"] == payload["gaps"]
+
+
+def test_alias_payload_persists_the_same_canonical_context(tmp_path) -> None:
+    canonical_project = tmp_path / "canonical"
+    alias_project = tmp_path / "alias"
+
+    canonical = persist_stage(
+        canonical_project,
+        "understand",
+        scope="all",
+        payload=browser_understanding_payload(),
+    )
+    aliased = persist_stage(
+        alias_project,
+        "understand",
+        scope="all",
+        payload=browser_understanding_alias_payload(),
+    )
+
+    assert canonical["status"] == "persisted"
+    assert aliased["status"] == "persisted"
+    canonical_context = load_document(
+        canonical_project / ".verifysignal/product-context.yaml", default={}
+    )
+    alias_context = load_document(
+        alias_project / ".verifysignal/product-context.yaml", default={}
+    )
+    for key in [
+        "targetEnvironment",
+        "explorationScope",
+        "productSignals",
+        "coverageInventory",
+        "candidateUseCases",
+    ]:
+        assert alias_context[key] == canonical_context[key]
+
+
+def test_invalid_nested_payload_is_atomic_and_reports_the_field_path(tmp_path) -> None:
+    payload = browser_understanding_payload()
+    payload["coverageInventory"]["items"][0]["unexpected"] = "discarded-before"
+
+    result = persist_stage(tmp_path, "understand", scope="all", payload=payload)
+
+    assert result["status"] == "invalid"
+    assert (
+        "coverageInventory.items[0].unexpected"
+        in result["blockers"][0]["message"]
+    )
+    assert not (tmp_path / ".verifysignal").exists()
+
+
+def test_zero_observation_host_failure_never_becomes_product_understanding(
+    tmp_path,
+) -> None:
+    payload = browser_understanding_payload()
+    payload["productSummary"] = (
+        "Product understanding is unavailable because no headed browser "
+        "backend was connected."
+    )
+    payload["explorationScope"]["status"] = "blocked"
+    payload["explorationScope"]["partialInventoryReasons"] = [
+        "No headed browser backend was available."
+    ]
+    payload["productSignals"] = []
+    payload["coverageInventory"]["status"] = "partial"
+    payload["coverageInventory"]["items"] = []
+    payload["coverageInventory"]["candidateUseCases"] = []
+    payload["coverageInventory"]["partialInventoryReasons"] = [
+        "No headed browser backend was available."
+    ]
+    payload["gaps"] = ["No headed browser backend was available."]
+
+    result = persist_stage(
+        tmp_path,
+        "understand",
+        scope="all",
+        payload=payload,
+    )
+
+    assert result["status"] == "invalid"
+    assert "at least one productSignals item" in result["blockers"][0][
+        "message"
+    ]
+    assert not (tmp_path / ".verifysignal").exists()

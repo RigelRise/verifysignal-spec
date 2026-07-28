@@ -212,7 +212,12 @@ def _resolve_packaged_executable(package_root: Path) -> Path | None:
     return candidate if candidate.is_file() else None
 
 
-def install_from_manifest(entry: dict[str, Any], *, entitlement_receipt_id: str | None = None) -> tuple[str | None, RuntimeSetupBlocker | None]:
+def install_from_manifest(
+    entry: dict[str, Any],
+    *,
+    entitlement_receipt_id: str | None = None,
+    api_base_url: str | None = None,
+) -> tuple[str | None, RuntimeSetupBlocker | None]:
     temp_dir = Path(tempfile.mkdtemp(prefix="verifysignal-runtime-"))
     # A FIXED scratch name. `entry["artifactName"]` comes from the distribution server's JSON — the
     # party this whole signature architecture exists because it does not trust — and it used to be
@@ -234,7 +239,11 @@ def install_from_manifest(entry: dict[str, Any], *, entitlement_receipt_id: str 
             return None, authenticity_blocker
         core_version = str(entry["coreVersion"])
         platform = str(entry["platform"])
-        destination = platform_cache_dir(core_version, platform)
+        destination = platform_cache_dir(
+            core_version,
+            platform,
+            api_base_url,
+        )
         if destination.exists():
             shutil.rmtree(destination)
         destination.mkdir(parents=True, exist_ok=True)
@@ -252,6 +261,7 @@ def install_from_manifest(entry: dict[str, Any], *, entitlement_receipt_id: str 
             contract_version=str(entry.get("contractVersion", PUBLIC_CONTRACT_VERSION)),
             sha256=str(entry.get("sha256", "")),
             entitlement_receipt_id=entitlement_receipt_id,
+            api_base_url=api_base_url,
         )
         return str(runtime), None
     except PermissionError:
@@ -266,7 +276,12 @@ def install_from_manifest(entry: dict[str, Any], *, entitlement_receipt_id: str 
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 
-def install_from_authorization(grant: dict[str, Any], *, entitlement_receipt_id: str | None = None) -> tuple[str | None, RuntimeSetupBlocker | None]:
+def install_from_authorization(
+    grant: dict[str, Any],
+    *,
+    entitlement_receipt_id: str | None = None,
+    api_base_url: str | None = None,
+) -> tuple[str | None, RuntimeSetupBlocker | None]:
     package = grant.get("package") if isinstance(grant.get("package"), dict) else {}
     signature = grant.get("releaseSignature") if isinstance(grant.get("releaseSignature"), dict) else {}
     entry = {
@@ -285,7 +300,11 @@ def install_from_authorization(grant: dict[str, Any], *, entitlement_receipt_id:
         return None, RuntimeSetupBlocker(code="distribution.url-expired", message="Authorized runtime download URL expired before use.")
     if not _entry_has_required_fields(entry):
         return None, RuntimeSetupBlocker(code="manifest.invalid", message="Runtime download authorization response is incomplete.")
-    return install_from_manifest(entry, entitlement_receipt_id=entitlement_receipt_id)
+    return install_from_manifest(
+        entry,
+        entitlement_receipt_id=entitlement_receipt_id,
+        api_base_url=api_base_url,
+    )
 
 
 class RuntimeDistributionClient:
@@ -345,8 +364,17 @@ class RuntimeDistributionClient:
             return RuntimeAuthorizationResponse(data={}, blocker=_verification_key_blocker("entitlement.keys-unavailable"))
         if data.get("schema") != "verifysignal.entitlement-keys/v1" or data.get("schemaVersion") != 1 or not isinstance(data.get("keys"), list):
             return RuntimeAuthorizationResponse(data={}, blocker=_verification_key_blocker("entitlement.keys-incompatible"))
-        save_verification_keys(data, source_api_base_url=self.config.apiBaseUrl, issuer=issuer)
-        return RuntimeAuthorizationResponse(data=load_verification_keys() or data)
+        save_verification_keys(
+            data,
+            source_api_base_url=self.config.apiBaseUrl,
+            issuer=issuer,
+        )
+        return RuntimeAuthorizationResponse(
+            data=load_verification_keys(
+                api_base_url=self.config.apiBaseUrl,
+            )
+            or data
+        )
 
     def _json_request(self, path: str, *, headers: dict[str, str] | None = None) -> tuple[int, dict[str, Any], RuntimeSetupBlocker | None]:
         request = urllib.request.Request(
@@ -377,12 +405,12 @@ def validate_runtime_authorization_response(data: dict[str, Any], *, expected_pl
     return None
 
 
-def verification_keys_path() -> Path:
-    return cache_root() / "entitlement" / "keys.json"
+def verification_keys_path(api_base_url: str | None = None) -> Path:
+    return cache_root(api_base_url) / "entitlement" / "keys.json"
 
 
 def save_verification_keys(data: dict[str, Any], *, source_api_base_url: str | None = None, issuer: str | None = None) -> Path:
-    path = verification_keys_path()
+    path = verification_keys_path(source_api_base_url)
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = dict(data)
     if source_api_base_url:
@@ -398,8 +426,10 @@ def save_verification_keys(data: dict[str, Any], *, source_api_base_url: str | N
     return path
 
 
-def load_verification_keys() -> dict[str, Any] | None:
-    path = verification_keys_path()
+def load_verification_keys(
+    api_base_url: str | None = None,
+) -> dict[str, Any] | None:
+    path = verification_keys_path(api_base_url)
     if not path.exists():
         return None
     try:
@@ -432,7 +462,7 @@ def prepare_verification_keys(
         blocker = _verification_key_blocker("entitlement.key-unknown")
         return _blocked_verification_keys(blocker, source="manual-override", entitlement=entitlement, config=config), blocker
 
-    cached = load_verification_keys()
+    cached = load_verification_keys(api_base_url=config.apiBaseUrl)
     cached_status = _matching_key_status(cached, source="cache", entitlement=entitlement, config=config, require_binding=True)
     if cached_status.status == "ready":
         return cached_status, None

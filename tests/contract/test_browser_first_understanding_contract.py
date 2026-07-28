@@ -40,6 +40,99 @@ def test_public_workflow_contract_advertises_browser_first_understanding_v1() ->
     assert browser["proofHandoff"]["probeSchema"] == "verifysignal.probe/v1"
     assert "rawDom" in browser["forbiddenPersistence"]
     assert browser["providerBoundary"] == "playwright-mcp-or-equivalent-host-browser"
+    schema = browser["payloadSchema"]
+    assert schema["required"] == [
+        "understandingMode",
+        "productSummary",
+        "targetEnvironment",
+        "explorationScope",
+        "productSignals",
+        "coverageInventory",
+    ]
+    assert set(schema["properties"]) == {
+        "understandingMode",
+        "workspaceKind",
+        "productSummary",
+        "repositorySummary",
+        "localStartInstructions",
+        "targetEnvironment",
+        "explorationScope",
+        "productSignals",
+        "coverageInventory",
+        "gaps",
+        "provenanceTraceabilityStatus",
+        "observedAt",
+        "generatedGitHash",
+        "gitAvailable",
+        "gitUnavailableReason",
+        "gitBranch",
+        "safeInspectionPaths",
+        "blockedSensitivePaths",
+        "validationGoals",
+        "knownRuntimeRequirements",
+        "sourceFilesVisited",
+        "partialInventoryReasons",
+        "refreshImpacts",
+    }
+    assert schema["properties"]["gaps"]["items"] == {"type": "string"}
+    assert schema["properties"]["targetEnvironment"]["properties"][
+        "reachabilityStatus"
+    ]["enum"] == [
+        "reachable",
+        "unreachable",
+        "authentication-required",
+        "unknown",
+    ]
+    assert schema["properties"]["productSignals"]["items"]["properties"][
+        "kind"
+    ]["enum"] == [
+        "gap",
+        "runtime-requirement",
+        "state",
+        "surface",
+        "transition",
+    ]
+    inventory = schema["properties"]["coverageInventory"]
+    assert inventory["required"] == ["status", "items", "candidateUseCases"]
+    inventory_pass = inventory["properties"]["passes"]["items"]
+    assert inventory_pass["additionalProperties"] is False
+    assert inventory_pass["required"] == ["scope", "startedAt", "status"]
+    assert set(inventory_pass["properties"]) == {
+        "scope",
+        "startedAt",
+        "completedAt",
+        "coveredAreas",
+        "uncoveredAreas",
+        "sourceFilesVisited",
+        "status",
+    }
+    assert inventory["properties"]["items"]["items"]["required"] == [
+        "id",
+        "surfaceType",
+        "path",
+        "title",
+    ]
+    assert inventory["properties"]["candidateUseCases"]["items"]["required"] == [
+        "alias",
+        "surface",
+        "behavior",
+        "sourceInventoryItems",
+        "rationale",
+        "sideEffectClass",
+        "groundingStatus",
+    ]
+    assert browser["aliases"]["coverageInventory.items[].surface"] == "path"
+    assert browser["aliases"]["candidateUseCases"] == (
+        "coverageInventory.candidateUseCases"
+    )
+    assert browser["aliases"]["coverageInventory.candidateUseCases[].sideEffects.class"] == (
+        "sideEffectClass"
+    )
+    assert browser["example"]["coverageInventory"]["items"]
+    assert browser["example"]["coverageInventory"]["candidateUseCases"]
+    assert browser["example"]["coverageInventory"]["candidateUseCases"][0][
+        "groundingStatus"
+    ] == "authentication-required"
 
 
 def test_repository_contract_remains_supported_by_mode_specific_requirements() -> None:
@@ -70,3 +163,14 @@ def test_mutating_proof_requires_exact_public_probe_and_blocks_legacy_fallback()
     assert "public Core capability is missing" in flattened
     assert "preserve the candidate and report the exact partial/blocked prerequisite" in flattened
     assert "Do not claim proof" in flattened
+
+
+def test_understand_uses_the_public_recommendation_order_without_reranking() -> None:
+    command = (
+        ROOT
+        / "src/verifysignal_spec/templates/agent-commands/verifysignal.understand.md"
+    ).read_text(encoding="utf-8")
+
+    assert "verifysignal workflow recommend-first-run --json" in command
+    assert "Present `rankedCandidates` in exactly the returned order" in command
+    assert "Do not independently re-rank" in command

@@ -18,6 +18,8 @@ The response exposes:
 - forbidden durable browser artifacts;
 - browser provider boundary;
 - mutation/probe safety rule.
+- complete nested field definitions, enums, required fields, bounded aliases,
+  and one canonical browser-first example.
 
 Clients must use this response instead of inspecting installed package source.
 
@@ -54,7 +56,10 @@ The public command remains unchanged. The payload is mode-aware.
     "candidateRange": {"minimum": 3, "maximum": 5},
     "softTimeBudgetMinutes": 15,
     "readSafeOnly": true,
-    "status": "complete"
+    "status": "partial",
+    "partialInventoryReasons": [
+      "Only one read-safe journey was observed."
+    ]
   },
   "productSignals": [
     {
@@ -67,14 +72,28 @@ The public command remains unchanged. The payload is mode-aware.
       "observedAt": "2026-07-26T18:00:00Z",
       "confidence": "high",
       "inventoryItemRefs": ["surface-projects"]
+    },
+    {
+      "id": "authenticated-session",
+      "kind": "runtime-requirement",
+      "surface": "/sign-in",
+      "summary": "The surface requires an authenticated session.",
+      "evidence": ["The user completed sign-in in the headed browser."],
+      "provenance": "browser",
+      "observedAt": "2026-07-26T18:00:00Z",
+      "confidence": "high",
+      "inventoryItemRefs": []
     }
   ],
   "coverageInventory": {
-    "status": "complete",
+    "status": "partial",
     "generatedAt": "2026-07-26T18:00:00Z",
     "gitAvailable": false,
     "sourceFilesVisited": 0,
     "sourceTraceabilityStatus": "missing",
+    "partialInventoryReasons": [
+      "Only one read-safe journey was observed."
+    ],
     "items": [
       {
         "id": "surface-projects",
@@ -98,7 +117,10 @@ The public command remains unchanged. The payload is mode-aware.
         "inventorySourceStatus": "complete",
         "priority": "high",
         "requiresEnvironment": true,
-        "knownRuntimeRequirements": ["baseUrl"]
+        "knownRuntimeRequirements": ["baseUrl", "authenticated session"],
+        "productSignalRefs": ["projects-list", "authenticated-session"],
+        "sideEffectClass": "none",
+        "groundingStatus": "authentication-required"
       }
     ]
   }
@@ -124,6 +146,40 @@ The host:
 The host may use Playwright MCP or an equivalent browser/Playwright interface.
 Provider-specific output is not part of this contract.
 
+Before exploring, the host must first inspect the current session for the
+project Playwright MCP tools and use them when navigation and snapshot tools
+are present. Only when those tools are absent may it inspect an equivalent host
+browser. In Codex, `agent.browsers.list()` reports Browser Plugin/in-app
+backends only; an empty result does not prove that the project Playwright MCP is
+absent. Configuration presence or provider installation alone is likewise
+insufficient. The host may report an integration prerequisite only after both
+tool inventories lack usable navigation. It must not run provider setup or
+recommend a restart while Playwright MCP tools are already available.
+
+If no browser tool is available before any product observation, the host
+reports an integration prerequisite, does not invoke `workflow persist
+understand`, and does not create or update product understanding. A partial
+persisted result requires at least one real product signal.
+
+Managed Codex and Claude installations invoke the provider through
+`verifysignal integration playwright-mcp`. This stdio launcher pins the tested
+provider version and isolates its cwd/output under a private temporary
+directory. Integration setup installs that pinned provider into a private
+versioned user cache before the agent starts; the launcher executes the cached
+binary without registry access. If setup cannot prepare it, the public
+`verifysignal integration setup-playwright-mcp --json` command reports the
+blocked prerequisite and can be retried. Existing user-owned Playwright MCP
+configuration is preserved. Integration initialization registers the managed
+launcher in the selected agent's user scope through the agent's public MCP
+command. The exact managed project entry remains a compatibility fallback.
+
+The managed Codex project fallback is `required = true`. Pull-request
+acceptance starts an ephemeral Codex app-server from a fresh untrusted project,
+without `-c` or a trust override, and requires the user-scoped `playwright`
+server to expose browser navigation, snapshot, and click tools. Claude
+acceptance registers in an isolated user config and discovers the server from
+a second clean project.
+
 ## Proof Handoff
 
 After candidate review:
@@ -134,3 +190,6 @@ After candidate review:
   Core `verifysignal.probe/v1`;
 - probe may prove the pre-commit boundary but never authorizes normal run;
 - missing browser/Core capabilities return partial or blocked state.
+- candidate presentation uses `workflow recommend-first-run` ordering;
+- acceptance can target an inventory-only candidate and resumes through
+  `$verifysignal-specify` in Codex or `/verifysignal-specify` in Claude.

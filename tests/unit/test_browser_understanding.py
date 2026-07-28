@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from tests.fixtures.workflows.browser_first_understanding import browser_understanding_payload
+from tests.fixtures.workflows.browser_first_understanding import (
+    browser_understanding_alias_payload,
+    browser_understanding_payload,
+)
 from verifysignal_spec.workflows.browser_understanding import (
     BROWSER_FIRST_UNDERSTANDING_CAPABILITY,
     normalize_browser_understanding_payload,
@@ -98,4 +101,220 @@ def test_mapping_scope_cannot_disable_read_safe_boundary() -> None:
     payload["explorationScope"]["readSafeOnly"] = False
 
     with pytest.raises(ValueError, match="readSafeOnly"):
+        normalize_browser_understanding_payload(payload)
+
+
+def test_documented_aliases_normalize_to_the_canonical_payload() -> None:
+    canonical = normalize_browser_understanding_payload(browser_understanding_payload())
+    aliased = normalize_browser_understanding_payload(
+        browser_understanding_alias_payload()
+    )
+
+    assert aliased == canonical
+
+
+def test_equivalent_top_level_candidate_alias_does_not_duplicate_state() -> None:
+    payload = browser_understanding_payload()
+    payload["candidateUseCases"] = [
+        dict(item)
+        for item in payload["coverageInventory"]["candidateUseCases"]
+    ]
+
+    normalized = normalize_browser_understanding_payload(payload)
+
+    assert "candidateUseCases" not in normalized
+    assert normalized["coverageInventory"]["candidateUseCases"] == (
+        normalize_browser_understanding_payload(
+            browser_understanding_payload()
+        )["coverageInventory"]["candidateUseCases"]
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "allowed"),
+    [
+        (
+            "reachabilityStatus",
+            "reachable-public",
+            "reachable, unreachable, authentication-required, unknown",
+        ),
+        (
+            "signalKind",
+            "flow",
+            "surface, state, transition, runtime-requirement, gap",
+        ),
+    ],
+)
+def test_manual_smoke_enum_errors_name_the_allowed_values(
+    field: str,
+    value: str,
+    allowed: str,
+) -> None:
+    payload = browser_understanding_payload()
+    if field == "reachabilityStatus":
+        payload["targetEnvironment"]["reachabilityStatus"] = value
+    else:
+        payload["productSignals"][0]["kind"] = value
+
+    with pytest.raises(ValueError) as raised:
+        normalize_browser_understanding_payload(payload)
+
+    assert allowed in str(raised.value)
+
+
+def test_rejects_unknown_nested_fields_with_an_actionable_path() -> None:
+    payload = browser_understanding_payload()
+    payload["coverageInventory"]["candidateUseCases"][0]["inventedSafety"] = True
+
+    with pytest.raises(
+        ValueError,
+        match=r"coverageInventory\.candidateUseCases\[0\]\.inventedSafety",
+    ):
+        normalize_browser_understanding_payload(payload)
+
+
+def test_rejects_structured_gap_instead_of_silently_dropping_its_fields() -> None:
+    payload = browser_understanding_payload()
+    payload["gaps"] = [
+        {
+            "id": "authenticated-surfaces-not-mapped",
+            "summary": "Authenticated surfaces were not mapped.",
+            "status": "authentication-required",
+        }
+    ]
+
+    with pytest.raises(ValueError, match=r"gaps\[0\]"):
+        normalize_browser_understanding_payload(payload)
+
+
+def test_rejects_missing_required_signal_evidence() -> None:
+    payload = browser_understanding_payload()
+    payload["productSignals"][0].pop("evidence")
+
+    with pytest.raises(
+        ValueError,
+        match=r"productSignals\[0\]\.evidence",
+    ):
+        normalize_browser_understanding_payload(payload)
+
+
+def test_rejects_invalid_inventory_enum_value() -> None:
+    payload = browser_understanding_payload()
+    payload["coverageInventory"]["items"][0]["priority"] = "urgent"
+
+    with pytest.raises(
+        ValueError,
+        match=r"coverageInventory\.items\[0\]\.priority",
+    ):
+        normalize_browser_understanding_payload(payload)
+
+
+def test_rejects_unknown_refresh_impact_fields() -> None:
+    payload = browser_understanding_payload()
+    payload["refreshImpacts"] = [
+        {
+            "alias": "projects-list",
+            "status": "unaffected",
+            "reason": "No impact.",
+            "inventedAction": "ignore",
+        }
+    ]
+
+    with pytest.raises(
+        ValueError,
+        match=r"refreshImpacts\[0\]\.inventedAction",
+    ):
+        normalize_browser_understanding_payload(payload)
+
+
+def test_rejects_conflicting_canonical_and_alias_values() -> None:
+    payload = browser_understanding_payload()
+    payload["coverageInventory"]["items"][0]["surface"] = "/different"
+
+    with pytest.raises(
+        ValueError,
+        match=r"coverageInventory\.items\[0\]\.(path|surface)",
+    ):
+        normalize_browser_understanding_payload(payload)
+
+
+def test_rejects_missing_required_inventory_identity() -> None:
+    payload = browser_understanding_payload()
+    payload["coverageInventory"]["items"][0].pop("title")
+
+    with pytest.raises(
+        ValueError,
+        match=r"coverageInventory\.items\[0\]\.title",
+    ):
+        normalize_browser_understanding_payload(payload)
+
+
+def test_rejects_unknown_inventory_and_signal_references() -> None:
+    payload = browser_understanding_payload()
+    payload["coverageInventory"]["candidateUseCases"][0][
+        "productSignalRefs"
+    ].append("missing-signal")
+
+    with pytest.raises(
+        ValueError,
+        match=r"coverageInventory\.candidateUseCases\[0\]\.productSignalRefs",
+    ):
+        normalize_browser_understanding_payload(payload)
+
+
+def test_observed_multi_surface_candidate_requires_matching_transition_signal() -> None:
+    payload = browser_understanding_payload()
+    candidate = payload["coverageInventory"]["candidateUseCases"][0]
+    candidate["surface"] = "/projects -> /projects/alpha"
+    candidate["sourceInventoryItems"] = [
+        "surface-projects-list",
+        "surface-project-details",
+    ]
+    candidate["productSignalRefs"] = ["projects-list", "project-details"]
+    candidate["knownRuntimeRequirements"] = ["baseUrl"]
+    candidate["groundingStatus"] = "observed"
+
+    with pytest.raises(
+        ValueError,
+        match=r"coverageInventory\.candidateUseCases\[0\]\.groundingStatus",
+    ):
+        normalize_browser_understanding_payload(payload)
+
+    payload["productSignals"].append(
+        {
+            "id": "projects-to-details",
+            "kind": "transition",
+            "surface": "/projects",
+            "fromSurface": "/projects",
+            "toSurface": "/projects/alpha",
+            "summary": "Selecting a project opens its detail surface.",
+            "evidence": ["The project result was selected and the detail rendered."],
+            "provenance": "browser",
+            "observedAt": "2026-07-26T18:00:00Z",
+            "confidence": "high",
+            "inventoryItemRefs": [
+                "surface-projects-list",
+                "surface-project-details",
+            ],
+        }
+    )
+    candidate["productSignalRefs"].append("projects-to-details")
+
+    normalized = normalize_browser_understanding_payload(payload)
+
+    assert normalized["coverageInventory"]["candidateUseCases"][0][
+        "groundingStatus"
+    ] == "observed"
+
+
+def test_authentication_grounding_requires_a_runtime_or_gap_signal() -> None:
+    payload = browser_understanding_payload()
+    candidate = payload["coverageInventory"]["candidateUseCases"][0]
+    candidate["knownRuntimeRequirements"] = ["baseUrl"]
+    candidate["productSignalRefs"] = ["projects-list"]
+
+    with pytest.raises(
+        ValueError,
+        match=r"coverageInventory\.candidateUseCases\[0\]\.groundingStatus",
+    ):
         normalize_browser_understanding_payload(payload)

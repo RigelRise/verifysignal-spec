@@ -234,6 +234,13 @@ class CandidateValidationUseCase:
     productSignalRefs: list[str] = field(default_factory=list)
     provenance: Literal["browser", "repository", "hybrid"] | None = None
     sideEffectClass: Literal["none", "write", "external-notification", "unknown"] | None = None
+    groundingStatus: Literal[
+        "observed",
+        "partial",
+        "authentication-required",
+        "blocked",
+        "unknown",
+    ] = "unknown"
     proofStatus: Literal["not-selected", "selected", "blocked", "passed", "failed"] | None = None
 
     @classmethod
@@ -255,6 +262,7 @@ class CandidateValidationUseCase:
             productSignalRefs=[str(item) for item in data.get("productSignalRefs", [])],
             provenance=data.get("provenance"),
             sideEffectClass=data.get("sideEffectClass"),
+            groundingStatus=data.get("groundingStatus", "unknown"),
             proofStatus=data.get("proofStatus"),
         )
 
@@ -694,6 +702,16 @@ class FirstRunCandidate:
     confidence: Literal["high", "medium", "low"] = "medium"
     requiresEnvironment: bool = False
     knownRuntimeRequirements: list[str] = field(default_factory=list)
+    sideEffectClass: Literal[
+        "none", "write", "external-notification", "unknown"
+    ] | None = None
+    groundingStatus: Literal[
+        "observed",
+        "partial",
+        "authentication-required",
+        "blocked",
+        "unknown",
+    ] = "unknown"
 
     @classmethod
     def from_candidate_use_case(cls, candidate: CandidateValidationUseCase) -> "FirstRunCandidate":
@@ -706,6 +724,8 @@ class FirstRunCandidate:
             confidence=candidate.confidence,
             requiresEnvironment=candidate.requiresEnvironment,
             knownRuntimeRequirements=list(candidate.knownRuntimeRequirements),
+            sideEffectClass=candidate.sideEffectClass,
+            groundingStatus=candidate.groundingStatus,
         )
 
     @classmethod
@@ -719,6 +739,8 @@ class FirstRunCandidate:
             confidence=data.get("confidence", "medium"),
             requiresEnvironment=bool(data.get("requiresEnvironment", False)),
             knownRuntimeRequirements=[str(item) for item in data.get("knownRuntimeRequirements", [])],
+            sideEffectClass=data.get("sideEffectClass"),
+            groundingStatus=data.get("groundingStatus", "unknown"),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -1053,6 +1075,8 @@ class GoldenPathRunState:
         core_browser_status: str,
         spec_coverage_status: str,
         missing_required_gates: list[str],
+        side_effect_status: str = "not-applicable",
+        side_effect_violations: list[dict[str, Any]] | None = None,
         repaired: bool = False,
         repair_feedback: list[dict[str, Any]] | None = None,
         stage_cards: list[dict[str, Any]] | None = None,
@@ -1063,6 +1087,8 @@ class GoldenPathRunState:
             core_browser_status,
             spec_coverage_status,
             missing_required_gates,
+            side_effect_status=side_effect_status,
+            side_effect_violations=side_effect_violations,
             repaired=repaired,
         )
         return cls(
@@ -1109,6 +1135,7 @@ class RuntimeFeedbackFinding:
         "environment-recovery",
         "wait-flow-issue",
         "selector-issue",
+        "side-effect-policy-issue",
         "data-product-state-issue",
         "coverage-mapping-issue",
         "unsupported-feedback",
@@ -1649,6 +1676,14 @@ class AuthoringTaskSet:
         return clean(data)
 
 
-def native_invocation(stage: str, style: str = "skill") -> str:
-    separator = "-" if style == "skill" else "."
-    return f"/verifysignal{separator}{stage}"
+def native_invocation(
+    stage: str,
+    style: str = "skill",
+    *,
+    integration: str = "claude",
+) -> str:
+    """Render an agent-native command while preserving the legacy Claude default."""
+
+    from verifysignal_spec.integrations.invocation import native_invocation as render
+
+    return render(stage, integration, style)

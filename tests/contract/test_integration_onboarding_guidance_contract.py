@@ -20,10 +20,16 @@ class IntegrationOnboardingGuidanceContractTests(CliTestCase):
         assert_guidance_shape(guide)
         self.assertEqual(guide["schemaVersion"], "verifysignal-spec-onboarding-guidance/v1")
         self.assertEqual(guide["integrationKey"], "codex")
-        self.assertEqual(guide["nextCommand"], "/verifysignal")
+        self.assertEqual(guide["nextCommand"], "$verifysignal")
         self.assertIn("[RECOMMENDED]", guide["stageMarkers"])
         self.assertIn("repaired", " ".join(guide["successSemantics"]).lower())
         self.assertIn("sensitive", " ".join(guide["safetyBoundaries"]).lower())
+        self.assertEqual(data["mcp"]["path"], ".codex/config.toml")
+        self.assertEqual(data["mcp"]["userRegistration"]["scope"], "user")
+        self.assertEqual(
+            data["mcp"]["userRegistration"]["status"],
+            "skipped",
+        )
 
     def test_integration_install_json_includes_ready_core_setup_contract(self) -> None:
         code, out, err = self.cli(["integration", "install", "codex", "--project", str(self.project), "--json"])

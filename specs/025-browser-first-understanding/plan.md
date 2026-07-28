@@ -16,14 +16,19 @@ The implementation is additive. It introduces a versioned public
 persistence, age-based browser freshness, generic understanding documents, and
 shared agent guidance for bounded headed exploration and assisted login.
 Playwright MCP or an equivalent host browser performs exploration; Spec does not
-add a browser runtime or private Core integration.
+add a browser runtime or private Core integration. The Codex and Claude
+adapters install the managed browser capability once in the selected agent's
+user scope through that agent's public MCP command. Project configuration
+remains a backward-compatible fallback, while an integration-aware invocation
+renderer keeps Codex `$verifysignal-*` and Claude Code
+`/verifysignal-*` guidance distinct.
 
 ## Technical Context
 
 **Language/Version**: Python 3.11+
 **Primary Dependencies**: Existing Typer, Rich, PyYAML, Pydantic, pathspec,
-packaging, cryptography, standard library URL/date/path handling, and bundled
-agent templates; no new dependency
+packaging, cryptography, standard library URL/date/path handling, bundled agent
+templates, and `tomlkit` for comment-preserving project Codex configuration
 **Storage**: Existing target-directory `.verifysignal/` YAML and Markdown
 workspace artifacts using the compatible `verifysignal-spec-product-context/v1`
 schema
@@ -38,12 +43,17 @@ under 50 ms; workflow capability inspection remains under 500 ms; no added
 latency to repository understanding beyond additive field checks
 **Constraints**: Public Core CLI JSON only; no private imports; no embedded
 browser runtime; same-origin read-safe mapping; no raw browser captures or
-secret values in durable state; one selected use case maps to one run request
+secret values in durable state; user-scoped agent configuration only through
+the agent's public MCP command; one selected use case maps to one run request
 **Scale/Scope**: Default maximum 20 meaningful pages/states, depth 3, three to
 five candidates, one approved proof, and a 15-minute host exploration budget
 **Public Contract Impact**: `workflow info` gains an `understand` stage payload
 contract and `browserFirstUnderstanding` capability projection. Existing
-repository persistence inputs and `product-context/v1` remain valid.
+repository persistence inputs and `product-context/v1` remain valid. Existing
+command fields keep their schemas but render values using the selected
+integration's native invocation syntax. Browser candidates gain additive
+grounding and transition metadata, validation readiness identifies structural
+scope, and managed MCP configuration invokes a Spec-owned isolated launcher.
 
 ## Constitution Check
 
@@ -56,7 +66,9 @@ repository persistence inputs and `product-context/v1` remain valid.
   storage state, raw DOM/snapshots, screenshots, traces, response bodies, and
   form values are rejected or omitted.
 - **Agent-neutral interface**: PASS. A shared public payload contract and
-  template define host behavior without making MCP state canonical.
+  template define host behavior without making MCP state canonical. Integration
+  adapters own user-scoped registration through public host commands,
+  compatible project fallback, and invocation syntax.
 - **Testable spec-driven delivery**: PASS. Each user story maps to focused
   contract/integration coverage, regression tests, and a local live fixture.
 
@@ -84,7 +96,9 @@ specs/025-browser-first-understanding/
 ```text
 src/verifysignal_spec/
 ├── integrations/
-│   └── base.py
+│   ├── base.py
+│   ├── invocation.py
+│   └── mcp.py
 ├── templates/
 │   ├── agent_guidance.py
 │   ├── agent-commands/
@@ -184,13 +198,57 @@ Decisions in [research.md](./research.md):
    assisted authentication, candidate review, and probe-only mutation rules.
 5. Bump Spec minor version to `0.21.0`, update public documentation, and validate
    all regressions plus the Core 018 public contract.
+6. Add the Codex parity correction: project-scoped MCP installation,
+   integration-native invocation rendering, upgrade compatibility, and a
+   `0.21.1` patch release.
+7. Harden the smoke-tested integration through lossless bounded aliases,
+   strict field-path validation, explicit journey grounding, authoritative
+   side-effect ranking, inventory-first Golden Path acceptance, isolated pinned
+   Playwright MCP execution, and explicit structural/runtime readiness copy.
+8. Close the Codex startup regression with a red/green stdio acceptance
+   boundary: install the pinned MCP provider during integration setup, execute
+   only the verified user-cache binary during agent startup, and require a real
+   `initialize` plus `tools/list` handshake in pull-request CI.
+9. Convert every failed manual PR smoke observation into an explicit
+   regression: require the Codex server at session startup, initially query its
+   tools through a trusted ephemeral app-server thread, distinguish
+   pre-observation host failure from product state, make prerequisite/runtime
+   recovery unambiguous, and prove RED on the original PR head before GREEN.
+   Phase 11 replaces that trust-assisted acceptance with clean user-scope
+   startup.
+10. Close the false browser-unavailable regression by defining MCP-first
+    backend selection, distinguishing Codex's Browser Plugin inventory from
+    project MCP discovery, and allowing setup/restart recovery only after both
+    inventories lack usable navigation.
+11. Close the clean-user startup regression by registering the managed MCP
+    through Codex and Claude's public user-scope commands, proving plain agent
+    startup without trust/config overrides, and keeping local backend setup
+    outside the agent launch boundary.
+12. Close protected validation regressions by preserving packaged-runtime trust
+    ownership and materializing Core-required side-effect policy modes.
+13. Close the selector/side-effect attribution regression across Core and Spec:
+    consume public blocking authoring-warning metadata statically, fail Spec
+    results on policy violations, persist a secret-safe policy snapshot, block
+    unchanged reruns, require explicit owner review for policy changes, and
+    restore strict pass only after a clean rerun.
 
 ## Post-Design Constitution Check
 
-All gates remain PASS after design. The feature adds no browser dependency,
-stores no provider-specific capture, keeps one project-local source of truth,
-preserves repository mode, and treats public Core capability detection as a
-release gate rather than implementing Core behavior in Spec.
+All gates remain PASS after design. The feature adds no browser inference or
+deterministic validation runtime. Integration setup installs the host-owned
+pinned Playwright MCP package into a private versioned user cache; the small
+stdio launcher executes that verified cache entry without network resolution,
+isolates provider output, and cannot persist provider output into the target
+project. The feature stores no provider-specific capture, keeps durable product
+state project-local, preserves repository mode, and treats public Core
+capability detection as a release gate rather than implementing Core behavior
+in Spec. The new readiness and rerun behavior consumes only public Core contract,
+run, and report-inspection fields; it does not import Core internals or navigate
+during static validation. Agent MCP registration uses only the selected host's documented public
+MCP command, preserves conflicting user-owned entries, and records no
+credentials. The real Codex acceptance invokes only app-server initialization,
+an ephemeral read-only thread, and MCP status inspection; it does not send a
+model turn or navigate a product.
 
 ## Complexity Tracking
 

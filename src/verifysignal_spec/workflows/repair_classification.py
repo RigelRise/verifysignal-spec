@@ -12,6 +12,29 @@ def classify_runtime_feedback(finding: dict[str, Any], *, source: str = "report-
     gate_id = str(finding.get("gateId") or finding.get("path") or "").strip()
     evidence = [item for item in [code, message] if item]
 
+    if (
+        code.startswith("side-effect-")
+        and any(term in code for term in ["violation", "observation-review", "policy-changed"])
+    ) or any(
+        term in text
+        for term in [
+            "side-effect policy violation",
+            "side effect policy violation",
+            "side effect was observed",
+            "side-effect observation review",
+        ]
+    ):
+        return RuntimeFeedbackFinding(
+            id=_id("side-effect-policy", code),
+            source=source,  # type: ignore[arg-type]
+            category="side-effect-policy-issue",
+            severity="blocked",
+            summary=message or "Observed network activity requires an explicit side-effect policy review.",
+            evidence=evidence,
+            affectedGates=[gate_id] if gate_id else [],
+            recommendedAction="blocked",
+            confidence="high",
+        )
     if code.startswith("entitlement.") or code in {"api.unavailable", "distribution.unauthorized", "distribution.unavailable", "core.incompatible"}:
         return RuntimeFeedbackFinding(
             id=_id("runtime-entitlement", code),

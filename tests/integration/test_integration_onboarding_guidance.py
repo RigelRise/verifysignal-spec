@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 
 from helpers import CliTestCase
 
@@ -15,7 +16,11 @@ class IntegrationOnboardingGuidanceIntegrationTests(CliTestCase):
         self.assertIn("VerifySignal Core: [READY]", out)
         self.assertIn("Source: env", out)
         self.assertIn("[RECOMMENDED]", out)
-        self.assertIn("/verifysignal-specify", out)
+        self.assertIn("$verifysignal", out)
+        self.assertIsNone(
+            re.search(r"(?<![\w./-])/verifysignal(?:-[a-z0-9*-]+)?", out)
+        )
+        self.assertIn(".codex/config.toml", out)
 
         guide_path = self.project / ".agents" / "VERIFYSIGNAL_ONBOARDING.md"
         self.assertTrue(guide_path.exists())
@@ -24,6 +29,10 @@ class IntegrationOnboardingGuidanceIntegrationTests(CliTestCase):
         self.assertIn("VerifySignal Core is ready", content)
         self.assertIn("Safety Boundaries", content)
         self.assertIn("Repaired strict pass", content)
+        self.assertIn("$verifysignal", content)
+        self.assertIsNone(
+            re.search(r"(?<![\w./-])/verifysignal(?:-[a-z0-9*-]+)?", content)
+        )
 
     def test_claude_install_prints_guidance_and_writes_local_guide(self) -> None:
         code, out, err = self.cli(["integration", "install", "claude", "--project", str(self.project)])

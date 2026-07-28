@@ -57,4 +57,4 @@ class WorkflowClarifyEnvironmentGateIntegrationTests(CliTestCase):
         self.assertEqual(code, 0, err)
         result = json.loads(out)
         self.assertEqual(result["status"], "missing")
-        self.assertEqual(result["nextCommand"], "/verifysignal-clarify login")
+        self.assertEqual(result["nextCommand"], "$verifysignal-clarify login")

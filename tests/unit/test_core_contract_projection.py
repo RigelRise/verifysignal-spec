@@ -1,12 +1,36 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from tests.fixtures.managed_runtime import core_contract_fixture_payload, current_core_contract_fixture_payload
 from verifysignal_spec.workflows.browser_authoring import browser_authoring_contract
 from verifysignal_spec.core.executable_contract import CommandContractReuse, project_core_contract, validate_core_contract
+from verifysignal_spec.workflows.readiness import executable_contract_blockers
 
 
 def _finding_codes(projection: dict) -> set[str]:
     return {str(item.get("code")) for item in projection.get("findings", []) if isinstance(item, dict)}
+
+
+def _required_authoring_warnings() -> list[dict]:
+    return [
+        {
+            "code": "degenerate-text-target",
+            "severity": "warning",
+            "runtimeReadinessSeverity": "blocking",
+            "message": "Broad text-only targets are ambiguous.",
+            "remediation": "Use a stable semantic locator.",
+            "appliesTo": ["targets", "assertions"],
+        },
+        {
+            "code": "unstable-generated-css-target",
+            "severity": "warning",
+            "runtimeReadinessSeverity": "blocking",
+            "message": "Generated or positional CSS targets are unstable.",
+            "remediation": "Use testId, label, href, or another stable semantic locator.",
+            "appliesTo": ["targets"],
+        },
+    ]
 
 
 def test_command_contract_reuse_is_in_memory_and_keyed_per_command() -> None:
@@ -340,3 +364,35 @@ def test_current_core_projection_reports_missing_required_executable_metadata() 
     )
 
     assert "core-contract.required-executable-metadata-missing" in _finding_codes(projection)
+
+
+def test_projection_preserves_public_authoring_guardrails_for_runtime_readiness() -> None:
+    payload = current_core_contract_fixture_payload()
+    payload["data"]["sections"]["browserWorkflow"]["warnings"] = _required_authoring_warnings()
+
+    projection = project_core_contract(payload)
+    browser = projection["sections"]["browserWorkflow"]
+    authoring = browser_authoring_contract(core_contract=projection)
+
+    assert browser["authoringWarnings"] == _required_authoring_warnings()
+    assert authoring["authoringWarnings"] == _required_authoring_warnings()
+
+
+def test_runtime_readiness_blocks_a_core_that_does_not_announce_required_authoring_guardrails() -> None:
+    payload = current_core_contract_fixture_payload()
+    payload["data"]["sections"]["browserWorkflow"].pop("warnings", None)
+    projection = project_core_contract(payload)
+
+    blockers = executable_contract_blockers(Path("."), None, core_contract=projection)
+
+    assert any(blocker.code == "core.authoring-guardrails-outdated" for blocker in blockers)
+
+
+def test_runtime_readiness_accepts_a_core_that_announces_required_authoring_guardrails() -> None:
+    payload = current_core_contract_fixture_payload()
+    payload["data"]["sections"]["browserWorkflow"]["warnings"] = _required_authoring_warnings()
+    projection = project_core_contract(payload)
+
+    blockers = executable_contract_blockers(Path("."), None, core_contract=projection)
+
+    assert not any(blocker.code == "core.authoring-guardrails-outdated" for blocker in blockers)

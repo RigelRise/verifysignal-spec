@@ -19,6 +19,9 @@ def test_codex_renders_verifysignal_workflow_skills(tmp_path) -> None:
     assert ".agents/skills/verifysignal-run/SKILL.md" in files
     assert "verifysignal.understand" in files[".agents/skills/verifysignal-understand/SKILL.md"]
     assert ".agents/skills/verifysignal-spec-author/SKILL.md" not in files
+    assert "Invoke this command as `$verifysignal-understand`" in files[".agents/skills/verifysignal-understand/SKILL.md"]
+    assert any("$verifysignal-" in content for content in files.values())
+    assert all("/verifysignal" not in content for content in files.values())
 
 
 def test_claude_renders_argument_hints_for_workflow_skills(tmp_path) -> None:
@@ -68,12 +71,42 @@ def test_context_includes_playwright_mcp_authoring_guidance(tmp_path) -> None:
 
 
 def test_onboarding_guide_advertises_auto_enabled_playwright_mcp(tmp_path) -> None:
-    # Live authoring is auto-enabled on install (the MCP is written into .mcp.json), and Claude Code
-    # prompts the user to approve it — the onboarding must say so and keep the manual fallback command.
+    # Live authoring is registered once in Claude user scope. The project file
+    # remains only as a compatibility fallback.
     claude = {item.path: item.content for item in ClaudeIntegration().render_files(tmp_path)}
     guide = claude[".claude/VERIFYSIGNAL_ONBOARDING.md"]
     assert "Playwright MCP" in guide
     assert ".mcp.json" in guide
-    assert "approve" in guide.lower()  # Claude Code's approval gate
-    assert "claude mcp add playwright -- npx -y @playwright/mcp@latest" in guide  # manual fallback
+    assert "user scope" in guide.lower()
+    assert "compatibility fallback" in guide.lower()
+    assert (
+        "claude mcp add --scope user playwright -- verifysignal integration playwright-mcp"
+        in guide
+    )
+    assert "private temporary" in guide
+    assert "target project" in guide
+    assert "private user cache" in guide
+    assert "setup-playwright-mcp" in guide
+    assert "does not depend on network access" in guide
     assert "authority" in guide.lower() or "wins" in guide.lower()
+
+
+def test_codex_onboarding_advertises_user_scoped_playwright_and_native_invocation(tmp_path) -> None:
+    codex = {item.path: item.content for item in CodexIntegration().render_files(tmp_path)}
+    guide = codex[".agents/VERIFYSIGNAL_ONBOARDING.md"]
+
+    assert ".codex/config.toml" in guide
+    assert "user scope" in guide.lower()
+    assert "compatibility fallback" in guide.lower()
+    assert (
+        "codex mcp add playwright -- verifysignal integration playwright-mcp"
+        in guide
+    )
+    assert "trust the project" not in guide.lower()
+    assert "$verifysignal" in guide
+    assert "/verifysignal" not in guide
+    assert ".mcp.json" not in guide
+    assert "claude mcp add" not in guide
+    assert "private user cache" in guide
+    assert "setup-playwright-mcp" in guide
+    assert "does not depend on network access" in guide

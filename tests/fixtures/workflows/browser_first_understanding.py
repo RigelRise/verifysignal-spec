@@ -23,6 +23,17 @@ def browser_understanding_payload(
     items: list[dict[str, Any]] = []
     signals: list[dict[str, Any]] = []
     candidates: list[dict[str, Any]] = []
+    authentication_signal = {
+        "id": "authenticated-session",
+        "kind": "runtime-requirement",
+        "surface": "/sign-in",
+        "summary": "The mapped product surfaces require an authenticated session.",
+        "evidence": ["The user completed sign-in directly in the headed browser."],
+        "provenance": "browser",
+        "observedAt": OBSERVED_AT,
+        "confidence": "high",
+        "inventoryItemRefs": [],
+    }
     for signal_id, path, title, behavior, priority in surfaces:
         item_id = f"surface-{signal_id}"
         items.append(
@@ -64,10 +75,11 @@ def browser_understanding_payload(
                 "inventorySourceStatus": "complete",
                 "priority": priority,
                 "requiresEnvironment": True,
-                "knownRuntimeRequirements": ["baseUrl"],
-                "productSignalRefs": [signal_id],
+                "knownRuntimeRequirements": ["baseUrl", "authenticated session"],
+                "productSignalRefs": [signal_id, "authenticated-session"],
                 "provenance": "browser",
                 "sideEffectClass": "none",
+                "groundingStatus": "authentication-required",
             }
         )
     status = "complete" if candidate_count >= 3 else "partial"
@@ -86,7 +98,7 @@ def browser_understanding_payload(
             "status": status,
             "partialInventoryReasons": reasons,
         },
-        "productSignals": signals,
+        "productSignals": [*signals, authentication_signal],
         "gaps": reasons,
         "coverageInventory": {
             "status": status,
@@ -109,4 +121,27 @@ def browser_understanding_payload(
                 "safeInspectionPaths": ["src/"],
             }
         )
+    return deepcopy(payload)
+
+
+def browser_understanding_alias_payload() -> dict[str, Any]:
+    payload = browser_understanding_payload()
+    inventory = payload["coverageInventory"]
+    payload["candidateUseCases"] = inventory.pop("candidateUseCases")
+
+    for item in inventory["items"]:
+        item["surface"] = item.pop("path")
+        item["summary"] = item.pop("title")
+        item["kind"] = item.pop("surfaceType")
+        item["status"] = item.pop("inventoryStatus")
+
+    for candidate in payload["candidateUseCases"]:
+        candidate["id"] = candidate.pop("alias")
+        candidate["title"] = candidate.pop("behavior")
+        candidate["expectedOutcome"] = candidate.pop("rationale")
+        candidate["sideEffects"] = {"class": candidate.pop("sideEffectClass")}
+
+    for signal in payload["productSignals"]:
+        signal["inventoryReferences"] = signal.pop("inventoryItemRefs")
+
     return deepcopy(payload)

@@ -10,16 +10,24 @@ from verifysignal_spec.templates.agent_guidance import (
 )
 
 from .base import AgentIntegration, RenderedFile, build_onboarding_guidance, render_onboarding_guide, render_workflow_skill_files
+from .invocation import render_agent_invocations
+from .mcp import CODEX_PLAYWRIGHT_MCP_SERVER
 
 
 class CodexIntegration(AgentIntegration):
     key = "codex"
     display_name = "Codex"
-    invoke_style = "Codex skills under .agents/skills/verifysignal-*; invoke as /verifysignal-*"
+    invoke_style = "Codex skills under .agents/skills/verifysignal-*; invoke as $verifysignal-*"
+    mcp_config_format = "codex-toml"
 
     def render_files(self, project: Path, core_status: dict[str, object] | None = None) -> list[RenderedFile]:
         files = [
-            RenderedFile("AGENTS.md", _context("AGENTS.md"), "codex/context", "context"),
+            RenderedFile(
+                "AGENTS.md",
+                render_agent_invocations(_context("AGENTS.md"), self.key),
+                "codex/context",
+                "context",
+            ),
         ]
         guide = build_onboarding_guidance(
             integration_key=self.key,
@@ -28,14 +36,23 @@ class CodexIntegration(AgentIntegration):
             core_status=core_status,
         )
         files.append(RenderedFile(".agents/VERIFYSIGNAL_ONBOARDING.md", render_onboarding_guide(guide), "codex/onboarding-guide", "onboarding-guide"))
-        files.extend(render_workflow_skill_files(".agents/skills", "Codex"))
+        files.extend(
+            render_workflow_skill_files(
+                ".agents/skills",
+                "Codex",
+                integration=self.key,
+            )
+        )
         return files
+
+    def mcp_servers(self) -> dict[str, object]:
+        return {"playwright": CODEX_PLAYWRIGHT_MCP_SERVER}
 
 
 def _context(filename: str) -> str:
     return f"""# VerifySignal Spec Agent Guidance
 
-Use `/verifysignal-*` workflow skills for staged VerifySignal use case authoring.
+Use `$verifysignal-*` workflow skills for staged VerifySignal use case authoring.
 Use `verifysignal` commands from the target repository root for deterministic
 non-AI operations. Keep generated project artifacts and guidance in English.
 Use pt-BR only for conversation with the project owner when appropriate. Store

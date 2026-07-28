@@ -2,8 +2,8 @@ from __future__ import annotations
 
 BROWSER_TARGET_BEFORE_PLANNING = "Confirm the browser target environment before planning executable artifacts"
 RUNTIME_READINESS_BOUNDARY = (
-    "runtime readiness verifies target resolution, target reachability, required runtime prerequisites, "
-    "and Core authoring readiness"
+    "workflow check validate reports structural readiness only; runtime readiness separately verifies "
+    "target resolution, target reachability, required runtime prerequisites, entitlement, and Core authoring readiness"
 )
 CONFIRMED_REPAIR_BOUNDARY = "Selector, flow, data, and coverage changes require confirmation"
 # SAFE_MECHANICAL_REPAIR_GUIDANCE was deleted here, not rewritten. It claimed selector, wait,
@@ -33,8 +33,9 @@ PLAYWRIGHT_MCP_GUIDANCE = (
     "of guessing from source — but it is an authoring aid, never a validator: every selector it suggests must "
     "still be confirmed by `verifysignal discover` and the use case must still pass `verifysignal run`, and if the "
     "MCP and `discover` disagree, `discover` wins. Without a Playwright MCP, author from source as usual; the "
-    "deterministic grounding and gate are unchanged. Never persist or print MCP snapshots, DOM, screenshots, "
-    "cookies, or storage state. On authenticated surfaces preserve auth only as public run-request "
+    "deterministic grounding and gate are unchanged. The managed MCP launcher isolates provider files in a "
+    "private temporary directory; never copy MCP snapshots, DOM, screenshots, logs, cookies, or storage state "
+    "into the target project or `.verifysignal/`. On authenticated surfaces preserve auth only as public run-request "
     "`credentialRefs` or `sessionRef` resolved by Core from the environment. For authenticated write surfaces, "
     "use Core's advertised `verifysignal.probe/v1` capability for stateful pre-commit grounding; let the MCP "
     "explore only up to the commit step and never cross it — only the deterministic `run` crosses the commit. "

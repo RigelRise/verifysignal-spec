@@ -640,6 +640,27 @@ def _result(
     rerunDecision: dict[str, Any] | None = None,
     blockers: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    resolved_missing_artifacts = missing_artifacts or []
+    resolved_next_command = next_command or _native_next(stage, alias)
+    resolved_blockers = list(blockers or [])
+    if (
+        not can_proceed
+        and resolved_missing_artifacts
+        and not resolved_blockers
+    ):
+        resolved_blockers.append(
+            {
+                "code": "workflow.prerequisite-missing",
+                "severity": "blocker",
+                "category": "workflow",
+                "message": (
+                    f"The {stage} stage cannot proceed because required "
+                    "workflow artifacts are missing."
+                ),
+                "missingArtifacts": resolved_missing_artifacts,
+                "recoveryCommand": resolved_next_command,
+            }
+        )
     result: dict[str, Any] = {
         "schemaVersion": WORKFLOW_CAPABILITY_SCHEMA,
         "prerequisiteSchemaVersion": WORKFLOW_PREREQUISITE_CHECK_SCHEMA,
@@ -650,11 +671,11 @@ def _result(
         "status": status,
         "canProceed": can_proceed,
         "requiresConfirmation": requires_confirmation,
-        "missingArtifacts": missing_artifacts or [],
+        "missingArtifacts": resolved_missing_artifacts,
         "staleReasons": stale_reasons or [],
         "warnings": warnings or [],
         "recommendedAction": recommended_action,
-        "nextCommand": next_command or _native_next(stage, alias),
+        "nextCommand": resolved_next_command,
         "recordedDecision": recorded_decision,
         "projectOverview": projectOverview,
         "candidateUseCases": candidateUseCases or [],
@@ -665,7 +686,7 @@ def _result(
         "onboardingPreparation": onboardingPreparation,
         "resumeCommand": resumeCommand,
         "stageCards": stageCards or [],
-        "blockers": blockers or [],
+        "blockers": resolved_blockers,
     }
     if refreshImpact is not None:
         result["refreshImpact"] = refreshImpact

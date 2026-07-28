@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from verifysignal_spec.workflows.repair_classification import classify_runtime_feedback
+from verifysignal_spec.workflows.repair_recommendations import classify_repair_findings
 
 
 def test_wait_flow_timeout_is_classified_with_high_confidence() -> None:
@@ -31,3 +32,20 @@ def test_aborted_run_missing_coverage_is_diagnostic_mapping_issue() -> None:
     assert finding.category == "coverage-mapping-issue"
     assert finding.severity == "warning"
     assert finding.recommendedAction == "implement-repair"
+
+
+def test_side_effect_policy_violation_requires_owner_policy_review_and_is_never_auto_allowed() -> None:
+    source = {
+        "code": "side-effect-class-none-violation",
+        "message": "A side effect was observed although the policy class is none. Review the policy before rerun.",
+    }
+    finding = classify_runtime_feedback(source)
+    recommendations = classify_repair_findings([source])
+
+    assert finding.category == "side-effect-policy-issue"
+    assert finding.recommendedAction == "blocked"
+    assert recommendations[0].runtimeCategory == "side-effect-policy-issue"
+    assert recommendations[0].requiresUserDecision is True
+    assert recommendations[0].autonomy == "blocked"
+    assert recommendations[0].safeMechanical is False
+    assert "allow" not in recommendations[0].action.lower()

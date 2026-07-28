@@ -40,4 +40,6 @@ class UnderstandingOnboardingContractTests(CliTestCase):
         self.assertEqual(result["status"], "persisted")
         self.assertIn("partial inventory", " ".join(result.get("warnings", [])).lower())
         self.assertEqual(result["understandingOnboarding"]["sourceTraceabilityStatus"], "normalized")
-        self.assertEqual(result["understandingOnboarding"]["trivialCandidateCount"], 1)
+        # Legacy candidates without explicit grounding remain selectable, but
+        # no longer count as safe automatic first-run guidance.
+        self.assertEqual(result["understandingOnboarding"]["trivialCandidateCount"], 0)

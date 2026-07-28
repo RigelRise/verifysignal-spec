@@ -5,15 +5,13 @@ import re
 from pathlib import Path
 from typing import Any
 
-from verifysignal_spec.core.adapter import CoreAdapter
-from verifysignal_spec.core.errors import CoreExecutionError, CoreIncompatibleError, CoreMissingError
-from verifysignal_spec.core.executable_contract import project_core_contract
 from verifysignal_spec.workspace import artifacts, layout
 from verifysignal_spec.workspace.models import ArtifactReference, AuthoringQuestion, CredentialReadinessHint, RefreshImpactResult, RuntimeInputRequirement
 from verifysignal_spec.workspace.product_context import load_product_context, save_product_context
 from verifysignal_spec.workspace.repository import (
     capability_stamp,
     get_core_command,
+    get_entitlement_api_base_url,
     init_workspace,
     load_registry,
     load_use_case,
@@ -1531,12 +1529,40 @@ def _profiles_from_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _core_contract_for_browser_authoring(project: Path) -> dict[str, Any] | None:
-    command = get_core_command(project) or os.environ.get("VERIFYSIGNAL_CORE_CMD")
-    if not command:
-        return None
+    from verifysignal_spec.core.runtime_contract import (
+        CoreRuntimeResolutionError,
+        resolve_core_executable_contract,
+    )
+
+    configured_command = (
+        get_core_command(project)
+        or os.environ.get("VERIFYSIGNAL_CORE_CMD")
+    )
+    if not configured_command:
+        from verifysignal_spec.runtime.cache import load_cache_entry
+        from verifysignal_spec.runtime.distribution import normalize_platform
+
+        platform = normalize_platform()
+        api_base_url = get_entitlement_api_base_url(project)
+        if (
+            not platform
+            or load_cache_entry(
+                platform=platform,
+                api_base_url=api_base_url,
+            )
+            is None
+        ):
+            # Preserve the established contract for source-only authoring
+            # fixtures and workspaces that have not installed a Core yet.
+            # Once a managed runtime exists, discovery below is mandatory.
+            return None
+
     try:
-        projection = project_core_contract(CoreAdapter(executable=command, cwd=project).contracts())
-    except (CoreMissingError, CoreIncompatibleError, CoreExecutionError) as exc:
+        projection, _runtime = resolve_core_executable_contract(
+            project,
+            context="browser-authoring",
+        )
+    except CoreRuntimeResolutionError as exc:
         raise ValueError(f"Core executable contract unavailable for browser authoring validation: {exc}") from exc
     blockers = [item for item in projection.get("findings", []) if item.get("severity") == "blocking"]
     if blockers:

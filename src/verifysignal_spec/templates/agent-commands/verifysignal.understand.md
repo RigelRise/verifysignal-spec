@@ -42,6 +42,31 @@ access, or both before authoring run requests.
 - Use Playwright MCP or an equivalent host browser/Playwright interface. This
   exploratory browser is not the deterministic validator; documented public
   Core `discover`, `probe`, and `run` operations remain authoritative.
+- Before navigation, verify that the headed browser capability is actually available
+  in the current agent session, resolving the backend in this order:
+  1. First inspect the current agent session for the project Playwright MCP tools.
+     If live tools such as `browser_navigate` and `browser_snapshot` are present,
+     use that MCP and continue mapping.
+  2. Only when those MCP tools are absent, inspect an equivalent headed host
+     browser/Playwright interface.
+- In Codex, `agent.browsers.list()` only reports Browser Plugin/in-app browser backends;
+  an empty list does not report Playwright MCP availability and must not be used
+  to conclude that all headed browser tools are absent.
+- Treat headed browser capability as unavailable only after both browser inventories were checked
+  and neither exposes usable navigation. A configured server or an advertised
+  workflow capability alone is not proof that browser tools were discovered by
+  the host. Do not run setup or recommend a session restart when the Playwright MCP tools are already available.
+- If no headed browser tools are available before any product observation,
+  classify that as a host integration setup failure: do not call `workflow persist understand`
+  and do not create or update product understanding artifacts. For the managed
+  provider, run `verifysignal integration setup-playwright-mcp --json`, then
+  rerun project initialization or integration installation for the selected
+  agent so user-scoped MCP registration is repaired. Start a new agent session
+  afterward (start a new Codex session when using Codex). Do not inject or
+  modify project trust.
+- Persist browser-first understanding only after at least one real product signal
+  was observed. Zero observed pages, signals, and candidates never constitute
+  partial product understanding.
 - Open a headed browser. Use human-observable pacing: wait about 700 ms between
   meaningful actions and pause after each navigation so the user can follow.
 - Default to one same-origin scope, at most 20 meaningful pages or states,
@@ -84,6 +109,8 @@ access, or both before authoring run requests.
 - Do not write managed `.verifysignal/` artifacts directly. Persist through:
   `verifysignal workflow persist understand --scope <scope> --payload
   <payload.json> --json`.
+- Never pass raw JSON text to `--payload`; it accepts a JSON/YAML file path
+  outside `.verifysignal/`. To avoid a temporary payload file, pipe it through `--stdin`.
 
 ## Repository and Scoped Passes
 
@@ -102,8 +129,12 @@ access, or both before authoring run requests.
 
 ## Candidate Review and Proof Boundary
 
-- Present the ranked candidates and ask the user to select one journey for
-  proof. Do not auto-select a potentially mutating journey.
+- After persistence, run
+  `verifysignal workflow recommend-first-run --json`. Treat this response as
+  the only product-owned ranking source.
+- Present `rankedCandidates` in exactly the returned order and ask the user to
+  select one journey for proof. Do not independently re-rank inventory
+  candidates and do not auto-select a potentially mutating journey.
 - A read-only selection may continue through the public
   specify/plan/tasks/implement/validate/run workflow.
 - Before any potentially mutating proof, run
@@ -114,9 +145,13 @@ access, or both before authoring run requests.
 - If the selected journey may write or notify an external system, require
   explicit confirmation and exact public `verifysignal.probe/v1` support. Use
   `verifysignal probe <run-request> --skill <main-skill> --json`; probe must not commit and probe success does not authorize a normal run.
-- If browser capability, authentication, target reachability, or public Core
-  capability is missing, preserve the candidate and report the exact
-  partial/blocked prerequisite. Do not claim proof.
+- If browser capability becomes unavailable after real observations, or if
+  authentication, target reachability, or public Core capability is missing,
+  preserve already observed candidates and report the exact partial/blocked
+  prerequisite. Do not claim proof. A pre-observation host browser failure
+  follows the no-persistence setup path above.
+- When a candidate already exists, preserve the candidate and report the exact
+  partial/blocked prerequisite.
 - Report whether understanding is complete, partial, stale, or blocked before
   recommending scenarios. Suggest `/verifysignal-specify` after the user
   selects a sufficiently grounded candidate.

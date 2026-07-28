@@ -13,7 +13,8 @@ def test_onboarding_guidance_plain_text_fallback_and_no_secret_values() -> None:
     data = guide.to_dict()
 
     assert data["plainTextFallback"]
-    assert "/verifysignal-specify" in data["plainTextFallback"]
+    assert "$verifysignal-specify" in data["plainTextFallback"]
+    assert "/verifysignal" not in data["plainTextFallback"]
     assert_no_secret_findings(data)
 
 
