@@ -11,7 +11,7 @@ from verifysignal_spec.templates.agent_guidance import (
 
 from .base import AgentIntegration, RenderedFile, build_onboarding_guidance, render_onboarding_guide, render_workflow_skill_files
 from .invocation import render_agent_invocations
-from .mcp import CODEX_PLAYWRIGHT_MCP_SERVER
+from .mcp import managed_playwright_mcp_server
 
 
 class CodexIntegration(AgentIntegration):
@@ -46,7 +46,9 @@ class CodexIntegration(AgentIntegration):
         return files
 
     def mcp_servers(self) -> dict[str, object]:
-        return {"playwright": CODEX_PLAYWRIGHT_MCP_SERVER}
+        return {
+            "playwright": managed_playwright_mcp_server(required=True)
+        }
 
 
 def _context(filename: str) -> str:

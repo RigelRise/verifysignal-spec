@@ -68,6 +68,33 @@ AgentCommandRunner = Callable[
 ]
 
 
+def managed_playwright_mcp_server(
+    *,
+    required: bool = False,
+) -> dict[str, Any]:
+    """Return the managed server with any explicit cache override pinned.
+
+    Agent hosts do not guarantee that their MCP child processes inherit the
+    shell environment. When setup uses a non-default cache, persist that one
+    non-sensitive path in the MCP definition so the launcher can find the
+    provider after the agent starts.
+    """
+
+    server = dict(
+        CODEX_PLAYWRIGHT_MCP_SERVER
+        if required
+        else PLAYWRIGHT_MCP_SERVER
+    )
+    override = os.environ.get(PLAYWRIGHT_MCP_CACHE_ENV)
+    if override:
+        server["env"] = {
+            PLAYWRIGHT_MCP_CACHE_ENV: str(
+                Path(override).expanduser().resolve()
+            )
+        }
+    return server
+
+
 def register_agent_user_mcp(
     integration_key: str,
     *,
@@ -272,9 +299,21 @@ def _agent_mcp_add_command(
     command = [executable, "mcp", "add"]
     if integration_key == "claude":
         command.extend(["--scope", "user"])
+    cache_override = os.environ.get(PLAYWRIGHT_MCP_CACHE_ENV)
+    cache_environment = (
+        f"{PLAYWRIGHT_MCP_CACHE_ENV}="
+        f"{Path(cache_override).expanduser().resolve()}"
+        if cache_override
+        else None
+    )
+    if integration_key == "claude":
+        command.append(PLAYWRIGHT_MCP_SERVER_NAME)
+    if cache_environment:
+        command.extend(["--env", cache_environment])
+    if integration_key == "codex":
+        command.append(PLAYWRIGHT_MCP_SERVER_NAME)
     command.extend(
         [
-            PLAYWRIGHT_MCP_SERVER_NAME,
             "--",
             "verifysignal",
             "integration",

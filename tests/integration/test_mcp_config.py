@@ -74,6 +74,7 @@ def _codex_managed_server_json(
     *,
     command: str = "verifysignal",
     args: list[str] | None = None,
+    environment: dict[str, str] | None = None,
 ) -> str:
     return json.dumps(
         {
@@ -83,7 +84,7 @@ def _codex_managed_server_json(
                 "type": "stdio",
                 "command": command,
                 "args": args or ["integration", "playwright-mcp"],
-                "env": None,
+                "env": environment,
                 "env_vars": [],
                 "cwd": None,
             },
@@ -91,7 +92,13 @@ def _codex_managed_server_json(
     )
 
 
-def test_codex_user_mcp_registration_uses_public_global_command() -> None:
+def test_codex_user_mcp_registration_uses_public_global_command(
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv(
+        "VERIFYSIGNAL_PLAYWRIGHT_MCP_CACHE_DIR",
+        raising=False,
+    )
     runner = _AgentCommandRunner(
         [
             _command_result(1, stderr="No MCP server named 'playwright' found."),
@@ -122,6 +129,51 @@ def test_codex_user_mcp_registration_uses_public_global_command() -> None:
             "playwright-mcp",
         ],
         ["/tools/codex", "mcp", "get", "playwright", "--json"],
+    ]
+
+
+def test_codex_user_mcp_registration_propagates_custom_cache(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    cache = tmp_path / "playwright-cache"
+    monkeypatch.setenv(
+        "VERIFYSIGNAL_PLAYWRIGHT_MCP_CACHE_DIR",
+        str(cache),
+    )
+    runner = _AgentCommandRunner(
+        [
+            _command_result(1, stderr="No MCP server named 'playwright' found."),
+            _command_result(0, stdout="Added global MCP server 'playwright'."),
+            _command_result(
+                0,
+                stdout=_codex_managed_server_json(
+                    environment={
+                        "VERIFYSIGNAL_PLAYWRIGHT_MCP_CACHE_DIR": str(cache),
+                    }
+                ),
+            ),
+        ]
+    )
+
+    result = register_agent_user_mcp(
+        "codex",
+        agent_command="/tools/codex",
+        command_runner=runner,
+    )
+
+    assert result["status"] == "ready"
+    assert runner.calls[1] == [
+        "/tools/codex",
+        "mcp",
+        "add",
+        "--env",
+        f"VERIFYSIGNAL_PLAYWRIGHT_MCP_CACHE_DIR={cache}",
+        "playwright",
+        "--",
+        "verifysignal",
+        "integration",
+        "playwright-mcp",
     ]
 
 
@@ -167,7 +219,13 @@ def test_codex_user_mcp_registration_preserves_conflicting_server() -> None:
     assert len(runner.calls) == 1
 
 
-def test_claude_user_mcp_registration_uses_explicit_user_scope() -> None:
+def test_claude_user_mcp_registration_uses_explicit_user_scope(
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv(
+        "VERIFYSIGNAL_PLAYWRIGHT_MCP_CACHE_DIR",
+        raising=False,
+    )
     runner = _AgentCommandRunner(
         [
             _command_result(1, stderr='No MCP server named "playwright".'),
@@ -200,6 +258,58 @@ def test_claude_user_mcp_registration_uses_explicit_user_scope() -> None:
         "--scope",
         "user",
         "playwright",
+        "--",
+        "verifysignal",
+        "integration",
+        "playwright-mcp",
+    ]
+
+
+def test_claude_user_mcp_registration_propagates_custom_cache(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    cache = tmp_path / "playwright-cache"
+    monkeypatch.setenv(
+        "VERIFYSIGNAL_PLAYWRIGHT_MCP_CACHE_DIR",
+        str(cache),
+    )
+    runner = _AgentCommandRunner(
+        [
+            _command_result(1, stderr='No MCP server named "playwright".'),
+            _command_result(0, stdout="Added stdio MCP server playwright."),
+            _command_result(
+                0,
+                stdout=(
+                    "playwright:\n"
+                    "  Scope: User config\n"
+                    "  Type: stdio\n"
+                    "  Command: verifysignal\n"
+                    "  Args: integration playwright-mcp\n"
+                    "  Environment:\n"
+                    "    VERIFYSIGNAL_PLAYWRIGHT_MCP_CACHE_DIR="
+                    f"{cache}\n"
+                ),
+            ),
+        ]
+    )
+
+    result = register_agent_user_mcp(
+        "claude",
+        agent_command="/tools/claude",
+        command_runner=runner,
+    )
+
+    assert result["status"] == "ready"
+    assert runner.calls[1] == [
+        "/tools/claude",
+        "mcp",
+        "add",
+        "--scope",
+        "user",
+        "playwright",
+        "--env",
+        f"VERIFYSIGNAL_PLAYWRIGHT_MCP_CACHE_DIR={cache}",
         "--",
         "verifysignal",
         "integration",
@@ -350,7 +460,12 @@ def test_codex_merge_creates_project_config_when_absent(tmp_path) -> None:
 
 def test_codex_managed_playwright_is_required_but_claude_entry_is_not(
     tmp_path,
+    monkeypatch,
 ) -> None:
+    monkeypatch.delenv(
+        "VERIFYSIGNAL_PLAYWRIGHT_MCP_CACHE_DIR",
+        raising=False,
+    )
     codex_server = CodexIntegration().mcp_servers()["playwright"]
     claude_server = ClaudeIntegration().mcp_servers()["playwright"]
 
@@ -367,6 +482,43 @@ def test_codex_managed_playwright_is_required_but_claude_entry_is_not(
         "command": "verifysignal",
         "args": ["integration", "playwright-mcp"],
         "required": True,
+    }
+
+
+def test_managed_project_configs_propagate_custom_cache_to_agent_child(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    cache = tmp_path / "playwright-cache"
+    monkeypatch.setenv(
+        "VERIFYSIGNAL_PLAYWRIGHT_MCP_CACHE_DIR",
+        str(cache),
+    )
+
+    codex_server = CodexIntegration().mcp_servers()["playwright"]
+    claude_server = ClaudeIntegration().mcp_servers()["playwright"]
+
+    assert codex_server["env"] == {
+        "VERIFYSIGNAL_PLAYWRIGHT_MCP_CACHE_DIR": str(cache),
+    }
+    assert claude_server["env"] == {
+        "VERIFYSIGNAL_PLAYWRIGHT_MCP_CACHE_DIR": str(cache),
+    }
+
+    merge_codex_mcp_servers(
+        tmp_path,
+        {"playwright": codex_server},
+    )
+    merge_mcp_servers(
+        tmp_path,
+        {"playwright": claude_server},
+    )
+
+    assert _read_codex_mcp(tmp_path)["mcp_servers"]["playwright"]["env"] == {
+        "VERIFYSIGNAL_PLAYWRIGHT_MCP_CACHE_DIR": str(cache),
+    }
+    assert _read_mcp(tmp_path)["mcpServers"]["playwright"]["env"] == {
+        "VERIFYSIGNAL_PLAYWRIGHT_MCP_CACHE_DIR": str(cache),
     }
 
 

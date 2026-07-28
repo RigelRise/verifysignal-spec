@@ -10,7 +10,7 @@ from verifysignal_spec.templates.agent_guidance import (
 )
 
 from .base import AgentIntegration, RenderedFile, build_onboarding_guidance, render_onboarding_guide, render_workflow_skill_files
-from .mcp import PLAYWRIGHT_MCP_SERVER
+from .mcp import managed_playwright_mcp_server
 
 
 class ClaudeIntegration(AgentIntegration):
@@ -42,7 +42,7 @@ class ClaudeIntegration(AgentIntegration):
 
     def mcp_servers(self) -> dict[str, object]:
         # Live authoring is enabled on install: VerifySignal merges this into the project `.mcp.json`.
-        return {"playwright": PLAYWRIGHT_MCP_SERVER}
+        return {"playwright": managed_playwright_mcp_server()}
 
 
 def _context() -> str:
