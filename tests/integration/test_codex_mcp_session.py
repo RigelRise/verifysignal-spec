@@ -107,6 +107,65 @@ def _tool_names(server: dict[str, Any]) -> set[str]:
     }
 
 
+def _wait_for_playwright_tools(
+    process: subprocess.Popen[str],
+    messages: queue.Queue[dict[str, Any] | None],
+    thread_id: str,
+    *,
+    timeout_seconds: float = 60,
+) -> dict[str, Any]:
+    required_tools = {
+        "browser_navigate",
+        "browser_snapshot",
+        "browser_click",
+    }
+    deadline = time.monotonic() + timeout_seconds
+    request_id = 3
+    last_playwright: dict[str, Any] | None = None
+    last_servers: list[dict[str, Any]] = []
+
+    while time.monotonic() < deadline:
+        _send(
+            process,
+            {
+                "method": "mcpServerStatus/list",
+                "id": request_id,
+                "params": {"threadId": thread_id},
+            },
+        )
+        status = _receive_until(
+            process,
+            messages,
+            request_id,
+            timeout_seconds=max(1, min(10, deadline - time.monotonic())),
+        )
+        assert "error" not in status, status
+        last_servers = _server_rows(status.get("result"))
+        last_playwright = next(
+            (
+                item
+                for item in last_servers
+                if str(item.get("name", "")).lower() == "playwright"
+            ),
+            None,
+        )
+        if (
+            last_playwright is not None
+            and required_tools.issubset(_tool_names(last_playwright))
+        ):
+            return last_playwright
+        request_id += 1
+        time.sleep(0.25)
+
+    raise AssertionError(
+        {
+            "message": "Playwright MCP did not finish initializing.",
+            "servers": [item.get("name") for item in last_servers],
+            "playwright": last_playwright,
+        }
+    )
+
+
 @pytest.mark.skipif(
     os.environ.get("VERIFYSIGNAL_RUN_REAL_CODEX_TESTS") != "1",
     reason="real Codex session acceptance is enabled explicitly in CI",
@@ -209,33 +268,7 @@ def test_plain_codex_session_from_fresh_project_discovers_playwright_tools(
         thread_id = thread.get("id")
         assert isinstance(thread_id, str) and thread_id
 
-        _send(
-            process,
-            {
-                "method": "mcpServerStatus/list",
-                "id": 3,
-                "params": {"threadId": thread_id},
-            },
-        )
-        status = _receive_until(process, messages, 3, timeout_seconds=60)
-        assert "error" not in status, status
-        servers = _server_rows(status.get("result"))
-        playwright = next(
-            (
-                item
-                for item in servers
-                if str(item.get("name", "")).lower() == "playwright"
-            ),
-            None,
-        )
-        assert playwright is not None, {
-            "servers": [item.get("name") for item in servers]
-        }
-        assert {
-            "browser_navigate",
-            "browser_snapshot",
-            "browser_click",
-        }.issubset(_tool_names(playwright)), playwright
+        _wait_for_playwright_tools(process, messages, thread_id)
         assert not (project / ".playwright-mcp").exists()
     finally:
         process.terminate()
