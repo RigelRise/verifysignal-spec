@@ -20,6 +20,19 @@ from verifysignal_spec.repos import (
 # every case here names the directory something other than what the repo is conventionally called.
 
 
+@pytest.fixture(autouse=True)
+def _isolate_override_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Clear the pin variables so these tests exercise the SCAN, not the ambient environment.
+
+    Without this the module was environment-dependent — the exact defect it exists to prevent. The
+    product-truth CI job pins all three repos at job level, so every scan case here silently received
+    the real checkout instead of its synthetic fixture and failed. Tests that mean to exercise a pin
+    set it themselves.
+    """
+    for identity in SIBLING_IDENTITY.values():
+        monkeypatch.delenv(identity.env, raising=False)
+
+
 def _repo(parent: Path, dir_name: str, name: str, manifest: str = "package.json") -> Path:
     path = parent / dir_name
     path.mkdir(parents=True)

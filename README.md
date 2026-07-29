@@ -182,6 +182,17 @@ scripts/verify-docker.sh
 That mounts the sibling checkouts too, so the cross-repo tests actually run. Without them they skip,
 which reads like a pass. It takes any `pytest` arguments: `scripts/verify-docker.sh tests/unit -q`.
 
+The cross-repo gate (`product-truth.yml` in Core) additionally pins every repository path. A suite
+that behaves differently under a pin than under a scan is environment-dependent, so reproduce that
+configuration before relying on a green run — the paths are container-side, where `/w` is the
+mounted parent directory:
+
+```sh
+VERIFYSIGNAL_CORE_DIR=/w/<core-dirname> \
+VERIFYSIGNAL_SPEC_DIR=/w/<spec-dirname> \
+VERIFYSIGNAL_BACKEND_DIR=/w/<backend-dirname> scripts/verify-docker.sh
+```
+
 The suite runs against a full fake Core, so you can build and test everything
 without the runtime.
 
