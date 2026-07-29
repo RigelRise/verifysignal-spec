@@ -8,6 +8,7 @@ from pathlib import Path
 from verifysignal_spec.core.adapter import CoreAdapter, resolve_persistable_core_command
 from verifysignal_spec.core.contracts import CompatibilityResult, PUBLIC_CONTRACT_VERSION, public_contract_summary
 from verifysignal_spec.core.errors import CoreExecutionError, CoreMissingError
+from verifysignal_spec.repos import ancestor_core_candidates
 from verifysignal_spec.workspace.repository import (
     get_core_command,
     init_workspace,
@@ -259,17 +260,8 @@ def _discover_candidate_records(project: Path, explicit_core_cmd: str | None = N
 
 
 def _ancestor_sibling_paths(project: Path) -> list[Path]:
-    paths: list[Path] = []
-    seen: set[Path] = set()
-    start = project.resolve()
-    for node in [start, *start.parents]:
-        sibling = (node.parent / "verifysignal").resolve()
-        if sibling == start or sibling in seen:
-            continue
-        seen.add(sibling)
-        if sibling.exists():
-            paths.append(sibling)
-    return paths
+    # By identity, not by directory name — see verifysignal_spec.repos.
+    return ancestor_core_candidates(project)
 
 
 def _blocked_result(

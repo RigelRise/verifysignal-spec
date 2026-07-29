@@ -14,6 +14,7 @@ from verifysignal_spec.core.contracts import (
     core_supports_run_replay,
 )
 from verifysignal_spec.core.errors import CoreExecutionError, CoreMissingError
+from verifysignal_spec.repos import ancestor_core_candidates
 from verifysignal_spec.workspace.repository import (
     get_core_command,
     get_core_configuration,
@@ -477,17 +478,8 @@ def _override_candidates(project: Path, explicit_core_cmd: str | None) -> list[t
 
 
 def _ancestor_sibling_paths(project: Path) -> list[Path]:
-    paths: list[Path] = []
-    seen: set[Path] = set()
-    start = project.resolve()
-    for node in [start, *start.parents]:
-        sibling = (node.parent / "verifysignal").resolve()
-        if sibling == start or sibling in seen:
-            continue
-        seen.add(sibling)
-        if sibling.exists():
-            paths.append(sibling)
-    return paths
+    # By identity, not by directory name — see verifysignal_spec.repos.
+    return ancestor_core_candidates(project)
 
 
 def _override_entitlement_status(

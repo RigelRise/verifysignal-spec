@@ -13,6 +13,14 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+# Re-exported so tests never reach for a sibling repo by directory name.
+from verifysignal_spec.repos import (  # noqa: E402
+    SIBLING_IDENTITY,
+    ancestor_core_candidates,
+    require_sibling_repo,
+    resolve_sibling_repo,
+)
+
 FAKE_CORE = ROOT / "tests" / "fixtures" / "verifysignal-core" / "fake_verifysignal.py"
 TEMPLATE_DIR = ROOT / "src" / "verifysignal_spec" / "templates" / "agent-commands"
 

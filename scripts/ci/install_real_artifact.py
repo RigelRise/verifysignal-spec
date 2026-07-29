@@ -9,7 +9,11 @@ mean the gate proved nothing.
 
 Requires: VERIFYSIGNAL_RUNTIME_RELEASE_PUBLIC_KEYS in the environment (the ephemeral public key),
 and the sibling Core checkout with dist/runtime built. Usage:
-  python scripts/ci/install_real_artifact.py ../verifysignal
+  python scripts/ci/install_real_artifact.py [core-checkout-path]
+
+The path argument is optional: without it, Core is located by identity (see scripts/sibling_repos.py)
+rather than by a hardcoded directory name, so this works whether the checkout is called `verifysignal`
+or `verifysignal-core`. VERIFYSIGNAL_CORE_DIR pins it explicitly.
 """
 
 from __future__ import annotations
@@ -23,6 +27,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from verifysignal_spec.repos import resolve_sibling_repo
+
 
 def current_platform() -> str:
     if sys.platform == "darwin":
@@ -31,7 +37,18 @@ def current_platform() -> str:
 
 
 def main() -> int:
-    core = Path(sys.argv[1] if len(sys.argv) > 1 else "../verifysignal").resolve()
+    if len(sys.argv) > 1:
+        core = Path(sys.argv[1]).resolve()
+    else:
+        resolved = resolve_sibling_repo("core")
+        if resolved is None:
+            print(
+                "FAIL: no Core checkout found alongside this repo — pass its path or set "
+                "VERIFYSIGNAL_CORE_DIR",
+                file=sys.stderr,
+            )
+            return 1
+        core = resolved
     meta_path = core / "dist/runtime/verifysignal-core-release.json"
     sig_path = core / "dist/runtime/verifysignal-core-release.json.sig"
     if not meta_path.exists() or not sig_path.exists():

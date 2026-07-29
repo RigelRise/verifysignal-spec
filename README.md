@@ -172,6 +172,16 @@ python -m pip install -e ".[dev]"
 python -m pytest
 ```
 
+Needs Python 3.11+, and a browser for the cross-repo dogfood. To run against the toolchain CI
+declares instead of whatever your machine has:
+
+```sh
+scripts/verify-docker.sh
+```
+
+That mounts the sibling checkouts too, so the cross-repo tests actually run. Without them they skip,
+which reads like a pass. It takes any `pytest` arguments: `scripts/verify-docker.sh tests/unit -q`.
+
 The suite runs against a full fake Core, so you can build and test everything
 without the runtime.
 
