@@ -189,6 +189,14 @@ def get_core_command(project: Path) -> str | None:
     return workspace.get("coreCommand")
 
 
+def get_core_resolution_mode(project: Path) -> str:
+    workspace = load_document(layout.workspace_root(project) / layout.WORKSPACE_FILE, default={}) or {}
+    mode = workspace.get("coreResolutionMode")
+    if mode in {"legacy-auto", "managed-only", "development-override"}:
+        return str(mode)
+    return "legacy-auto"
+
+
 def get_entitlement_api_base_url(project: Path) -> str | None:
     workspace = load_document(layout.workspace_root(project) / layout.WORKSPACE_FILE, default={}) or {}
     return workspace.get("entitlementApiBaseUrl")
@@ -204,6 +212,10 @@ def get_core_configuration(project: Path) -> dict[str, Any]:
             "coreConfiguredAt",
             "coreLastVerifiedAt",
             "coreVersion",
+            "coreResolutionMode",
+            "managedCoreVersion",
+            "managedCoreUpdatedAt",
+            "managedCoreCheckedAt",
         ]
         if workspace.get(key) is not None
     }
@@ -220,11 +232,77 @@ def save_core_configuration(project: Path, core_cmd: str, *, source: str | None 
     if workspace.get("coreCommand") != core_cmd or not workspace.get("coreConfiguredAt"):
         workspace["coreConfiguredAt"] = timestamp
     workspace["coreCommand"] = core_cmd
+    workspace["coreResolutionMode"] = "development-override"
     if source:
         workspace["coreCommandSource"] = source
     workspace["coreLastVerifiedAt"] = timestamp
     if version:
         workspace["coreVersion"] = version
+    workspace["updatedAt"] = timestamp
+    save_document(workspace_path, workspace)
+    return workspace
+
+
+def reset_core_configuration(project: Path) -> dict[str, Any]:
+    root = layout.workspace_root(project)
+    workspace_path = root / layout.WORKSPACE_FILE
+    workspace = (
+        load_document(workspace_path, default={}) or {}
+        if workspace_path.exists()
+        else init_workspace(project)
+    )
+    removed: list[str] = []
+    for key in [
+        "coreCommand",
+        "coreCommandSource",
+        "coreConfiguredAt",
+        "coreLastVerifiedAt",
+        "coreVersion",
+    ]:
+        if key in workspace:
+            removed.append(key)
+            workspace.pop(key, None)
+    workspace["coreResolutionMode"] = "managed-only"
+    workspace["updatedAt"] = now_iso()
+    save_document(workspace_path, workspace)
+    return {"workspace": workspace, "removedFields": removed}
+
+
+def save_managed_core_configuration(
+    project: Path,
+    version: str,
+    *,
+    successful_update: bool,
+) -> dict[str, Any]:
+    root = layout.workspace_root(project)
+    workspace_path = root / layout.WORKSPACE_FILE
+    workspace = (
+        load_document(workspace_path, default={}) or {}
+        if workspace_path.exists()
+        else init_workspace(project)
+    )
+    timestamp = now_iso()
+    workspace["coreResolutionMode"] = "managed-only"
+    workspace["managedCoreVersion"] = version
+    workspace["managedCoreCheckedAt"] = timestamp
+    if successful_update:
+        workspace["managedCoreUpdatedAt"] = timestamp
+    workspace["updatedAt"] = timestamp
+    save_document(workspace_path, workspace)
+    return workspace
+
+
+def mark_managed_core_checked(project: Path) -> dict[str, Any]:
+    root = layout.workspace_root(project)
+    workspace_path = root / layout.WORKSPACE_FILE
+    workspace = (
+        load_document(workspace_path, default={}) or {}
+        if workspace_path.exists()
+        else init_workspace(project)
+    )
+    timestamp = now_iso()
+    workspace["coreResolutionMode"] = "managed-only"
+    workspace["managedCoreCheckedAt"] = timestamp
     workspace["updatedAt"] = timestamp
     save_document(workspace_path, workspace)
     return workspace

@@ -28,8 +28,15 @@ workflow; `workflow persist` remains the only path that writes managed
 
 ## One-pass loop
 
-1. Resolve the target `baseUrl` or local start command from durable product understanding.
-   Never invent a URL. Stop and ask when it cannot be resolved.
+1. Start or resume the real `WorkflowRun`. Resolve a candidate target `baseUrl`
+   or local start command from repository evidence, but treat it only as a
+   recommendation. Always ask the developer to confirm that recommendation or
+   provide another test URL for this workflow before discover, probe, or run.
+   A URL copied into specification, plan, or implementation by the agent does
+   not count as confirmation. A URL explicitly supplied in the developer's
+   current command counts as `explicit-command`; a reply in the clarification
+   counts as `direct-user`. Never invent a URL and never silently choose local,
+   staging, or production.
 
 2. Draft exactly one run request and its reusable skills from source and,
    optionally, a live MCP accessibility snapshot. Scope MCP access to the target
@@ -40,8 +47,16 @@ workflow; `workflow persist` remains the only path that writes managed
 
 3. Preserve authentication only as public run-request `credentialRefs` or
    `sessionRef`. Values remain in the environment and are resolved by Core.
-   Never persist or print credentials, cookies, browser storage, storage-state
-   files or values, DOM, screenshots, or MCP accessibility snapshots.
+   After authoring, report the exact missing declared environment keys. Ask
+   permission before creating a local template. If approved, offer:
+   `verifysignal credentials prepare <alias> --env-file .env.verifysignal.test.local --json`.
+   Ask the developer to fill that owner-only Git-excluded file, then pass it
+   explicitly with `--env-file` to validate, probe, and run. Never read
+   `.env`, `.env.local`, or any environment file implicitly; never source or
+   execute the selected file. Never persist or print credentials, cookies,
+   browser storage, storage-state files or values, DOM, screenshots, or MCP
+   accessibility snapshots.
+   Never persist or print MCP accessibility snapshots.
 
 4. Classify grounding before execution:
 
@@ -78,8 +93,10 @@ workflow; `workflow persist` remains the only path that writes managed
 
 6. Before mutable execution, require a canonical `sideEffectPolicy`, resolved
    `resourceIdentity`, and valid `commitStepId`. Run
-   `verifysignal validate <alias> --runtime-readiness`. Missing credentials are
-   supplied through the environment, never persisted.
+   `verifysignal validate <alias> --runtime-readiness [--env-file <approved-test-env-file>]`.
+   Continue only after target confirmation and exact credential readiness pass.
+   Missing credentials are supplied through ambient declared keys or the
+   explicit test environment file, never through implicit dotenv reads.
 
 7. A successful write-flow probe is diagnostic evidence, not authorization.
    Require explicit developer confirmation before
@@ -97,8 +114,9 @@ workflow; `workflow persist` remains the only path that writes managed
 
 Stop and ask the developer for:
 
-1. an unresolved target URL or start command;
-2. a missing required credential reference;
+1. target-environment confirmation, even when a default was found;
+2. permission before preparing a test environment file, and any missing
+   required credential reference;
 3. a missing resource identity or side-effect declaration;
 4. unresolved or ambiguous target intent;
 5. explicit developer confirmation before a mutable normal run;

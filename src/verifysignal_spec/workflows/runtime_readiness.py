@@ -27,6 +27,7 @@ def evaluate_runtime_readiness(
     authoring_result: dict[str, Any] | None = None,
     reachability_checker: ReachabilityChecker | None = None,
     core_contract: dict[str, Any] | None = None,
+    environment_values: dict[str, str] | None = None,
 ) -> RuntimeReadinessCheck:
     """Evaluate bounded runtime readiness without executing the browser flow."""
 
@@ -39,7 +40,11 @@ def evaluate_runtime_readiness(
         findings.append("runtime.target-unresolved")
 
     missing_inputs = _missing_required_parameter_inputs(project, record)
-    credential_readiness = _credential_readiness(project, record)
+    credential_readiness = _credential_readiness(
+        project,
+        record,
+        environment_values=environment_values,
+    )
     missing_credentials = [
         item
         for item in credential_readiness
@@ -142,14 +147,24 @@ def _missing_required_parameter_inputs(project: Path, record: Any) -> list[str]:
     return missing
 
 
-def _credential_readiness(project: Path, record: Any) -> list[dict[str, Any]]:
+def _credential_readiness(
+    project: Path,
+    record: Any,
+    *,
+    environment_values: dict[str, str] | None = None,
+) -> list[dict[str, Any]]:
     hints = {
         item["credentialGroup"]: item
         for item in credential_readiness_hints_for_record(project, record)
     }
     readiness: list[dict[str, Any]] = []
     for group in credential_runtime_requirements(record):
-        missing = [name for name in group["runtimeNames"] if not os.environ.get(name)]
+        provided = environment_values or {}
+        missing = [
+            name
+            for name in group["runtimeNames"]
+            if not (provided.get(name) if name in provided else os.environ.get(name))
+        ]
         hint = hints.get(group["group"], {})
         readiness.append(
             {

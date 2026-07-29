@@ -15,6 +15,7 @@ interfaces:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import shutil
@@ -29,6 +30,18 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+
+SPEC_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(SPEC_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(SPEC_REPO_ROOT))
+if str(SPEC_REPO_ROOT / "tests") not in sys.path:
+    sys.path.insert(0, str(SPEC_REPO_ROOT / "tests"))
+
+from tests.fixtures.managed_runtime import (  # noqa: E402
+    build_managed_runtime_distribution_from_artifact,
+    serve_fake_entitlement_backend,
+)
+from verifysignal_spec.runtime.distribution import normalize_platform  # noqa: E402
 
 
 SCHEMA = "verifysignal.cross-repo-dogfood/v1"
@@ -102,6 +115,7 @@ def execute(spec_repo: Path, core_repo: Path) -> int:
         "state": {},
     }
     server: subprocess.Popen[str] | None = None
+    resources = contextlib.ExitStack()
 
     with tempfile.TemporaryDirectory(
         prefix="verifysignal-authenticated-project-spec-dogfood-"
@@ -111,16 +125,58 @@ def execute(spec_repo: Path, core_repo: Path) -> int:
         payload_root = temporary_root / "payloads"
         workspace.mkdir(parents=True)
         payload_root.mkdir(parents=True)
+        subprocess.run(
+            ["git", "init", "-q", str(workspace)],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
         port = available_port()
         base_url = f"http://127.0.0.1:{port}"
-        runtime_env = {
-            **os.environ,
+        runtime_env = dict(os.environ)
+        runtime_env.pop("VS_DOGFOOD_EMAIL", None)
+        runtime_env.pop("VS_DOGFOOD_PASSWORD", None)
+        platform = normalize_platform()
+        require(bool(platform), "managed-platform-unsupported")
+        core_version = str(
+            json.loads((core_repo / "package.json").read_text(encoding="utf-8"))[
+                "version"
+            ]
+        )
+        packaged_core = (
+            core_repo
+            / "dist/runtime"
+            / f"verifysignal-core-{core_version}-{platform}.tar.gz"
+        )
+        require(packaged_core.exists(), "managed-package-missing")
+        distribution = build_managed_runtime_distribution_from_artifact(
+            temporary_root / "managed-distribution",
+            artifact_source=packaged_core,
+            platform=str(platform),
+            core_version=core_version,
+        )
+        api_base_url, _backend_state = resources.enter_context(
+            serve_fake_entitlement_backend(distribution)
+        )
+        runtime_env.update(
+            {
+                "VERIFYSIGNAL_API_BASE_URL": api_base_url,
+                "VERIFYSIGNAL_EMAIL_UNLOCK_TOKEN": "vs_valid",
+                "VERIFYSIGNAL_RUNTIME_CACHE_DIR": str(
+                    temporary_root / "managed-cache"
+                ),
+                "VERIFYSIGNAL_ALLOW_TEST_RELEASE_KEYS": "1",
+            }
+        )
+        server_env = {
+            **runtime_env,
             "VS_DOGFOOD_EMAIL": "tester@example.test",
             "VS_DOGFOOD_PASSWORD": "reference-password",
         }
 
         try:
-            server = start_target(core_repo, port, runtime_env)
+            server = start_target(core_repo, port, server_env)
             wait_for_http(f"{base_url}/", server)
 
             source_request = (
@@ -183,17 +239,102 @@ def execute(spec_repo: Path, core_repo: Path) -> int:
             )
             summary["gates"]["discoverControl"] = "passed"
 
+            persist_canonical_workflow(
+                spec_repo=spec_repo,
+                core_repo=core_repo,
+                workspace=workspace,
+                payload_root=payload_root,
+                base_url=base_url,
+                request_content=request_content,
+                skill_content=skill_content,
+                env=runtime_env,
+            )
+            summary["gates"]["canonicalPersistence"] = "passed"
+
+            updated = require_success(
+                spec_cli(
+                    [
+                        "core",
+                        "update",
+                        "--project",
+                        str(workspace),
+                        "--api-base-url",
+                        api_base_url,
+                        "--json",
+                    ],
+                    cwd=spec_repo,
+                    env={
+                        key: value
+                        for key, value in runtime_env.items()
+                        if key
+                        not in {
+                            "VERIFYSIGNAL_ENTITLEMENT_RECEIPT",
+                            "VERIFYSIGNAL_ENTITLEMENT_RECEIPT_PATH",
+                            "VERIFYSIGNAL_ENTITLEMENT_PUBLIC_KEYS_JSON",
+                        }
+                    },
+                ),
+                "managed-core-update",
+            )
+            require(updated.get("status") == "ready", "managed-update-status")
+            update_runtime = updated.get("runtime", {})
+            require(
+                update_runtime.get("source") in {"managed-download", "managed-cache"},
+                "managed-update-source",
+            )
+            require(
+                all(
+                    item.get("source")
+                    not in {"workspace", "env", "path", "ancestor-sibling"}
+                    for item in update_runtime.get("attempts", [])
+                    if isinstance(item, dict)
+                ),
+                "managed-update-local-contamination",
+            )
+            summary["gates"]["managedCoreUpdate"] = "passed"
+            summary["observations"] = {
+                "managedCoreUpdate": {
+                    "source": update_runtime.get("source"),
+                    "version": update_runtime.get("runtimeVersion"),
+                }
+            }
+
+            env_file = workspace / ".env.verifysignal.test.local"
+            prepared = require_success(
+                spec_cli(
+                    [
+                        "credentials",
+                        "prepare",
+                        ALIAS,
+                        "--project",
+                        str(workspace),
+                        "--env-file",
+                        str(env_file),
+                        "--json",
+                    ],
+                    cwd=spec_repo,
+                    env=runtime_env,
+                ),
+                "credential-preparation",
+            )
+            require(prepared.get("gitExcluded") is True, "credential-git-exclude")
+            require(prepared.get("permissions") == "0600", "credential-permissions")
+            fill_test_environment_file(env_file)
+            summary["gates"]["credentialPreparation"] = "passed"
+
             probe = require_success(
                 spec_cli(
                     [
                         "probe",
-                        str(temporary_request),
+                        str(workspace / f".verifysignal/run-requests/{ALIAS}.yaml"),
                         "--skill",
-                        str(source_skill),
+                        str(workspace / f".verifysignal/skills/{ALIAS}.browser.md"),
                         "--project",
                         str(workspace),
                         "--core-cmd",
                         str(core_repo),
+                        "--env-file",
+                        str(env_file),
                         "--json",
                     ],
                     cwd=spec_repo,
@@ -217,18 +358,6 @@ def execute(spec_repo: Path, core_repo: Path) -> int:
             summary["gates"]["probe"] = "passed"
             summary["state"]["afterProbe"] = safe_state(after_probe)
 
-            persist_canonical_workflow(
-                spec_repo=spec_repo,
-                core_repo=core_repo,
-                workspace=workspace,
-                payload_root=payload_root,
-                base_url=base_url,
-                request_content=request_content,
-                skill_content=skill_content,
-                env=runtime_env,
-            )
-            summary["gates"]["canonicalPersistence"] = "passed"
-
             validation = require_success(
                 spec_cli(
                     [
@@ -239,6 +368,8 @@ def execute(spec_repo: Path, core_repo: Path) -> int:
                         str(workspace),
                         "--core-cmd",
                         str(core_repo),
+                        "--env-file",
+                        str(env_file),
                         "--json",
                     ],
                     cwd=spec_repo,
@@ -266,8 +397,7 @@ def execute(spec_repo: Path, core_repo: Path) -> int:
                 ),
                 "run-readiness-command",
             )
-            summary["observations"] = {
-                "runReadiness": {
+            summary["observations"]["runReadiness"] = {
                     "status": readiness.get("status"),
                     "canProceed": bool(readiness.get("canProceed", False)),
                     "requiresConfirmation": bool(
@@ -283,7 +413,6 @@ def execute(spec_repo: Path, core_repo: Path) -> int:
                         for item in readiness.get("blockers", [])
                         if isinstance(item, dict) and item.get("code")
                     ],
-                }
             }
             require(readiness.get("status") == "ready", "run-readiness-status")
             require(
@@ -299,6 +428,8 @@ def execute(spec_repo: Path, core_repo: Path) -> int:
                 "normal",
                 "--core-cmd",
                 str(core_repo),
+                "--env-file",
+                str(env_file),
                 "--non-interactive",
                 "--json",
             ]
@@ -367,6 +498,7 @@ def execute(spec_repo: Path, core_repo: Path) -> int:
         finally:
             if server is not None:
                 stop_target(server)
+            resources.close()
 
     print(json.dumps(summary, indent=2))
     return 0 if summary["status"] == "green" else 1
@@ -398,6 +530,27 @@ def persist_canonical_workflow(
             env=env,
         ),
         "init-command",
+    )
+    require_success(
+        spec_cli(
+            [
+                "workflow",
+                "run",
+                "verifysignal-use-case",
+                "--goal",
+                "Validate the identity-neutral authenticated project creation flow.",
+                "--alias",
+                ALIAS,
+                "--integration",
+                "codex",
+                "--project",
+                str(workspace),
+                "--json",
+            ],
+            cwd=spec_repo,
+            env=env,
+        ),
+        "workflow-run-command",
     )
 
     runtime_inputs = [
@@ -517,8 +670,13 @@ def persist_canonical_workflow(
             "clarify",
             {
                 "alias": ALIAS,
-                "questions": [],
-                "answers": [],
+                "answers": [
+                    {
+                        "questionId": "browser-target-environment",
+                        "answerSummary": base_url,
+                        "confirmationSource": "explicit-command",
+                    }
+                ],
                 "blockingQuestionsResolved": True,
             },
         ),
@@ -783,7 +941,7 @@ def ensure_source_layout(core_repo: Path) -> None:
 
 def build_core(core_repo: Path) -> None:
     child = subprocess.run(
-        ["npm", "run", "build", "--silent"],
+        ["npm", "run", "runtime:package", "--silent"],
         cwd=core_repo,
         text=True,
         capture_output=True,
@@ -794,6 +952,20 @@ def build_core(core_repo: Path) -> None:
             "core-build-failed",
             child.stderr.strip() or child.stdout.strip() or "Core build failed.",
         )
+
+
+def fill_test_environment_file(path: Path) -> None:
+    path.write_text(
+        "\n".join(
+            [
+                "VS_DOGFOOD_EMAIL=tester@example.test",
+                "VS_DOGFOOD_PASSWORD=reference-password",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    path.chmod(0o600)
 
 
 def start_target(

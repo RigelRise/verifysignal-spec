@@ -118,6 +118,10 @@ Claude Code uses slash-prefixed invocation:
 /verifysignal-repair
 ```
 
+For browser use cases, a URL found in repository start instructions is only a
+suggestion. The agent must ask you to confirm that target or provide another one
+for the current workflow before it plans, probes, or runs the browser flow.
+
 Installed workflow commands use `verifysignal workflow check <stage> --json`
 before stage-specific work. After upgrading VerifySignal, rerun integration
 installation so regenerated agent skills receive the latest prerequisite
@@ -217,6 +221,31 @@ verifysignal core setup --core-cmd /path/to/verifysignal --json
 verifysignal core version --json
 ```
 
+To leave development override mode and select the latest verified managed
+runtime, use:
+
+```sh
+verifysignal core update --json
+verifysignal core version --json
+```
+
+`core update` removes workspace-local Core command and version selections before
+resolution. It ignores environment, `PATH`, local sibling checkouts, and managed
+version pins. An already cached copy is reused only when it is the exact latest
+version returned by the backend and still verifies successfully. If acquiring
+the latest release fails, VerifySignal may retain a previously verified managed
+runtime as an explicit fallback; it never falls back to a local checkout.
+
+To remove persisted local selection without contacting the backend:
+
+```sh
+verifysignal core reset --json
+```
+
+Reset changes the workspace to managed-only resolution. A one-shot
+`--core-cmd` remains available for an explicitly requested diagnostic command
+and does not change the persisted mode.
+
 You can also configure the command through an environment variable:
 
 ```sh
@@ -242,6 +271,39 @@ requires entitlement for `authoring-check`, `run`, or `report.inspect`,
 VerifySignal provides the cached receipt reference when available or reports the
 runtime's public entitlement rejection as a non-repairable blocker.
 
+## Test Credentials
+
+After a use case declares credential environment keys, VerifySignal can prepare
+an explicit project-local test file:
+
+```sh
+verifysignal credentials prepare create-project \
+  --env-file .env.verifysignal.test.local \
+  --json
+```
+
+The command first installs and verifies an exact entry in the repository-local
+Git exclude file, then creates or updates the environment file with owner-only
+permissions. It preserves existing values, appends only missing declared keys,
+and never prints credential assignments. It blocks before writing the
+environment file when the target is not inside a Git repository.
+
+Fill the empty values locally and pass the file explicitly:
+
+```sh
+verifysignal validate create-project --runtime-readiness \
+  --env-file .env.verifysignal.test.local --json
+verifysignal run create-project \
+  --env-file .env.verifysignal.test.local --json
+```
+
+VerifySignal never reads `.env`, `.env.local`, or another default dotenv path.
+The explicit file is parsed as data, not sourced as shell code: undeclared or
+duplicate keys, interpolation, substitutions, backticks, multiline constructs,
+malformed quoting, and group/other-readable permissions are rejected before
+Core starts. Only declared values are passed to the Core child process, and the
+parent process environment is not mutated.
+
 ## Local Checkout Before Publishing
 
 If the repository has not been published yet:
@@ -258,9 +320,9 @@ source .venv/bin/activate
 python -m pip install -e ".[dev]"
 ```
 
-## Core Runtime Resolution Order
+## Core Runtime Resolution
 
-The runtime command is resolved in this order:
+Untouched legacy workspaces retain the historical resolution order:
 
 1. Explicit `--core-cmd` flag.
 2. Workspace-persisted command (`verifysignal core setup`).
@@ -269,6 +331,13 @@ The runtime command is resolved in this order:
 5. A local Core development checkout (maintainers only).
 6. Managed download from the entitlement API, pinned by
    `VERIFYSIGNAL_CORE_VERSION` or the workspace-persisted core version.
+
+Workspaces configured by `core setup` use development-override mode: the
+persisted command is preferred and managed resolution remains its fallback.
+Workspaces reset or updated to managed-only mode ignore workspace commands,
+`VERIFYSIGNAL_CORE_CMD`, `PATH`, and sibling checkouts. `core update` is
+stricter still: it also ignores a one-shot override and all version pins while
+resolving the latest backend release.
 
 Overrides are development and CI conveniences; they do not count as managed
 entitlement success. If an override-selected runtime enforces entitlement for a

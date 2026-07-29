@@ -18,7 +18,15 @@ Resolve only high-impact unknowns before planning.
 - If `sideEffects.class` is `unknown` or credentials/data/side-effect ownership is unresolved, block planning instead of drafting executable artifacts.
 - For each high-impact clarification, include the question plus one or two context sentences explaining why it affects the run request, skill design, data setup, credential context, permissions, or expected outcome.
 - Environment-dependent questions about seed data, runtime configuration, external services, credential groups, permissions, or expected outcome must remain pending unless the developer confirms a non-secret answer.
+- A repository URL, local start command, previous workflow target, or URL copied
+  by the agent is a recommendation, not a decision. Always present the
+  recommended target and allow the developer to confirm or replace it. Persist
+  browser target confirmation with `direct-user` or `explicit-command`
+  provenance for the current WorkflowRun only.
 - Do not write managed `.verifysignal/` artifacts directly. Persist managed artifacts through `verifysignal workflow persist clarify --alias <alias> --payload <payload.json> --json`.
 - Do not ask for credential values. Ask for credential group names or environment variable names only.
+- When exact declared credential keys are missing, ask permission before
+  offering `verifysignal credentials prepare <alias> --env-file
+  .env.verifysignal.test.local --json`. Never suggest sourcing `.env.local`.
 - Block planning when unresolved clarification items would change the run request or reusable skill structure.
 - Suggest `/verifysignal-plan` after clarification is sufficient.

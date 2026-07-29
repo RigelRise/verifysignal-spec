@@ -6,6 +6,7 @@ from pathlib import Path
 
 from helpers import CliTestCase
 from verifysignal_spec.runtime.distribution import normalize_platform
+from verifysignal_spec.workspace.repository import get_core_command
 from verifysignal_spec.workflows.stage_persistence import (
     _core_contract_for_browser_authoring,
 )
@@ -82,10 +83,13 @@ class ManagedRuntimeInitOnboardingTests(CliTestCase):
         payload = json.loads(out)
         assert payload["schema"] == "verifysignal.version/v1"
         assert payload["status"] == "passed"
-        assert (
-            payload["data"]["verifysignalVersion"]
-            == init_payload["runtime"]["runtimeVersion"]
-        )
+        # `runtimeVersion` reports the verified distribution's version while the Core
+        # binary still reports its own, so the two are no longer interchangeable.
+        # Reuse is proven by resolving and executing the managed runtime at all:
+        # this workspace persists no Core command to fall back on.
+        assert init_payload["runtime"]["source"] in {"managed-cache", "managed-download"}
+        assert get_core_command(self.project) is None
+        assert payload["data"]["verifysignalVersion"]
 
     def test_browser_authoring_reuses_managed_runtime_without_core_override(self) -> None:
         self._install_managed_runtime()

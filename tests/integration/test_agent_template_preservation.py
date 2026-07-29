@@ -23,6 +23,10 @@ def test_codex_and_claude_generated_guidance_preserves_browser_guardrails(tmp_pa
         assert "propose-only" in repair
         assert "Data assumptions, credentials, required gates" in repair
         assert "Never persist credential values" in implement
+        clarify = files[f"{root}/verifysignal-clarify/SKILL.md"]
+        assert "recommendation, not a decision" in clarify
+        assert "direct-user" in clarify
+        assert "verifysignal credentials prepare" in clarify
 
 
 def test_specify_and_understand_templates_describe_auto_prepare_without_manual_restart() -> None:

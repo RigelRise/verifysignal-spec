@@ -8,6 +8,9 @@ Run a validated use case by alias through the managed VerifySignal runtime.
 - If `workflow check` is unavailable, unsupported, or exits with an invalid subcommand error, stop immediately and tell the developer to upgrade `verifysignal` and regenerate the agent integration.
 - If the check does not allow continuation, name the missing artifact or decision, point to `nextCommand`, and stop.
 - If a Golden Path first run is blocked by target, credential, stale inventory, stale workspace, or Core compatibility, present a blocker stage card with the exact recovery command.
+- Do not run against a target inferred by the agent. Require target confirmation
+  for the current WorkflowRun and pass an approved test environment file only
+  through explicit `--env-file`.
 - If the managed runtime, API, entitlement receipt, or runtime download is blocked, classify it as runtime setup/security and route happy-path recovery to `verifysignal init --here --integration codex`; use `verifysignal core setup --core-cmd <path>` only for diagnostics, offline environments, and development overrides. Do not suggest `/verifysignal-repair` for missing runtime, token exchange, receipt, distribution, package verification, or Core entitlement rejection blockers.
 - Do not perform stage-specific work until the check allows it.
 - If `workflow check run` returns `recommendedAction: approve-rerun`, do not execute the browser run until the owner confirms the write rerun. Use `verifysignal workflow approve-rerun --alias <alias> --confirm-risk <confirmation-id> --json`, then re-check/run. Non-interactive run may use the same documented `--confirm-risk <confirmation-id>` token.

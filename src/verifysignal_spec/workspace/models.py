@@ -888,6 +888,10 @@ class AuthoringQuestion:
     status: Literal["pending", "answered", "deferred"] = "pending"
     answerSummary: str | None = None
     affects: str | None = None
+    suggestedAnswer: dict[str, Any] | None = None
+    suggestionSource: str | None = None
+    requiresConfirmation: bool = False
+    confirmationSource: Literal["direct-user", "explicit-command"] | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "AuthoringQuestion":
@@ -898,6 +902,14 @@ class AuthoringQuestion:
             status=data.get("status", "pending"),
             answerSummary=data.get("answerSummary"),
             affects=data.get("affects"),
+            suggestedAnswer=(
+                dict(data["suggestedAnswer"])
+                if isinstance(data.get("suggestedAnswer"), dict)
+                else None
+            ),
+            suggestionSource=data.get("suggestionSource"),
+            requiresConfirmation=bool(data.get("requiresConfirmation", False)),
+            confirmationSource=data.get("confirmationSource"),
         )
 
     def to_dict(self) -> dict[str, Any]:

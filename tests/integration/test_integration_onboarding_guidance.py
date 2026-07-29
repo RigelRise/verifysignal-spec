@@ -54,7 +54,8 @@ class IntegrationOnboardingGuidanceIntegrationTests(CliTestCase):
         self.assertTrue(data["upgraded"])
         self.assertTrue(all("onboardingGuide" in item for item in data["upgraded"]))
         self.assertTrue(all("coreSetup" in item for item in data["upgraded"]))
-        self.assertTrue(all(item["onboardingGuide"]["coreStatus"]["statusMarker"] == "[READY]" for item in data["upgraded"]))
+        self.assertTrue(all(item["onboardingGuide"]["coreStatus"]["statusMarker"] == "[NOT CHECKED]" for item in data["upgraded"]))
+        self.assertTrue(all(item["runtime"]["status"] == "not-checked" for item in data["upgraded"]))
 
     def test_install_missing_core_prints_blocked_status_and_guide_recovery(self) -> None:
         os.environ["VERIFYSIGNAL_CORE_CMD"] = "missing-verifysignal-core-for-guide-test"

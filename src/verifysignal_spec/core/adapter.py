@@ -100,6 +100,7 @@ class CoreAdapter:
         main_skill: Path,
         skills: list[Path],
         runtime_readiness: bool = False,
+        env: dict[str, str] | None = None,
         entitlement_receipt: Path | str | None = None,
     ) -> dict[str, Any]:
         compatibility = self.require_compatible()
@@ -112,10 +113,10 @@ class CoreAdapter:
         args.append("--json")
         return self._run(
             args,
-            env=_receipt_env(
-                entitlement_receipt,
-                compatibility=compatibility,
-            ),
+            env={
+                **(env or {}),
+                **_receipt_env(entitlement_receipt, compatibility=compatibility),
+            },
         )
 
     def run(

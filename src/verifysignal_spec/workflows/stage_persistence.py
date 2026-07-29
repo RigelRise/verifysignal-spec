@@ -43,8 +43,10 @@ from .repository import (
     fingerprint_text,
     project_relative,
     load_artifact_plan,
+    load_workflow_run,
     save_artifact_plan,
     save_task_set,
+    save_workflow_run,
     save_workflow_state,
     state_document,
 )
@@ -341,8 +343,11 @@ def _persist_specification(project: Path, alias: str, content: dict[str, Any]) -
     record.status = "draft"
     target = _extract_target_environment(content, source_stage="specify")
     if target:
-        _upsert_stage_handoff_decision(record, target["locator"], source_stage="specify")
-        _resolve_browser_target_questions(record, target["locator"])
+        _ensure_browser_target_question(
+            record,
+            locator=target["locator"],
+            suggestion_source=target.get("suggestionSource") or "specification-artifact",
+        )
     elif _is_browser_use_case(content):
         _ensure_browser_target_question(record)
     _apply_write_flow_fields(project, record, content)
@@ -372,15 +377,49 @@ def _persist_clarifications(project: Path, alias: str, content: dict[str, Any]) 
         raise ValueError("Clarification payload requires questions or answers.")
     if "questions" in content:
         questions = [_question_from_dict(item) for item in content.get("questions", [])]
+        existing_target = next(
+            (
+                item
+                for item in record.authoringQuestions
+                if item.id == "browser-target-environment"
+            ),
+            None,
+        )
+        incoming_target = next(
+            (
+                item
+                for item in questions
+                if item.id == "browser-target-environment"
+            ),
+            None,
+        )
+        if existing_target and not incoming_target:
+            questions.append(existing_target)
+        elif existing_target and incoming_target:
+            incoming_target.suggestedAnswer = (
+                incoming_target.suggestedAnswer or existing_target.suggestedAnswer
+            )
+            incoming_target.suggestionSource = (
+                incoming_target.suggestionSource or existing_target.suggestionSource
+            )
+            incoming_target.requiresConfirmation = True
     else:
         questions = list(record.authoringQuestions)
+    confirmed_target: dict[str, str] | None = None
     for answer in content.get("answers", []):
-        _apply_answer(questions, answer)
+        answer_target = _apply_answer(questions, answer)
+        if answer_target:
+            confirmed_target = answer_target
     record.authoringQuestions = questions
-    target = _target_from_questions(questions)
-    if target:
+    if confirmed_target:
+        target = confirmed_target["locator"]
         _upsert_stage_handoff_decision(record, target, source_stage="clarify")
-        _resolve_browser_target_questions(record, target)
+        _confirm_target_for_active_workflow_run(
+            project,
+            record,
+            target,
+            source=confirmed_target["source"],
+        )
     _apply_write_flow_fields(project, record, content)
     save_use_case(project, record)
     write_clarifications(project, alias, [question.to_dict() for question in questions])
@@ -409,9 +448,37 @@ def _persist_plan(project: Path, alias: str, content: dict[str, Any]) -> StagePe
     record = load_use_case(project, alias)
     supplied_target = _extract_target_environment(content, source_stage="plan")
     if supplied_target:
-        _upsert_stage_handoff_decision(record, supplied_target["locator"], source_stage="plan")
-        _resolve_browser_target_questions(record, supplied_target["locator"])
+        _ensure_browser_target_question(
+            record,
+            locator=supplied_target["locator"],
+            suggestion_source="plan-artifact",
+        )
         save_use_case(project, record)
+    target_question = next(
+        (
+            item
+            for item in record.authoringQuestions
+            if item.id == "browser-target-environment" and item.status != "answered"
+        ),
+        None,
+    )
+    if target_question:
+        return StagePersistenceResult(
+            stage="plan",
+            alias=alias,
+            status="blocked",
+            blockers=[
+                ReadinessBlocker(
+                    code="clarification.target-environment-confirmation-required",
+                    message="Confirm the recommended browser target or provide another target for this workflow.",
+                    recoveryCommand=(
+                        f"verifysignal workflow persist clarify --alias {alias} "
+                        "--payload <target-confirmation.json> --json"
+                    ),
+                )
+            ],
+            nextCommand=f"/verifysignal-clarify {alias}",
+        )
     content["runtimeInputs"] = _merge_resolved_target_runtime_input(
         content.get("runtimeInputs", []),
         _stage_handoff_target(record),
@@ -986,13 +1053,31 @@ def _target_scope_from_runtime_inputs(runtime_inputs: list[Any]) -> str | None:
     return None
 
 
-def _apply_answer(questions: list[AuthoringQuestion], answer: dict[str, Any]) -> None:
+def _apply_answer(
+    questions: list[AuthoringQuestion],
+    answer: dict[str, Any],
+) -> dict[str, str] | None:
     question_id = str(answer.get("questionId") or answer.get("id") or "")
     for question in questions:
         if question.id == question_id:
+            if question.id == "browser-target-environment":
+                source = str(answer.get("confirmationSource") or "")
+                locator = _target_locator_from_text(
+                    answer.get("answerSummary")
+                    or answer.get("summary")
+                    or answer.get("value")
+                )
+                if source not in {"direct-user", "explicit-command"} or not locator:
+                    question.status = "pending"
+                    return None
+                question.status = "answered"
+                question.answerSummary = locator
+                question.confirmationSource = source  # type: ignore[assignment]
+                return {"locator": locator, "source": source}
             question.status = "answered"
             question.answerSummary = str(answer.get("answerSummary") or answer.get("summary") or "")
-            return
+            return None
+    return None
 
 
 TARGET_URL_RE = re.compile(r"https?://[^\s,;\"')]+", re.I)
@@ -1013,7 +1098,13 @@ def _extract_target_environment(content: dict[str, Any], *, source_stage: str) -
         content.get("environmentUrl"),
     ]
     target_environment = content.get("targetEnvironment")
+    suggestion_source: str | None = None
     if isinstance(target_environment, dict):
+        suggestion_source = str(
+            target_environment.get("source")
+            or target_environment.get("suggestionSource")
+            or ""
+        ) or None
         candidates.extend(
             [
                 target_environment.get("locator"),
@@ -1035,7 +1126,10 @@ def _extract_target_environment(content: dict[str, Any], *, source_stage: str) -
     for candidate in candidates:
         value = _target_locator_from_text(candidate)
         if value:
-            return {"locator": value, "sourceStage": source_stage}
+            result = {"locator": value, "sourceStage": source_stage}
+            if suggestion_source:
+                result["suggestionSource"] = suggestion_source
+            return result
     return None
 
 
@@ -1055,8 +1149,27 @@ def _target_locator_from_text(value: Any) -> str | None:
     return None
 
 
-def _ensure_browser_target_question(record: Any) -> None:
-    if any(question.id == "browser-target-environment" for question in record.authoringQuestions):
+def _ensure_browser_target_question(
+    record: Any,
+    *,
+    locator: str | None = None,
+    suggestion_source: str | None = None,
+) -> None:
+    existing = next(
+        (
+            question
+            for question in record.authoringQuestions
+            if question.id == "browser-target-environment"
+        ),
+        None,
+    )
+    if existing:
+        if locator:
+            existing.suggestedAnswer = {"baseUrl": locator}
+            existing.suggestionSource = suggestion_source
+        existing.requiresConfirmation = True
+        if existing.confirmationSource is None:
+            existing.status = "pending"
         return
     record.authoringQuestions.append(
         AuthoringQuestion(
@@ -1065,6 +1178,9 @@ def _ensure_browser_target_question(record: Any) -> None:
             reason="Browser validation requires a resolved target environment before executable planning.",
             status="pending",
             affects="runtimeInputs.baseUrl",
+            suggestedAnswer={"baseUrl": locator} if locator else None,
+            suggestionSource=suggestion_source,
+            requiresConfirmation=True,
         )
     )
 
@@ -1074,6 +1190,30 @@ def _resolve_browser_target_questions(record: Any, locator: str) -> None:
         if question.id == "browser-target-environment":
             question.status = "answered"
             question.answerSummary = locator
+
+
+def _confirm_target_for_active_workflow_run(
+    project: Path,
+    record: Any,
+    locator: str,
+    *,
+    source: str,
+) -> None:
+    workflow = record.workflow if isinstance(record.workflow, dict) else {}
+    run_id = workflow.get("lastWorkflowRunId")
+    if not run_id:
+        return
+    try:
+        run = load_workflow_run(project, str(run_id))
+    except FileNotFoundError:
+        return
+    run.targetEnvironmentConfirmation = {
+        "url": locator,
+        "source": source,
+        "confirmedAt": now_iso(),
+        "questionId": "browser-target-environment",
+    }
+    save_workflow_run(project, run)
 
 
 def _upsert_stage_handoff_decision(record: Any, locator: str, *, source_stage: str) -> None:

@@ -35,6 +35,7 @@ from .models import (
     WORKFLOW_UNDERSTANDING_MAX_AGE_DAYS,
     native_invocation,
 )
+from .repository import load_workflow_run
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,6 +167,25 @@ def check_prerequisites(
             next_command=native_invocation("list"),
             available_aliases=resolved_alias["availableAliases"],
             recorded_decision=recorded_decision,
+            **understanding_payload,
+        )
+
+    target_confirmation = (
+        _target_environment_confirmation_blocker(project, stage, resolved_alias)
+        if isinstance(resolved_alias, str)
+        else None
+    )
+    if target_confirmation:
+        return _result(
+            stage,
+            resolved_alias,
+            "blocked",
+            can_proceed=False,
+            requires_confirmation=True,
+            warnings=[target_confirmation["message"]],
+            recommended_action="confirm-target-environment",
+            next_command=_native_next("clarify", resolved_alias),
+            blockers=[target_confirmation],
             **understanding_payload,
         )
 
@@ -544,6 +564,58 @@ def _has_unresolved_blocking_clarifications(record: Any) -> bool:
         if any(term in text for term in blocking_terms):
             return True
     return False
+
+
+def _target_environment_confirmation_blocker(
+    project: Path,
+    stage: str,
+    alias: str,
+) -> dict[str, Any] | None:
+    if stage not in {"plan", "tasks", "implement", "validate", "run", "repair"}:
+        return None
+    try:
+        record = load_use_case(project, alias)
+    except FileNotFoundError:
+        return None
+    question = next(
+        (
+            item
+            for item in getattr(record, "authoringQuestions", [])
+            if item.id == "browser-target-environment"
+            and item.requiresConfirmation
+        ),
+        None,
+    )
+    if not question:
+        return None
+    workflow = record.workflow if isinstance(record.workflow, dict) else {}
+    run_id = workflow.get("lastWorkflowRunId")
+    confirmed = False
+    if run_id:
+        try:
+            run = load_workflow_run(project, str(run_id))
+            confirmation = run.targetEnvironmentConfirmation or {}
+            confirmed = bool(
+                confirmation.get("url")
+                and confirmation.get("source") in {"direct-user", "explicit-command"}
+            )
+        except FileNotFoundError:
+            confirmed = False
+    if confirmed and question.status == "answered":
+        return None
+    suggested = (question.suggestedAnswer or {}).get("baseUrl")
+    return {
+        "code": "clarification.target-environment-confirmation-required",
+        "severity": "blocker",
+        "category": "target-environment",
+        "message": (
+            "Confirm the recommended browser target or provide another target "
+            "for this workflow before browser authoring or execution."
+        ),
+        "questionId": question.id,
+        "recommendedTarget": suggested,
+        "recoveryCommand": _native_next("clarify", alias),
+    }
 
 
 def _stage_rel(project: Path, alias: str, stage: str) -> str:

@@ -45,6 +45,8 @@ def test_public_spec_to_real_core_structural_dogfood_is_green() -> None:
     assert result["status"] == "green"
     assert result["gates"] == {
         "discoverControl": "passed",
+        "managedCoreUpdate": "passed",
+        "credentialPreparation": "passed",
         "probe": "passed",
         "canonicalPersistence": "passed",
         "validate": "passed",

@@ -18,6 +18,7 @@ from verifysignal_spec.repos import ancestor_core_candidates
 from verifysignal_spec.workspace.repository import (
     get_core_command,
     get_core_configuration,
+    get_core_resolution_mode,
     get_entitlement_api_base_url,
 )
 
@@ -169,6 +170,8 @@ def ensure_core_runtime(
     integration: str | None = None,
     context: str = "runtime",
     required_capability: str | None = None,
+    managed_only: bool | None = None,
+    force_latest: bool = False,
 ) -> ManagedRuntimeReadinessResult:
     project = project.resolve()
     config = resolve_entitlement_config(api_base_url=api_base_url, workspace_api_base_url=get_entitlement_api_base_url(project))
@@ -178,7 +181,14 @@ def ensure_core_runtime(
     # Callers may pass a CONDITIONAL requirement (e.g. run-record only when --record was requested);
     # otherwise it derives from the context registry.
     required_capability = required_capability or CONTEXT_REQUIRED_CAPABILITY.get(context)
-    for source, command in _override_candidates(project, explicit_core_cmd):
+    resolution_mode = get_core_resolution_mode(project)
+    use_managed_only = resolution_mode == "managed-only" if managed_only is None else managed_only
+    for source, command in _override_candidates(
+        project,
+        explicit_core_cmd,
+        managed_only=use_managed_only,
+        ignore_explicit=force_latest,
+    ):
         attempt = _verify_command(project, source, command, required_capability=required_capability)
         attempts.append(attempt)
         if attempt.status == "compatible":
@@ -305,8 +315,64 @@ def ensure_core_runtime(
         )
         result.api = api_status
         return result
+    forced_requested_version: str | None = None
+    if force_latest:
+        receipt = load_receipt(config.apiBaseUrl)
+        if not receipt:
+            blocker = RuntimeSetupBlocker(
+                code="entitlement.malformed",
+                message="Entitlement receipt file is unavailable after unlock.",
+            )
+            attempts.append(
+                RuntimeSourceAttempt(
+                    source="managed-download",
+                    status="blocked",
+                    terminal=True,
+                    platform=platform,
+                    message=blocker.message,
+                    blockerCode=blocker.code,
+                )
+            )
+            result = ManagedRuntimeReadinessResult.blocked(
+                blocker,
+                attempts=attempts,
+                entitlement=entitlement,
+                cache=RuntimeCacheStatus(status="miss", platform=platform),
+                verification_keys=verification_keys,
+            )
+            result.api = api_status
+            return result
+        forced_requested_version, latest_blocker = RuntimeDistributionClient(
+            config
+        ).resolve_latest_core_version(platform, receipt)
+        if latest_blocker or not forced_requested_version:
+            actual = latest_blocker or RuntimeSetupBlocker(
+                code="distribution.version-unspecified",
+                message="The latest managed Core version could not be resolved.",
+            )
+            attempts.append(
+                RuntimeSourceAttempt(
+                    source="managed-download",
+                    status="blocked",
+                    terminal=True,
+                    platform=platform,
+                    message=actual.message,
+                    blockerCode=actual.code,
+                )
+            )
+            result = ManagedRuntimeReadinessResult.blocked(
+                actual,
+                attempts=attempts,
+                entitlement=entitlement,
+                cache=RuntimeCacheStatus(status="miss", platform=platform),
+                verification_keys=verification_keys,
+            )
+            result.api = api_status
+            return result
+
     entry = load_cache_entry(
         platform=platform,
+        version=forced_requested_version if force_latest else None,
         api_base_url=config.apiBaseUrl,
     )
     if entry:
@@ -334,7 +400,7 @@ def ensure_core_runtime(
                     status="ready",
                     source="managed-cache",
                     runtimeCommand=entry.runtimeCommand,
-                    runtimeVersion=attempt.runtimeVersion or entry.coreVersion,
+                    runtimeVersion=entry.coreVersion,
                     contractVersion=attempt.contractVersion or entry.contractVersion,
                     attempts=attempts,
                     api=api_status,
@@ -354,7 +420,7 @@ def ensure_core_runtime(
                 blockerCode="core.incompatible",
             )
 
-    manifest, manifest_blocker = load_manifest()
+    manifest, manifest_blocker = (None, None) if force_latest else load_manifest()
     if manifest_blocker and manifest_blocker.code != "distribution.unavailable":
         attempts.append(RuntimeSourceAttempt(source="managed-download", status="blocked", terminal=True, platform=platform, message=manifest_blocker.message, blockerCode=manifest_blocker.code))
         result = ManagedRuntimeReadinessResult.blocked(
@@ -392,7 +458,10 @@ def ensure_core_runtime(
             result.api = api_status
             return result
         distribution_client = RuntimeDistributionClient(config)
-        requested_version, version_blocker = resolve_requested_core_version(project)
+        requested_version = forced_requested_version
+        version_blocker = None
+        if not requested_version:
+            requested_version, version_blocker = resolve_requested_core_version(project)
         if not requested_version:
             # No local pin, so ASK. This is the whole first-run path: a fresh machine has no env pin
             # and no persisted version (the only writer of that reads it off an installed Core), so
@@ -443,7 +512,7 @@ def ensure_core_runtime(
             status="ready",
             source="managed-download",
             runtimeCommand=runtime_command,
-            runtimeVersion=attempt.runtimeVersion or runtime_core_version,
+            runtimeVersion=runtime_core_version,
             contractVersion=attempt.contractVersion or PUBLIC_CONTRACT_VERSION,
             attempts=attempts,
             api=api_status,
@@ -459,10 +528,18 @@ def ensure_core_runtime(
     return result
 
 
-def _override_candidates(project: Path, explicit_core_cmd: str | None) -> list[tuple[str, str]]:
+def _override_candidates(
+    project: Path,
+    explicit_core_cmd: str | None,
+    *,
+    managed_only: bool = False,
+    ignore_explicit: bool = False,
+) -> list[tuple[str, str]]:
     candidates: list[tuple[str, str]] = []
-    if explicit_core_cmd:
+    if explicit_core_cmd and not ignore_explicit:
         candidates.append(("explicit", explicit_core_cmd))
+    if managed_only:
+        return candidates
     workspace_cmd = get_core_command(project)
     if workspace_cmd:
         candidates.append(("workspace", workspace_cmd))

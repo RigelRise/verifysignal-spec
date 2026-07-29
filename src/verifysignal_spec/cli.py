@@ -10,7 +10,9 @@ from . import __version__
 from .commands import author as author_command
 from .commands import check as check_command
 from .commands import core_setup as core_setup_command
+from .commands import core_runtime as core_runtime_command
 from .commands import crystallize as crystallize_command
+from .commands import credentials as credentials_command
 from .commands import discover as discover_command
 from .commands import init as init_command
 from .commands import integration as integration_command
@@ -68,6 +70,7 @@ def create_parser(prog: str | None = None) -> argparse.ArgumentParser:
     validate_parser.add_argument("--runtime-readiness", action="store_true")
     validate_parser.add_argument("--core-cmd", help="Override configured VerifySignal Core command")
     validate_parser.add_argument("--api-base-url", help="Override the VerifySignal entitlement API base URL for staging, local development, or tests")
+    validate_parser.add_argument("--env-file", help="Explicit owner-only test environment file; no default dotenv file is read")
     validate_parser.add_argument("--json", action="store_true")
 
     run_parser = subparsers.add_parser("run", help="Run a use case")
@@ -79,6 +82,7 @@ def create_parser(prog: str | None = None) -> argparse.ArgumentParser:
     run_parser.add_argument("--replay", help="Replay this run against a crystallized fixture instead of the live target")
     run_parser.add_argument("--core-cmd", help="Override configured VerifySignal Core command")
     run_parser.add_argument("--api-base-url", help="Override the VerifySignal entitlement API base URL for staging, local development, or tests")
+    run_parser.add_argument("--env-file", help="Explicit owner-only test environment file; no default dotenv file is read")
     run_parser.add_argument("--json", action="store_true")
     run_parser.add_argument("--non-interactive", action="store_true")
     run_parser.add_argument("--confirm-risk", action="append", default=[], help="Confirm a structured risky-run confirmation id from workflow check run")
@@ -108,6 +112,7 @@ def create_parser(prog: str | None = None) -> argparse.ArgumentParser:
     probe_parser.add_argument("--slow-mo", dest="slow_mo", type=int, default=0, help="Browser slow motion in milliseconds")
     probe_parser.add_argument("--core-cmd", help="Override configured VerifySignal Core command")
     probe_parser.add_argument("--api-base-url", help="Override the VerifySignal entitlement API base URL for staging, local development, or tests")
+    probe_parser.add_argument("--env-file", help="Explicit owner-only test environment file; no default dotenv file is read")
     probe_parser.add_argument("--json", action="store_true")
 
     crystallize_parser = subparsers.add_parser("crystallize", help="Crystallize a completed run into a reusable fixture via Core")
@@ -123,6 +128,7 @@ def create_parser(prog: str | None = None) -> argparse.ArgumentParser:
     core_version = core_sub.add_parser("version")
     core_version.add_argument("--project", default=".")
     core_version.add_argument("--core-cmd", help="VerifySignal Core executable, command string, or local Core repository path")
+    core_version.add_argument("--api-base-url", help="Override the VerifySignal entitlement API base URL")
     core_version.add_argument("--json", action="store_true")
     core_setup = core_sub.add_parser(
         "setup",
@@ -133,6 +139,24 @@ def create_parser(prog: str | None = None) -> argparse.ArgumentParser:
     core_setup.add_argument("--core-cmd", help="VerifySignal Core executable, command string, or local Core repository path")
     core_setup.add_argument("--no-persist", action="store_true", help="Use an explicit Core command for this setup invocation without saving it")
     core_setup.add_argument("--json", action="store_true")
+    core_reset = core_sub.add_parser("reset", help="Remove local Core resolution and use managed releases")
+    core_reset.add_argument("--project", default=".")
+    core_reset.add_argument("--json", action="store_true")
+    core_update = core_sub.add_parser("update", help="Select the latest verified managed Core release")
+    core_update.add_argument("--project", default=".")
+    core_update.add_argument("--api-base-url", help="Override the VerifySignal entitlement API base URL")
+    core_update.add_argument("--json", action="store_true")
+
+    credentials_parser = subparsers.add_parser("credentials", help="Prepare declared test credential inputs")
+    credentials_sub = credentials_parser.add_subparsers(dest="credentials_command", required=True)
+    credentials_prepare = credentials_sub.add_parser(
+        "prepare",
+        help="Create or update a Git-ignored owner-only environment template",
+    )
+    credentials_prepare.add_argument("alias")
+    credentials_prepare.add_argument("--project", default=".")
+    credentials_prepare.add_argument("--env-file", required=True)
+    credentials_prepare.add_argument("--json", action="store_true")
 
     policy_parser = subparsers.add_parser("policy", help="Manage a use case side-effect policy")
     policy_sub = policy_parser.add_subparsers(dest="policy_command", required=True)
@@ -337,7 +361,14 @@ def dispatch(args: argparse.Namespace) -> tuple[dict[str, Any], bool]:
     if command == "list":
         return list_command.run(Path(args.project).resolve()), args.json
     if command == "validate":
-        return validate_command.run(Path(args.project).resolve(), args.alias, runtime_readiness=args.runtime_readiness, core_cmd=args.core_cmd, api_base_url=args.api_base_url), args.json
+        return validate_command.run(
+            Path(args.project).resolve(),
+            args.alias,
+            runtime_readiness=args.runtime_readiness,
+            core_cmd=args.core_cmd,
+            api_base_url=args.api_base_url,
+            env_file=Path(args.env_file) if args.env_file else None,
+        ), args.json
     if command == "run":
         return run_command.run(
             Path(args.project).resolve(),
@@ -350,6 +381,7 @@ def dispatch(args: argparse.Namespace) -> tuple[dict[str, Any], bool]:
             confirmed_risks=args.confirm_risk,
             record=args.record,
             replay=args.replay,
+            env_file=Path(args.env_file) if args.env_file else None,
         ), args.json
     if command == "repair":
         return repair_command.run(Path(args.project).resolve(), args.alias, from_report=args.from_report, approve=args.approve, core_cmd=args.core_cmd, api_base_url=args.api_base_url), args.json
@@ -370,6 +402,7 @@ def dispatch(args: argparse.Namespace) -> tuple[dict[str, Any], bool]:
             slow_mo_ms=args.slow_mo,
             core_cmd=args.core_cmd,
             api_base_url=args.api_base_url,
+            env_file=Path(args.env_file) if args.env_file else None,
         ), args.json
     if command == "crystallize":
         return crystallize_command.run(
@@ -380,22 +413,27 @@ def dispatch(args: argparse.Namespace) -> tuple[dict[str, Any], bool]:
             api_base_url=args.api_base_url,
         ), args.json
     if command == "core":
-        from .core.adapter import CoreAdapter
-        from .core.runtime_contract import resolve_core_runtime
-
         project = Path(args.project).resolve()
         if args.core_command == "version":
-            runtime = resolve_core_runtime(
+            return core_runtime_command.version(
                 project,
-                explicit_core_cmd=args.core_cmd,
-                context="core-version",
-            )
-            return CoreAdapter(
-                executable=runtime.runtimeCommand,
-                cwd=project,
-            ).version(), args.json
+                core_cmd=args.core_cmd,
+                api_base_url=args.api_base_url,
+            ), args.json
         if args.core_command == "setup":
             return core_setup_command.run(project, core_cmd=args.core_cmd, persist=not args.no_persist), args.json
+        if args.core_command == "reset":
+            return core_runtime_command.reset(project), args.json
+        if args.core_command == "update":
+            return core_runtime_command.update(project, api_base_url=args.api_base_url), args.json
+    if command == "credentials":
+        project = Path(args.project).resolve()
+        if args.credentials_command == "prepare":
+            return credentials_command.prepare(
+                project,
+                args.alias,
+                env_file=Path(args.env_file),
+            ), args.json
     if command == "policy":
         from .commands import policy as policy_command
 

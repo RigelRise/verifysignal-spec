@@ -35,7 +35,13 @@ def test_environment_dependent_clarification_remains_blocking_until_answered(tmp
                     "environmentDependent": True,
                 }
             ],
-            "answers": [],
+            "answers": [
+                {
+                    "questionId": "browser-target-environment",
+                    "answerSummary": "Use https://app.example.test for this workflow.",
+                    "confirmationSource": "direct-user",
+                }
+            ],
             "blockingQuestionsResolved": False,
         },
     )

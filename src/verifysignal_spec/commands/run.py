@@ -14,6 +14,13 @@ from verifysignal_spec.core.adapter import CoreAdapter, core_status
 from verifysignal_spec.core.errors import CoreMissingError
 from verifysignal_spec.core.executable_contract import project_core_contract
 from verifysignal_spec.runtime.entitlement import api_base_url_for_runtime, valid_receipt_path
+from verifysignal_spec.runtime.env_file import (
+    EnvironmentFileError,
+    declared_environment_keys,
+    git_exposure_warnings,
+    load_environment_file,
+    resolve_environment_file_path,
+)
 from verifysignal_spec.runtime.resolver import ensure_core_runtime
 from verifysignal_spec.runtime.telemetry import ping_outcome, send_usage_ping
 from verifysignal_spec.workflows.browser_authoring import resolve_effective_profile_settings
@@ -24,6 +31,7 @@ from verifysignal_spec.workflows.models import GateCoverageResult, GoldenPathRun
 from verifysignal_spec.workflows.repair_recommendations import recommend_repairs_for_gate_coverage
 from verifysignal_spec.workflows.readiness import executable_contract_blockers, legacy_executable_artifact_blockers, managed_runtime_contract_blockers
 from verifysignal_spec.workflows.stage_cards import run_result_card
+from verifysignal_spec.workflows.target_confirmation import target_confirmation_blocker
 from verifysignal_spec.workflows.repository import load_artifact_plan
 from verifysignal_spec.workspace.models import ArtifactReference, RerunPolicy, RunHistoryEntry
 from verifysignal_spec.workspace.repository import (
@@ -60,11 +68,44 @@ def run(
     confirmed_risks: list[str] | None = None,
     record: bool = False,
     replay: str | Path | None = None,
+    env_file: Path | None = None,
 ) -> dict[str, Any]:
     # The loaded use case is `use_case`, not `record`: `record` is the --record flag, and this module
     # also imports `record_run`. The overloaded name is not cosmetic — a local `record` holding the
     # (always truthy) use case silently shadowed this flag and made EVERY run pass --record to Core.
     use_case = load_use_case(project, alias)
+    target_blocker = target_confirmation_blocker(project, use_case)
+    if target_blocker:
+        return {
+            "alias": alias,
+            "status": "blocked",
+            "coreStatus": "not-run",
+            "coverageStatus": "not-run",
+            "requiresConfirmation": True,
+            "blockers": [target_blocker],
+            "reason": target_blocker["message"],
+            "nextAction": target_blocker["recoveryCommand"],
+        }
+    environment_values: dict[str, str] = {}
+    environment_warnings: list[dict[str, str]] = []
+    if env_file:
+        try:
+            env_file_path = resolve_environment_file_path(project, env_file)
+            environment_values = load_environment_file(
+                env_file_path,
+                declared_keys=declared_environment_keys(use_case),
+            )
+            environment_warnings = git_exposure_warnings(project, env_file_path)
+        except EnvironmentFileError as exc:
+            return {
+                "alias": alias,
+                "status": "blocked",
+                "coreStatus": "not-run",
+                "coverageStatus": "not-run",
+                "blockers": [exc.blocker()],
+                "reason": exc.message,
+                "valuesIncluded": False,
+            }
     profile = next((item for item in use_case.profiles if item.name == profile_name), None)
     if profile is None:
         available = ", ".join(item.name for item in use_case.profiles) or "normal"
@@ -334,7 +375,7 @@ def run(
         slow_mo_ms=profile_settings_model.slowMoMs,
         record=record,
         replay=replay,
-        env=runtime_values,
+        env={**runtime_values, **environment_values},
         entitlement_receipt=valid_receipt_path(
             api_base_url_for_runtime(managed_runtime, api_base_url),
         ),
@@ -467,6 +508,7 @@ def run(
     record_run(project, entry)
     send_usage_ping("run", ping_outcome(entry.status), api_base_url=api_base_url)
     return {
+        **({"credentialWarnings": environment_warnings} if environment_warnings else {}),
         "alias": alias,
         "status": entry.status,
         "coreStatus": core,

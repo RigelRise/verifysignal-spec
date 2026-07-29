@@ -52,10 +52,11 @@ Then run the whole flow from your agent, in one line:
 ```
 
 The agent drafts the use case from your source or synthesized browser-first
-product understanding, grounds its selectors against the live app, validates,
-runs, and repairs — stopping only for real unknowns, missing credentials, or
-write side-effects. Credentials come from environment variables at run time and
-never touch disk.
+product understanding, asks you to confirm the test target, grounds its
+selectors against that app, validates, runs, and repairs. It stops only for real
+unknowns, missing credentials, or a write it should not make on its own.
+Credentials can come from the current environment or from an explicit,
+owner-only test environment file that VerifySignal prepares and Git-ignores.
 
 ### No source access?
 
@@ -129,7 +130,7 @@ means the same thing for everyone. See [GOVERNANCE.md](GOVERNANCE.md).
 
 ## Safety
 
-- **Secrets never persist.** Credentials resolve from your environment at run time. Tokens, receipts, and signed URLs are redacted from all output.
+- **Secrets stay out of managed artifacts.** Credentials resolve at run time from the current environment or an explicit owner-only, Git-ignored test file. Values are never copied into use cases, reports, or command output.
 - **Writes are declared and watched.** A write flow states what it may touch, is checked at run time, and needs approval to rerun after a commit.
 - **The runtime wins.** If the agent and the run disagree, the run result stands. Agents stop and ask instead of inventing selectors.
 
@@ -146,9 +147,11 @@ means the same thing for everyone. See [GOVERNANCE.md](GOVERNANCE.md).
 | --- | --- |
 | `verifysignal init --here --integration claude\|codex` | Create `.verifysignal/` and install agent skills |
 | `verifysignal check` | Workspace, runtime, and entitlement readiness |
+| `verifysignal core update` | Remove local Core selection and install the latest verified managed runtime |
 | `verifysignal author <alias> "<description>"` | Register a use case |
-| `verifysignal validate <alias>` | Run authoring gates |
-| `verifysignal run <alias>` | Execute and capture evidence |
+| `verifysignal credentials prepare <alias> --env-file <file>` | Safely prepare a Git-ignored, owner-only file for declared test credentials |
+| `verifysignal validate <alias> [--env-file <file>]` | Run authoring gates and optional explicit credential readiness |
+| `verifysignal run <alias> [--env-file <file>]` | Execute and capture evidence |
 | `verifysignal repair <alias>` | Classify findings and propose repairs |
 | `verifysignal discover --url <url> --skill <path>` | Ground selectors against the live DOM |
 | `verifysignal workflow ...` | Staged workflow engine |

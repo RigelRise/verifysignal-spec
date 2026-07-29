@@ -24,6 +24,15 @@ def test_installed_codex_and_claude_templates_include_write_safety_contract_guid
     assert "verifysignal probe <run-request>" in combined
     assert "discover --storage-state" not in combined
     assert "developer-controlled `--storage-state`" not in combined
+    for phrase in [
+        "recommendation, not a decision",
+        "confirm or replace",
+        "verifysignal credentials prepare <alias>",
+        ".env.verifysignal.test.local",
+        "Never read\n   `.env`, `.env.local`",
+        "explicit `--env-file`",
+    ]:
+        assert phrase in combined
 
 
 def test_installed_understand_templates_guide_observable_browser_first_mapping(tmp_path) -> None:

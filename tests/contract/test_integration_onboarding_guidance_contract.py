@@ -87,8 +87,8 @@ class IntegrationOnboardingGuidanceContractTests(CliTestCase):
 
         self.assertEqual(code, 0, err)
         data = json.loads(out)
-        self.assertEqual(data["upgraded"][0]["coreSetup"]["status"], "error")
-        self.assertEqual(data["upgraded"][0]["onboardingGuide"]["coreStatus"]["statusMarker"], "[ERROR]")
+        self.assertEqual(data["upgraded"][0]["coreSetup"]["status"], "not-checked")
+        self.assertEqual(data["upgraded"][0]["onboardingGuide"]["coreStatus"]["statusMarker"], "[NOT CHECKED]")
 
 
 def _write_executable(path: Path, content: str) -> None:

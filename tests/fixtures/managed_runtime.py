@@ -5,6 +5,7 @@ import contextlib
 import hashlib
 import json
 import os
+import shutil
 import stat
 import sys
 import tarfile
@@ -427,6 +428,46 @@ def build_managed_runtime_distribution(root: Path, *, platform: str, core_versio
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     return {
         "manifest": manifest_path,
+        "artifact": artifact,
+        "sha256": sha256,
+        "coreVersion": core_version,
+        "platform": platform,
+        "releaseMetadataBytes": metadata_bytes_b64,
+        "releaseSignature": release_signature,
+    }
+
+
+def build_managed_runtime_distribution_from_artifact(
+    root: Path,
+    *,
+    artifact_source: Path,
+    platform: str,
+    core_version: str,
+) -> dict[str, Path | str]:
+    """Wrap an already packaged public Core artifact in the test signed backend contract."""
+
+    dist = root / "dist"
+    dist.mkdir(parents=True, exist_ok=True)
+    artifact = dist / f"verifysignal-core-{core_version}-{platform}.tar.gz"
+    shutil.copy2(artifact_source, artifact)
+    sha256 = hashlib.sha256(artifact.read_bytes()).hexdigest()
+    release_metadata = {
+        "schema": "verifysignal.runtime-release/v1",
+        "schemaVersion": 1,
+        "coreVersion": core_version,
+        "publicContractVersion": "verifysignal-public-cli-json/v1",
+        "channel": "stable",
+        "issuer": "https://verifysignal.io",
+        "packages": [
+            {
+                "platform": platform,
+                "filename": artifact.name,
+                "sha256": sha256,
+            }
+        ],
+    }
+    metadata_bytes_b64, release_signature = _sign_release_metadata(release_metadata)
+    return {
         "artifact": artifact,
         "sha256": sha256,
         "coreVersion": core_version,
