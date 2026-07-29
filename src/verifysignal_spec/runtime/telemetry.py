@@ -86,7 +86,7 @@ def send_usage_ping(
         config = resolve_entitlement_config(api_base_url=api_base_url)
     except Exception:
         return None
-    receipt = load_receipt()
+    receipt = load_receipt(config.apiBaseUrl)
     bearer = receipt.receiptPayload if receipt and receipt.receiptPayload else None
     thread = threading.Thread(target=_post_usage, args=(config, command, outcome, bearer), daemon=True)
     thread.start()

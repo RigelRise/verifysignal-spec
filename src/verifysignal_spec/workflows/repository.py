@@ -17,6 +17,10 @@ from verifysignal_spec.workspace.repository import (
     update_use_case_workflow_reference,
 )
 from verifysignal_spec.workspace.validation import validate_no_secret_values
+from verifysignal_spec.integrations.invocation import (
+    project_integration,
+    render_agent_invocations_in_value,
+)
 
 from .models import (
     WORKFLOW_ARTIFACT_PLAN_SCHEMA,
@@ -92,8 +96,12 @@ def state_document(project: Path, alias: str, run: WorkflowRun | None = None, cu
 
 def save_workflow_state(project: Path, alias: str, data: dict[str, Any]) -> None:
     layout.ensure_path_safe_alias(alias)
-    _reject_secrets(data)
-    save_document(layout.workflow_state_path(project, alias), data)
+    rendered = render_agent_invocations_in_value(
+        data,
+        project_integration(project),
+    )
+    _reject_secrets(rendered)
+    save_document(layout.workflow_state_path(project, alias), rendered)
 
 
 def load_workflow_state(project: Path, alias: str) -> dict[str, Any]:
@@ -102,8 +110,12 @@ def load_workflow_state(project: Path, alias: str) -> dict[str, Any]:
 
 def save_workflow_run(project: Path, run: WorkflowRun) -> None:
     run.updatedAt = now_iso()
-    _reject_secrets(run.to_dict())
-    save_document(layout.workflow_run_path(project, run.runId), run.to_dict())
+    rendered = render_agent_invocations_in_value(
+        run.to_dict(),
+        run.integration or project_integration(project),
+    )
+    _reject_secrets(rendered)
+    save_document(layout.workflow_run_path(project, run.runId), rendered)
 
 
 def load_workflow_run(project: Path, run_id: str) -> WorkflowRun:
@@ -219,8 +231,12 @@ def golden_path_state_path(project: Path) -> Path:
 
 
 def save_golden_path_state(project: Path, data: dict[str, Any]) -> None:
-    _reject_secrets(data)
-    save_document(golden_path_state_path(project), data)
+    rendered = render_agent_invocations_in_value(
+        data,
+        project_integration(project),
+    )
+    _reject_secrets(rendered)
+    save_document(golden_path_state_path(project), rendered)
 
 
 def load_golden_path_state(project: Path) -> dict[str, Any]:

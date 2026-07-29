@@ -48,16 +48,20 @@ def write_global_understanding(project: Path, context: dict[str, Any]) -> str:
     metadata = context.get("understanding", {})
     return write_markdown(
         layout.workflow_global_understanding_path(project),
-        "VerifySignal Repository Understanding",
+        "VerifySignal Product Understanding",
         {
             "Metadata": _render_understanding_metadata(metadata),
             "Project Overview": context.get("productSummary") or context.get("repositorySummary") or "",
+            "Target Environment": _render_target_environment(context.get("targetEnvironment")),
+            "Exploration Scope": _render_exploration_scope(context.get("explorationScope")),
+            "Product Signals": _render_product_signals(context.get("productSignals", [])),
             "Safe Inspection Paths": context.get("safeInspectionPaths", []),
             "Blocked Sensitive Paths": context.get("blockedSensitivePaths", []),
             "Candidate Validation Use Cases": _render_candidate_use_cases(context.get("candidateUseCases", [])),
             "Startup Notes": context.get("startupNotes") or context.get("localStartInstructions") or "",
             "Validation Boundaries": context.get("validationBoundaries", []),
             "Runtime Requirements": context.get("runtimeRequirements") or context.get("knownRuntimeRequirements", []),
+            "Understanding Gaps": metadata.get("gaps") or context.get("gaps", []),
             "Unresolved Questions": context.get("unresolvedQuestions", []),
         },
     )
@@ -72,6 +76,8 @@ def write_understanding_snapshot(project: Path, alias: str, context: dict[str, A
             "Metadata": _render_understanding_metadata(metadata),
             "Product Context": context.get("productSummary") or context.get("repositorySummary") or "",
             "Use Case Focus": context.get("useCaseFocus", alias),
+            "Target Environment": _render_target_environment(context.get("targetEnvironment")),
+            "Product Signals": _render_product_signals(context.get("productSignals", [])),
             "Safe Inspection Paths": context.get("safeInspectionPaths", []),
             "Blocked Sensitive Paths": context.get("blockedSensitivePaths", []),
             "Candidate Validation Use Cases": _render_candidate_use_cases(context.get("candidateUseCases", [])),
@@ -174,11 +180,14 @@ def _render_understanding_metadata(metadata: dict[str, Any]) -> list[str]:
     if not metadata:
         return []
     return [
+        f"Mode: {metadata.get('mode', 'repository')}",
         f"Generated At: {metadata.get('generatedAt', 'Not recorded')}",
+        f"Observed At: {metadata.get('observedAt', 'Not recorded')}",
         f"Generated Git Hash: {metadata.get('generatedGitHash') or 'Unavailable'}",
         f"Git Available: {str(metadata.get('gitAvailable', False)).lower()}",
         f"Inventory Status: {metadata.get('inventoryStatus', 'Not recorded')}",
         f"Source Traceability Status: {metadata.get('sourceTraceabilityStatus', 'Not recorded')}",
+        f"Provenance Traceability Status: {metadata.get('provenanceTraceabilityStatus', 'Not recorded')}",
         f"Candidate Count: {metadata.get('candidateCount', 'Not recorded')}",
         f"Trivial Candidate Count: {metadata.get('trivialCandidateCount', 'Not recorded')}",
         f"Partial Inventory Reasons: {', '.join(metadata.get('partialInventoryReasons', [])) or 'None'}",
@@ -192,7 +201,7 @@ def _stage_contract_note(stage: str) -> str:
 
 def _render_candidate_use_cases(candidates: list[dict[str, Any]]) -> list[str]:
     if not candidates:
-        return ["No candidate validation use cases could be inferred from safe repository context."]
+        return ["No candidate validation use cases could be inferred from the available product understanding."]
     rendered: list[str] = []
     for candidate in candidates:
         alias = candidate.get("alias") or candidate.get("candidateAlias") or "candidate"
@@ -202,6 +211,53 @@ def _render_candidate_use_cases(candidates: list[dict[str, Any]]) -> list[str]:
         source_status = candidate.get("inventorySourceStatus")
         source = f", inventory: {source_status}" if source_status else ""
         rendered.append(f"{alias}: {title} ({confidence}{source}) - {rationale}")
+    return rendered
+
+
+def _render_target_environment(value: Any) -> list[str]:
+    if not isinstance(value, dict):
+        return []
+    rendered = [
+        f"Locator: {value.get('locator', 'Not recorded')}",
+        f"Origin: {value.get('origin', 'Not recorded')}",
+        f"Reachability: {value.get('reachabilityStatus', 'unknown')}",
+    ]
+    if value.get("environment"):
+        rendered.append(f"Environment: {value['environment']}")
+    return rendered
+
+
+def _render_exploration_scope(value: Any) -> list[str]:
+    if not isinstance(value, dict):
+        return []
+    candidate_range = value.get("candidateRange") if isinstance(value.get("candidateRange"), dict) else {}
+    return [
+        f"Allowed Origins: {', '.join(value.get('allowedOrigins', [])) or 'None'}",
+        f"Maximum Pages or States: {value.get('maxPagesOrStates', 'Not recorded')}",
+        f"Maximum Depth: {value.get('maxDepth', 'Not recorded')}",
+        (
+            "Candidate Range: "
+            f"{candidate_range.get('minimum', 'Not recorded')}-"
+            f"{candidate_range.get('maximum', 'Not recorded')}"
+        ),
+        f"Soft Time Budget Minutes: {value.get('softTimeBudgetMinutes', 'Not recorded')}",
+        f"Read Safe Only: {str(value.get('readSafeOnly', True)).lower()}",
+        f"Status: {value.get('status', 'Not recorded')}",
+    ]
+
+
+def _render_product_signals(signals: Any) -> list[str]:
+    if not isinstance(signals, list):
+        return []
+    rendered: list[str] = []
+    for item in signals:
+        if not isinstance(item, dict):
+            continue
+        signal_id = item.get("id", "signal")
+        surface = item.get("surface", "unknown surface")
+        confidence = item.get("confidence", "medium")
+        summary = item.get("summary", "No summary recorded.")
+        rendered.append(f"{signal_id} [{surface}, {confidence}]: {summary}")
     return rendered
 
 

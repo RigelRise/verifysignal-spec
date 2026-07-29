@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import os
+import subprocess
+from pathlib import Path
 
 import pytest
 
 from verifysignal_spec.runtime.env_file import (
     EnvironmentFileError,
     build_child_environment_values,
+    git_exposure_warnings,
     parse_environment_text,
 )
 
@@ -63,3 +66,60 @@ def test_explicit_values_override_ambient_only_in_the_child_mapping(monkeypatch)
     assert child == {"TEST_USER": "explicit"}
     assert os.environ["TEST_USER"] == "ambient"
     assert dict(os.environ) == before
+
+
+def _git_project(tmp_path: Path) -> Path:
+    project = tmp_path / "project"
+    project.mkdir()
+    subprocess.run(["git", "init", "-q", str(project)], check=True)
+    return project
+
+
+def test_unignored_environment_file_warns_without_blocking(tmp_path) -> None:
+    project = _git_project(tmp_path)
+    target = project / ".env.verifysignal.test.local"
+    target.write_text("TEST_USER=qa@example.test\n")
+
+    warnings = git_exposure_warnings(project, target)
+
+    assert [item["code"] for item in warnings] == ["credentials.env-file-not-git-ignored"]
+    assert warnings[0]["severity"] == "warning"
+    assert "qa@example.test" not in warnings[0]["message"]
+
+
+def test_ignored_environment_file_does_not_warn(tmp_path) -> None:
+    project = _git_project(tmp_path)
+    target = project / ".env.verifysignal.test.local"
+    target.write_text("TEST_USER=qa@example.test\n")
+    (project / ".gitignore").write_text(".env.verifysignal.test.local\n")
+
+    assert git_exposure_warnings(project, target) == []
+
+
+def test_tracked_environment_file_warns_even_when_a_rule_would_ignore_it(tmp_path) -> None:
+    project = _git_project(tmp_path)
+    target = project / ".env.verifysignal.test.local"
+    target.write_text("TEST_USER=qa@example.test\n")
+    subprocess.run(["git", "-C", str(project), "add", "-f", target.name], check=True)
+    (project / ".gitignore").write_text(".env.verifysignal.test.local\n")
+
+    warnings = git_exposure_warnings(project, target)
+
+    assert [item["code"] for item in warnings] == ["credentials.env-file-tracked-by-git"]
+
+
+def test_environment_file_outside_the_project_is_not_a_git_concern(tmp_path) -> None:
+    project = _git_project(tmp_path)
+    outside = tmp_path / "elsewhere.env"
+    outside.write_text("TEST_USER=qa@example.test\n")
+
+    assert git_exposure_warnings(project, outside) == []
+
+
+def test_non_git_project_does_not_warn(tmp_path) -> None:
+    project = tmp_path / "plain"
+    project.mkdir()
+    target = project / ".env.verifysignal.test.local"
+    target.write_text("TEST_USER=qa@example.test\n")
+
+    assert git_exposure_warnings(project, target) == []

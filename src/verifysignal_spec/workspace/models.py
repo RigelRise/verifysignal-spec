@@ -935,6 +935,7 @@ class RunHistoryEntry:
     partialCoverage: list[dict[str, Any]] = field(default_factory=list)
     runtimeContradictions: list[dict[str, Any]] = field(default_factory=list)
     repairRecommendations: list[dict[str, Any]] = field(default_factory=list)
+    sideEffectPolicy: dict[str, Any] | None = None
     sideEffects: dict[str, Any] | None = None
     runtimeOutputs: list[dict[str, Any]] = field(default_factory=list)
     resolvedRuntimeInputs: list[dict[str, Any]] = field(default_factory=list)
@@ -965,6 +966,7 @@ class RunHistoryEntry:
             partialCoverage=list(data.get("partialCoverage", [])),
             runtimeContradictions=list(data.get("runtimeContradictions", [])),
             repairRecommendations=list(data.get("repairRecommendations", [])),
+            sideEffectPolicy=data.get("sideEffectPolicy"),
             sideEffects=data.get("sideEffects"),
             runtimeOutputs=list(data.get("runtimeOutputs", [])),
             resolvedRuntimeInputs=list(data.get("resolvedRuntimeInputs", [])),

@@ -42,7 +42,7 @@ class CoreUpdateTests(CliTestCase):
         init_workspace(self.project)
         save_core_configuration(
             self.project,
-            "npm --prefix ../verifysignal run verifysignal:dev --",
+            "npm --prefix ../local-core-checkout run verifysignal:dev --",
             source="ancestor-sibling",
             version="9.9.9",
         )

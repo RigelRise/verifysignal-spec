@@ -80,6 +80,7 @@ def evaluate_runtime_readiness(
         record.runtimeOutputs,
         [item.to_dict() for item in record.runtimeInputs],
         core_contract=core_contract,
+        runtime_outcomes=[record.lastRun] if isinstance(record.lastRun, dict) else [],
     )
     findings.extend(f"runtime.{item.get('code')}" for item in side_effect_findings if item.get("severity") == "blocking")
 

@@ -71,16 +71,39 @@ cd /path/to/target-project
 verifysignal init --here --integration codex
 verifysignal check
 verifysignal workflow info verifysignal-use-case --json
+codex
 ```
 
 For Claude Code:
 
 ```sh
 verifysignal init --here --integration claude
+claude
 ```
 
-After initialization, supported agents expose staged workflow commands using the
-native skill invocation style:
+Initialization installs the pinned Playwright MCP provider and registers its
+VerifySignal launcher in the selected agent's user scope through the agent's
+public MCP command. It preserves an existing differing `playwright` entry and
+reports a blocker instead of overwriting it. After initialization, start the
+agent with the ordinary `codex` or `claude` command; no wrapper, `-c` override,
+or synthetic project trust is required for browser discovery.
+
+Codex exposes staged workflow skills with dollar-prefixed invocation:
+
+```text
+$verifysignal-understand
+$verifysignal-specify
+$verifysignal-clarify
+$verifysignal-plan
+$verifysignal-tasks
+$verifysignal-implement
+$verifysignal-validate
+$verifysignal-list
+$verifysignal-run
+$verifysignal-repair
+```
+
+Claude Code uses slash-prefixed invocation:
 
 ```text
 /verifysignal-understand
@@ -130,7 +153,8 @@ verifysignal workflow resume <run-id>
 
 Existing legacy `verifysignal-spec-*` skills may be left in place for projects
 that already installed the earlier thin CLI flow. New installations prefer
-`/verifysignal-*` workflow commands.
+the selected agent's native `$verifysignal-*` or `/verifysignal-*` workflow
+commands.
 
 ## Managed Runtime And Development Overrides
 
@@ -152,6 +176,11 @@ project's `.verifysignal/` workspace stays portable and does not store raw
 emails, raw tokens, receipt payloads, signed URLs, credentials, screenshots,
 browser storage, or private runtime contents.
 
+The CLI asks for the token only after the backend accepts email delivery. If
+the message does not arrive, press Enter at the token prompt to preserve the
+pending-delivery blocker. Delivery failure or throttling returns its original
+blocker immediately and does not attempt a token exchange.
+
 For staging, local backend development, and tests, use an explicit API override:
 
 ```sh
@@ -166,6 +195,14 @@ export VERIFYSIGNAL_API_BASE_URL=http://localhost:3000/api
 
 Do not put credentials, tokens, signed URLs, or query secrets in the API base
 URL.
+
+Managed runtime state is isolated by the canonical entitlement API endpoint.
+The default production endpoint keeps the existing cache layout for backward
+compatibility. Local and staging endpoints use separate deterministic
+namespaces for receipts, refresh credentials, verification keys, and runtime
+packages, so changing `--api-base-url` cannot reuse trust material from another
+backend. An explicit `VERIFYSIGNAL_RUNTIME_CACHE_DIR` remains an exact
+maintainer override.
 
 For local development, CI, or offline diagnostics, pass the private Core
 repository directory during initialization:

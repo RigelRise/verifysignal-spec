@@ -4,7 +4,7 @@ import json
 
 from helpers import CliTestCase
 from tests.fixtures.workflows.golden_path_onboarding import PUBLIC_ALIAS, create_onboarding_repository
-from verifysignal_spec.workspace.repository import load_document
+from verifysignal_spec.workspace.repository import load_document, load_use_case, save_use_case
 
 
 class GuidedFirstRunFlowIntegrationTests(CliTestCase):
@@ -53,6 +53,67 @@ class GuidedFirstRunFlowIntegrationTests(CliTestCase):
 
         self.assertEqual(code, 0, err)
         state = load_document(self.project / ".verifysignal/workflows/golden-path-state.yaml", default={})
-        self.assertIn(state["stage"], {"passed", "repaired-passed"})
+        self.assertIn(state["stage"], {"passed", "repaired-passed"}, out)
         self.assertTrue(state["strictPass"])
         self.assertIn("stageCards", state)
+
+    def test_side_effect_violation_prevents_strict_pass_and_blocks_unchanged_policy_rerun(self) -> None:
+        self.cli(["workflow", "accept-first-run", PUBLIC_ALIAS, "--project", str(self.project), "--json"])
+        import os
+
+        old_mode = os.environ.get("FAKE_VERIFYSIGNAL_MODE")
+        os.environ["FAKE_VERIFYSIGNAL_MODE"] = "full-coverage-side-effect-violation"
+        try:
+            code, out, err = self.cli(["run", PUBLIC_ALIAS, "--project", str(self.project), "--profile", "normal", "--json"])
+            first = json.loads(out)
+            state = load_document(self.project / ".verifysignal/workflows/golden-path-state.yaml", default={})
+            record = load_use_case(self.project, PUBLIC_ALIAS)
+
+            self.assertNotEqual(code, 0, err)
+            self.assertEqual(first["status"], "failed")
+            self.assertEqual(first["firstRunStatus"], "failed")
+            self.assertFalse(first["strictPass"])
+            self.assertFalse(state["strictPass"])
+            self.assertEqual(record.lastRun["sideEffectPolicy"]["class"], "none")
+            self.assertTrue(record.lastRun["sideEffects"]["violations"])
+
+            os.environ["FAKE_VERIFYSIGNAL_MODE"] = "full-coverage"
+            blocked_code, blocked_out, blocked_err = self.cli(
+                ["run", PUBLIC_ALIAS, "--project", str(self.project), "--profile", "normal", "--json"]
+            )
+            blocked = json.loads(blocked_out)
+            self.assertNotEqual(blocked_code, 0, blocked_err)
+            self.assertEqual(blocked["status"], "blocked")
+            self.assertTrue(
+                any(item["code"] == "runtime.side-effect-observation-review-required" for item in blocked["blockers"])
+            )
+
+            record = load_use_case(self.project, PUBLIC_ALIAS)
+            record.sideEffects = {
+                "class": "none",
+                "mode": "observe",
+                "allowed": [
+                    {
+                        "id": "reviewed-telemetry",
+                        "kind": "network",
+                        "methods": ["POST"],
+                        "urlContains": "/api/telemetry",
+                        "timing": "any",
+                    }
+                ],
+                "forbidden": [],
+            }
+            save_use_case(self.project, record)
+            os.environ["FAKE_VERIFYSIGNAL_MODE"] = "full-coverage-clean-side-effects"
+            clean_code, clean_out, clean_err = self.cli(
+                ["run", PUBLIC_ALIAS, "--project", str(self.project), "--profile", "normal", "--json"]
+            )
+            clean = json.loads(clean_out)
+            self.assertEqual(clean_code, 0, f"{clean_err}\n{clean_out}")
+            self.assertEqual(clean["status"], "passed")
+            self.assertTrue(clean["strictPass"])
+        finally:
+            if old_mode is None:
+                os.environ.pop("FAKE_VERIFYSIGNAL_MODE", None)
+            else:
+                os.environ["FAKE_VERIFYSIGNAL_MODE"] = old_mode

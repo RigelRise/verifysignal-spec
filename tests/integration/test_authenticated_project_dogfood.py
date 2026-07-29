@@ -8,14 +8,19 @@ from pathlib import Path
 
 import pytest
 
+from verifysignal_spec.repos import resolve_sibling_repo
 
 SPEC_REPO = Path(__file__).resolve().parents[2]
-CORE_REPO = SPEC_REPO.parent / "verifysignal"
+# By identity, never by directory name: this used to join a literal "verifysignal", so on a checkout
+# that called Core anything else the dogfood skipped as "sibling not present" — and the required-mode
+# guard below never fired because the repo genuinely looked absent.
+CORE_REPO = resolve_sibling_repo("core", SPEC_REPO)
 RUNNER = SPEC_REPO / "scripts/dogfood/authenticated_project_red_green.py"
 
 
 def test_public_spec_to_real_core_structural_dogfood_is_green() -> None:
-    if not (CORE_REPO / "package.json").exists():
+    # Resolution already confirmed the manifest identity, so "resolved" IS "present".
+    if CORE_REPO is None:
         if os.environ.get("VERIFYSIGNAL_REQUIRE_CROSSREPO_DOGFOOD") == "1":
             pytest.fail("The required sibling Core source repository is not present.")
         pytest.skip("The sibling Core source repository is not present.")

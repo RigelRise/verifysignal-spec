@@ -80,3 +80,24 @@ class RepairFromReportTests(CliTestCase):
         self.assertEqual(recommendations[0]["safeCategory"], "wait-strategy")
         self.assertFalse(recommendations[0]["requiresUserDecision"])
         self.assertNotIn("mark conditional", str(recommendations).lower())
+
+    def test_report_preserves_selector_repair_but_blocks_automatic_side_effect_policy_changes(self) -> None:
+        os.environ["FAKE_VERIFYSIGNAL_MODE"] = "report-selector-and-side-effect"
+        self.cli(["init", str(self.project), "--integration", "codex"])
+        self.cli(["author", "login", "Validate login.", "--project", str(self.project)])
+        report = self.project / "report.json"
+        report.write_text("{}", encoding="utf-8")
+
+        code, out, err = self.cli(
+            ["repair", "login", "--project", str(self.project), "--from-report", str(report), "--approve", "--json"]
+        )
+
+        self.assertNotEqual(code, 0, err)
+        recommendations = __import__("json").loads(out)["repair"]["recommendations"]
+        selector = next(item for item in recommendations if item.get("runtimeCategory") == "selector-issue")
+        policy = next(item for item in recommendations if item.get("runtimeCategory") == "side-effect-policy-issue")
+        self.assertEqual(selector["safeCategory"], "selector-ambiguity")
+        self.assertFalse(selector["requiresUserDecision"])
+        self.assertTrue(policy["requiresUserDecision"])
+        self.assertEqual(policy["autonomy"], "blocked")
+        self.assertFalse(policy["safeMechanical"])

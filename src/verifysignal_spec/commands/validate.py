@@ -12,10 +12,11 @@ from verifysignal_spec.core.adapter import CoreAdapter
 from verifysignal_spec.core.contracts import core_entitlement_blocker_code
 from verifysignal_spec.core.errors import CoreExecutionError, CoreIncompatibleError, CoreMissingError
 from verifysignal_spec.core.executable_contract import project_core_contract
-from verifysignal_spec.runtime.entitlement import load_receipt, receipt_status
+from verifysignal_spec.runtime.entitlement import api_base_url_for_runtime, valid_receipt_path
 from verifysignal_spec.runtime.env_file import (
     EnvironmentFileError,
     declared_environment_keys,
+    git_exposure_warnings,
     load_environment_file,
     resolve_environment_file_path,
 )
@@ -82,13 +83,16 @@ def run(
             + detailed_blockers,
         }
     environment_values: dict[str, str] = {}
+    environment_warnings: list[dict[str, str]] = []
     if env_file:
         try:
             credential_record = load_use_case(project, alias)
+            env_file_path = resolve_environment_file_path(project, env_file)
             environment_values = load_environment_file(
-                resolve_environment_file_path(project, env_file),
+                env_file_path,
                 declared_keys=declared_environment_keys(credential_record),
             )
+            environment_warnings = git_exposure_warnings(project, env_file_path)
         except EnvironmentFileError as exc:
             return {
                 "schemaVersion": WORKFLOW_VALIDATION_READINESS_SCHEMA,
@@ -250,7 +254,9 @@ def run(
         skills,
         runtime_readiness=runtime_readiness,
         env=environment_values,
-        entitlement_receipt=_valid_receipt_path(),
+        entitlement_receipt=valid_receipt_path(
+            api_base_url_for_runtime(managed_runtime, api_base_url),
+        ),
     )
     runtime_check = (
         evaluate_runtime_readiness(
@@ -272,6 +278,8 @@ def run(
         "managedRuntimeReadiness": managed_runtime.to_dict(),
         "core": result,
     }
+    if environment_warnings:
+        wrapped["credentialWarnings"] = environment_warnings
     side_effect = record.sideEffects if isinstance(record.sideEffects, dict) else {}
     if side_effect.get("class") in {"write", "external-notification"}:
         from verifysignal_spec.workflows.write_safety import evaluate_rerun_decision
@@ -451,11 +459,3 @@ def _readiness_summary_text(summary: ValidationReadinessSummary) -> str:
         "Validation readiness did not pass. Review structural validation, authoring coherence, "
         "runtime readiness, and mapped authored evidence before running the browser flow."
     )
-
-
-def _valid_receipt_path() -> str | None:
-    receipt = load_receipt()
-    if not receipt:
-        return None
-    status = receipt_status(receipt)
-    return status.receiptPath if status.status == "valid" else None

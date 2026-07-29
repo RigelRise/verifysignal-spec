@@ -21,6 +21,8 @@ Repair invalid or failed use cases through the workflow.
 - If public Core fields indicate post-commit, committed-confirmed, violation, or unknown mutating activity, do not recommend blind repair-and-rerun. Require review, cleanup, or explicit rerun policy/confirmation first.
 - For false-positive write outcome review, route to `verifysignal workflow supersede-write-outcome --alias <alias> --payload <review.json> --json`; do not hand-edit managed run history. Artifact repair is separate from superseding prior write-risk state.
 - When repairing side-effect policy, use canonical `sideEffectPolicy.allowed[]` and `sideEffectPolicy.forbidden[]`. Do not author `sideEffectPolicy.rules[].effect/match`.
+- Never automatically change `sideEffects.class`, `sideEffects.mode`, `allowed`, or `forbidden`; side-effect policy changes require an explicit owner decision.
+- Never add an allow rule merely to make an observed request pass. In particular, do not whitelist a GraphQL POST by URL when Core can distinguish a proven query from a mutation in memory.
 - To change ONLY the side-effect policy (class/mode/allowed/forbidden), prefer `verifysignal policy set <alias> --class <class> [--mode <mode>] [--payload <policy.json>]` over re-persisting `implement`: it mutates only the policy, re-syncs the run request, and preserves runtime inputs and skills. Re-persist `implement` only when skill/target/step/resourceIdentity/rerun-policy also change.
 - Do not propose unsupported confirmation repairs. Require a runtime-supported confirmation proven by public capability data or accepted runtime outcomes.
 - Apply the most restrictive rerun decision between Core `rerunRisk` and Spec `rerunPolicy`; refresh only generated runtime inputs explicitly declared refreshable.

@@ -14,7 +14,7 @@ from typing import Any
 
 from verifysignal_spec import __version__
 
-from .cache import cache_root
+from .cache import DEFAULT_API_BASE_URL, cache_root
 from .distribution import normalize_platform
 from .models import (
     EntitlementClientConfig,
@@ -26,7 +26,6 @@ from .models import (
 # The canonical API host is www: the apex (verifysignal.io) 308-redirects to it, and urllib does not
 # reliably re-POST across a 308, so the CLI must target www directly or every POST (exchange/refresh/
 # usage) fails. (The receipt ISSUER stays the apex — that is an identifier, not an HTTP target.)
-DEFAULT_API_BASE_URL = "https://www.verifysignal.io/api"
 PRODUCTION_RECEIPT_ISSUER = "https://verifysignal.io"
 DEFAULT_HTTP_TIMEOUT_SECONDS = 30
 MIN_HTTP_TIMEOUT_SECONDS = 1
@@ -90,16 +89,22 @@ def resolve_entitlement_config(
     )
 
 
-def receipt_path() -> Path:
+def receipt_path(api_base_url: str | None = None) -> Path:
     explicit = os.environ.get("VERIFYSIGNAL_ENTITLEMENT_RECEIPT_PATH")
     if explicit:
         return Path(explicit).expanduser().resolve()
-    return cache_root() / "entitlement" / "receipt.json"
+    return cache_root(api_base_url) / "entitlement" / "receipt.json"
 
 
-def load_receipt() -> RuntimeEntitlementReceipt | None:
+def load_receipt(
+    api_base_url: str | None = None,
+) -> RuntimeEntitlementReceipt | None:
     explicit = os.environ.get("VERIFYSIGNAL_ENTITLEMENT_RECEIPT") or os.environ.get("VERIFYSIGNAL_ENTITLEMENT_RECEIPT_PATH")
-    path = Path(explicit).expanduser() if explicit else receipt_path()
+    path = (
+        Path(explicit).expanduser()
+        if explicit
+        else receipt_path(api_base_url)
+    )
     if not path.exists():
         return None
     try:
@@ -115,8 +120,12 @@ def load_receipt() -> RuntimeEntitlementReceipt | None:
         return RuntimeEntitlementReceipt(receiptId="", status="malformed", path=str(path))
 
 
-def save_receipt(receipt: RuntimeEntitlementReceipt) -> RuntimeEntitlementReceipt:
-    path = receipt_path()
+def save_receipt(
+    receipt: RuntimeEntitlementReceipt,
+    *,
+    api_base_url: str | None = None,
+) -> RuntimeEntitlementReceipt:
+    path = receipt_path(api_base_url)
     path.parent.mkdir(parents=True, exist_ok=True)
     if receipt.receiptPayload:
         path.write_text(receipt.receiptPayload, encoding="utf-8")
@@ -130,17 +139,21 @@ def save_receipt(receipt: RuntimeEntitlementReceipt) -> RuntimeEntitlementReceip
     return receipt
 
 
-def refresh_credential_path() -> Path:
-    return cache_root() / "entitlement" / "refresh.json"
+def refresh_credential_path(api_base_url: str | None = None) -> Path:
+    return cache_root(api_base_url) / "entitlement" / "refresh.json"
 
 
-def save_refresh_credential(credential: str) -> None:
+def save_refresh_credential(
+    credential: str,
+    *,
+    api_base_url: str | None = None,
+) -> None:
     """Persist the durable refresh credential 0600, next to the receipt.
 
     The credential is a secret bearer (it mints receipts); it is written with the same
     mkdir + write + chmod(0o600) pattern as save_receipt.
     """
-    path = refresh_credential_path()
+    path = refresh_credential_path(api_base_url)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"schema": "verifysignal.refresh-credential/v1", "credential": credential}), encoding="utf-8")
     try:
@@ -149,8 +162,8 @@ def save_refresh_credential(credential: str) -> None:
         pass
 
 
-def load_refresh_credential() -> str | None:
-    path = refresh_credential_path()
+def load_refresh_credential(api_base_url: str | None = None) -> str | None:
+    path = refresh_credential_path(api_base_url)
     if not path.exists():
         return None
     try:
@@ -161,25 +174,31 @@ def load_refresh_credential() -> str | None:
         return None
 
 
-def clear_refresh_credential() -> None:
+def clear_refresh_credential(api_base_url: str | None = None) -> None:
     """Discard a dead refresh credential (revoked/rejected) so we stop retrying a doomed refresh."""
     try:
-        refresh_credential_path().unlink(missing_ok=True)
+        refresh_credential_path(api_base_url).unlink(missing_ok=True)
     except OSError:
         pass
 
 
-def refresh_pending_key_path() -> Path:
-    return cache_root() / "entitlement" / "refresh-pending.json"
+def refresh_pending_key_path(api_base_url: str | None = None) -> Path:
+    return (
+        cache_root(api_base_url)
+        / "entitlement"
+        / "refresh-pending.json"
+    )
 
 
-def load_or_create_pending_refresh_key() -> str:
+def load_or_create_pending_refresh_key(
+    api_base_url: str | None = None,
+) -> str:
     """The idempotency key for the CURRENT renewal attempt, persisted until it succeeds.
 
     A retry (including after a crash mid-request) reuses the same key, so the backend replays the
     already-minted receipt instead of double-minting. Only a successful renewal clears it.
     """
-    path = refresh_pending_key_path()
+    path = refresh_pending_key_path(api_base_url)
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         key = data.get("idempotencyKey") if isinstance(data, dict) else None
@@ -197,9 +216,9 @@ def load_or_create_pending_refresh_key() -> str:
     return key
 
 
-def clear_pending_refresh_key() -> None:
+def clear_pending_refresh_key(api_base_url: str | None = None) -> None:
     try:
-        refresh_pending_key_path().unlink(missing_ok=True)
+        refresh_pending_key_path(api_base_url).unlink(missing_ok=True)
     except OSError:
         pass
 
@@ -261,6 +280,8 @@ def _try_silent_refresh(
     client: EntitlementClient,
     receipt: RuntimeEntitlementReceipt | None,
     status: RuntimeEntitlementStatus,
+    *,
+    api_base_url: str,
 ) -> RuntimeEntitlementStatus | None:
     """Silently re-mint a fresh 7-day receipt from the durable refresh credential (no email).
 
@@ -270,24 +291,32 @@ def _try_silent_refresh(
     """
     if receipt is None or status.status not in {"valid", "expired"}:
         return None
-    credential = load_refresh_credential()
+    credential = load_refresh_credential(api_base_url)
     if not credential:
         return None
     if status.status == "valid" and not _is_near_expiry(receipt.expiresAt, REFRESH_THRESHOLD_SECONDS):
         return None
 
-    refreshed = client.refresh(credential, idempotency_key=load_or_create_pending_refresh_key())
+    refreshed = client.refresh(
+        credential,
+        idempotency_key=load_or_create_pending_refresh_key(api_base_url),
+    )
     if refreshed.receipt:
         # Success consumes the pending idempotency key; the NEXT renewal is a new attempt.
-        clear_pending_refresh_key()
-        return receipt_status(save_receipt(refreshed.receipt))
+        clear_pending_refresh_key(api_base_url)
+        return receipt_status(
+            save_receipt(
+                refreshed.receipt,
+                api_base_url=api_base_url,
+            )
+        )
 
     blocker = refreshed.blocker
     if blocker and blocker.code in {"entitlement.invalid-token", "entitlement.expired-token", "entitlement.rejected"}:
         # The credential itself is dead (revoked/expired). Discard it and fall back to the email path
         # rather than retrying a doomed refresh on every run.
-        clear_refresh_credential()
-        clear_pending_refresh_key()
+        clear_refresh_credential(api_base_url)
+        clear_pending_refresh_key(api_base_url)
         return None
     if status.status == "valid":
         # Transient failure (offline) but the current receipt is still valid — keep using it.
@@ -310,12 +339,17 @@ def ensure_entitlement(
     request_delivery: bool = False,
     integration: str | None = None,
 ) -> RuntimeEntitlementStatus:
-    receipt = load_receipt()
-    status = receipt_status(receipt) if receipt else RuntimeEntitlementStatus(status="required", message="Email unlock token is required.", blockerCode="entitlement.unlock-required")
     config = config or resolve_entitlement_config()
+    receipt = load_receipt(config.apiBaseUrl)
+    status = receipt_status(receipt) if receipt else RuntimeEntitlementStatus(status="required", message="Email unlock token is required.", blockerCode="entitlement.unlock-required")
     client = EntitlementClient(config)
 
-    refreshed = _try_silent_refresh(client, receipt, status)
+    refreshed = _try_silent_refresh(
+        client,
+        receipt,
+        status,
+        api_base_url=config.apiBaseUrl,
+    )
     if refreshed is not None:
         return refreshed
     if status.status == "valid":
@@ -328,8 +362,14 @@ def ensure_entitlement(
             return RuntimeEntitlementStatus(status="rejected", message=exchanged.blocker.message, blockerCode=exchanged.blocker.code)
         if exchanged.receipt:
             if exchanged.refresh_credential:
-                save_refresh_credential(exchanged.refresh_credential)
-            saved = save_receipt(exchanged.receipt)
+                save_refresh_credential(
+                    exchanged.refresh_credential,
+                    api_base_url=config.apiBaseUrl,
+                )
+            saved = save_receipt(
+                exchanged.receipt,
+                api_base_url=config.apiBaseUrl,
+            )
             return receipt_status(saved)
     delivery_email = email or os.environ.get("VERIFYSIGNAL_EMAIL")
     if request_delivery and delivery_email:
@@ -338,6 +378,27 @@ def ensure_entitlement(
             return RuntimeEntitlementStatus(status="required", message=delivery.blocker.message, blockerCode=delivery.blocker.code)
         return RuntimeEntitlementStatus(status="token-delivery-pending", message="Email unlock token delivery was requested.", blockerCode="entitlement.unlock-required")
     return status
+
+
+def valid_receipt_path(api_base_url: str | None = None) -> str | None:
+    receipt = load_receipt(api_base_url)
+    if not receipt:
+        return None
+    status = receipt_status(receipt)
+    return status.receiptPath if status.status == "valid" else None
+
+
+def api_base_url_for_runtime(
+    managed_runtime: Any,
+    fallback: str | None = None,
+) -> str | None:
+    """Resolve an endpoint without requiring older runtime doubles to expose it."""
+    api = getattr(managed_runtime, "api", None)
+    if isinstance(api, dict):
+        value = api.get("baseUrl")
+    else:
+        value = getattr(api, "baseUrl", None)
+    return value if isinstance(value, str) and value else fallback
 
 
 def exchange_email_token(token: str, *, config: EntitlementClientConfig | None = None) -> RuntimeEntitlementReceipt:

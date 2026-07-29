@@ -4,10 +4,11 @@ from pathlib import Path
 from typing import Any
 
 from verifysignal_spec.core.adapter import CoreAdapter
-from verifysignal_spec.runtime.entitlement import load_receipt, receipt_status
+from verifysignal_spec.runtime.entitlement import api_base_url_for_runtime, valid_receipt_path
 from verifysignal_spec.runtime.env_file import (
     EnvironmentFileError,
     declared_environment_keys_for_run_request,
+    git_exposure_warnings,
     load_environment_file,
     resolve_environment_file_path,
 )
@@ -43,15 +44,18 @@ def run(
             "nextCommand": blocker["recoveryCommand"],
         }
     environment_values: dict[str, str] = {}
+    environment_warnings: list[dict[str, str]] = []
     if env_file:
         try:
+            env_file_path = resolve_environment_file_path(project, env_file)
             environment_values = load_environment_file(
-                resolve_environment_file_path(project, env_file),
+                env_file_path,
                 declared_keys=declared_environment_keys_for_run_request(
                     project,
                     run_request,
                 ),
             )
+            environment_warnings = git_exposure_warnings(project, env_file_path)
         except EnvironmentFileError as exc:
             return {
                 "status": "blocked",
@@ -67,15 +71,20 @@ def run(
     )
     if managed_runtime.status != "ready":
         return _runtime_setup_blocked_payload(managed_runtime)
-    return CoreAdapter(executable=managed_runtime.runtimeCommand, cwd=project).probe(
+    result = CoreAdapter(executable=managed_runtime.runtimeCommand, cwd=project).probe(
         run_request=run_request,
         main_skill=skills[0],
         skills=skills,
         headed=headed,
         slow_mo_ms=slow_mo_ms,
         env=environment_values,
-        entitlement_receipt=_valid_receipt_path(),
+        entitlement_receipt=valid_receipt_path(
+            api_base_url_for_runtime(managed_runtime, api_base_url),
+        ),
     )
+    if environment_warnings and isinstance(result, dict):
+        result["credentialWarnings"] = environment_warnings
+    return result
 
 
 def _runtime_setup_blocked_payload(managed_runtime: Any) -> dict[str, Any]:
@@ -91,11 +100,3 @@ def _runtime_setup_blocked_payload(managed_runtime: Any) -> dict[str, Any]:
         "blockers": blockers,
         "nextCommand": managed_runtime.nextAction,
     }
-
-
-def _valid_receipt_path() -> str | None:
-    receipt = load_receipt()
-    if not receipt:
-        return None
-    status = receipt_status(receipt)
-    return status.receiptPath if status.status == "valid" else None

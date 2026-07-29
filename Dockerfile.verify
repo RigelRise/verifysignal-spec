@@ -1,0 +1,25 @@
+# Verification image: runs this repo's suite against the toolchain the CI declares, so a local run
+# does not depend on whatever the host happens to have installed.
+#
+# WHY THIS EXISTS. The suite was unrunnable on a developer host with Python 3.10 (the package needs
+# >=3.11 for `datetime.UTC`), and 10 tests — including the cross-repo dogfood — need a real browser.
+# Without this, those tests do not fail: they SKIP, or the whole suite refuses to collect. A check
+# that silently does not run is the exact failure mode this repo's ratchets exist to catch, so the
+# verification environment gets pinned the same way the code does.
+#
+# The Playwright image already carries Python 3.12, git, node and the browsers; only the venv module
+# is missing. The tag MUST match the playwright version RESOLVED in the Core sibling's node_modules,
+# not the range it declares — a mismatched browser build reports "browser assets unavailable", which
+# reads exactly like "no browsers installed". Core's tests/contract/verify-image-tracks-playwright
+# test guards that pairing.
+FROM mcr.microsoft.com/playwright:v1.60.0-noble
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends python3-venv \
+ && rm -rf /var/lib/apt/lists/*
+
+# Usage (from the directory that holds all three checkouts, so the cross-repo legs resolve):
+#   docker build -t verifysignal-spec-verify -f verifysignal-spec/Dockerfile.verify verifysignal-spec
+#   docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
+#     -v "$PWD":/w -w /w/verifysignal-spec verifysignal-spec-verify \
+#     sh -c 'python3 -m venv /tmp/v && /tmp/v/bin/pip install -q -e ".[dev]" && /tmp/v/bin/python -m pytest -q'

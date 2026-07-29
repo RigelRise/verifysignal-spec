@@ -31,6 +31,7 @@ specs/*
 !specs/010-golden-path-onboarding/
 !specs/023-auto-loop/
 !specs/024-state-aware-auto-loop/
+!specs/025-browser-first-understanding/
 
 # local run evidence and workspaces must never be committed
 runs/

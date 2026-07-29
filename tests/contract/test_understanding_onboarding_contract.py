@@ -29,7 +29,8 @@ class UnderstandingOnboardingContractTests(CliTestCase):
         self.assertEqual(code, 0, err)
         data = json.loads(out)
         preparation = data["onboardingPreparation"]
-        self.assertIn("safe repository understanding", preparation["summary"].lower())
+        self.assertIn("safe product understanding", preparation["summary"].lower())
+        self.assertIn("live url", preparation["summary"].lower())
         self.assertIn("sensitive", " ".join(preparation["safetyBoundaries"]).lower())
         self.assertEqual(preparation["resumeCommand"], data["resumeCommand"])
 
@@ -39,4 +40,6 @@ class UnderstandingOnboardingContractTests(CliTestCase):
         self.assertEqual(result["status"], "persisted")
         self.assertIn("partial inventory", " ".join(result.get("warnings", [])).lower())
         self.assertEqual(result["understandingOnboarding"]["sourceTraceabilityStatus"], "normalized")
-        self.assertEqual(result["understandingOnboarding"]["trivialCandidateCount"], 1)
+        # Legacy candidates without explicit grounding remain selectable, but
+        # no longer count as safe automatic first-run guidance.
+        self.assertEqual(result["understandingOnboarding"]["trivialCandidateCount"], 0)

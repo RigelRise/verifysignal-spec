@@ -17,6 +17,8 @@ def test_first_run_ranking_prefers_real_public_no_credential_candidate() -> None
             priority="high",
             requiresEnvironment=True,
             knownRuntimeRequirements=["baseUrl", "credential:qa-user"],
+            sideEffectClass="none",
+            groundingStatus="authentication-required",
         ),
         CandidateValidationUseCase(
             alias=PUBLIC_ALIAS,
@@ -28,6 +30,8 @@ def test_first_run_ranking_prefers_real_public_no_credential_candidate() -> None
             priority="critical",
             requiresEnvironment=True,
             knownRuntimeRequirements=["baseUrl"],
+            sideEffectClass="none",
+            groundingStatus="observed",
         ),
     ]
 

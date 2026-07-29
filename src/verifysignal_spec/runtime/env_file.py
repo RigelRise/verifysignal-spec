@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import stat
+import subprocess
 from pathlib import Path
 from typing import Iterable
 
@@ -171,6 +172,62 @@ def load_environment_file(
 
 def resolve_environment_file_path(project: Path, path: Path) -> Path:
     return path.resolve() if path.is_absolute() else (project / path).resolve()
+
+
+def git_exposure_warnings(project: Path, path: Path) -> list[dict[str, str]]:
+    """Warn when an explicit test environment file is exposed to Git.
+
+    Reading is never blocked: the file already exists and the owner chose it.
+    A file outside the project, or a project Git cannot describe, has nothing
+    this repository would commit, so neither case warns.
+    """
+
+    try:
+        relative = path.resolve().relative_to(project.resolve()).as_posix()
+    except ValueError:
+        return []
+    if _git_succeeds(project, ["ls-files", "--error-unmatch", "--", relative]):
+        return [
+            {
+                "code": "credentials.env-file-tracked-by-git",
+                "severity": "warning",
+                "category": "credentials",
+                "message": (
+                    f"The test environment file {relative} is tracked by Git. "
+                    "Remove it from version control and add it to .gitignore "
+                    "or .git/info/exclude before storing credential values."
+                ),
+            }
+        ]
+    if _git_succeeds(project, ["check-ignore", "-q", "--", relative]):
+        return []
+    if not _git_succeeds(project, ["rev-parse", "--git-dir"]):
+        return []
+    return [
+        {
+            "code": "credentials.env-file-not-git-ignored",
+            "severity": "warning",
+            "category": "credentials",
+            "message": (
+                f"The test environment file {relative} is not ignored by Git "
+                "and could be committed. Add it to .gitignore or "
+                ".git/info/exclude."
+            ),
+        }
+    ]
+
+
+def _git_succeeds(project: Path, arguments: list[str]) -> bool:
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(project), *arguments],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return proc.returncode == 0
 
 
 def build_child_environment_values(

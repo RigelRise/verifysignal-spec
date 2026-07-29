@@ -5,8 +5,8 @@ evidence, and provide the exact next action without weakening validation intent.
 
 ## Common Blockers
 
-- Missing understanding: run safe repository understanding from the
-  auto-prepare metadata and resume the original specify flow. Do not ask the
+- Missing understanding: run safe product understanding from an available
+  repository or user-approved live URL and resume the original specify flow. Do not ask the
   user to restart manually unless the host cannot continue.
 - Partial inventory: continue understanding with `--scope continue` or a focused
   scope, and keep the partial reason visible in recommendation output.
@@ -24,7 +24,10 @@ evidence, and provide the exact next action without weakening validation intent.
   and pass the same explicit `--env-file` to validate, probe, and run. Never
   source or implicitly read `.env`/`.env.local`, and never copy values into
   managed artifacts.
-- Stale inventory or guidance: rerun repository understanding or regenerate the
+- Test environment file not ignored by Git: add the exact path to `.gitignore`
+  or `.git/info/exclude`. VerifySignal warns before reading a file that Git
+  would commit.
+- Stale inventory or guidance: rerun product understanding or regenerate the
   agent integration.
 - Managed runtime blocked: run `verifysignal init --here --integration codex` to
   complete email-token unlock and managed runtime acquisition. Use `verifysignal

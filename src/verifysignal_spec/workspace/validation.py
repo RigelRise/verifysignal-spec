@@ -343,7 +343,12 @@ def validate_side_effect_declaration(
     core_contract: dict[str, Any] | None = None,
     runtime_outcomes: list[dict[str, Any] | None] | None = None,
 ) -> list[dict[str, str]]:
-    from verifysignal_spec.workflows.write_safety import confirmation_placeholder_findings, confirmation_support_findings, normalize_side_effect_policy
+    from verifysignal_spec.workflows.write_safety import (
+        canonical_side_effect_policy_snapshot,
+        confirmation_placeholder_findings,
+        confirmation_support_findings,
+        normalize_side_effect_policy,
+    )
 
     if isinstance(declaration, SideEffectDeclaration):
         side_effect = declaration
@@ -364,6 +369,13 @@ def validate_side_effect_declaration(
         for item in compatibility_findings
     ]
     side_effect_class = side_effect.sideEffectClass
+    findings.extend(
+        _side_effect_observation_review_findings(
+            canonical_side_effect_policy_snapshot(side_effect.to_dict()),
+            runtime_outcomes or [],
+            canonicalize=canonical_side_effect_policy_snapshot,
+        )
+    )
     if side_effect_class == "none":
         return findings
     supported = _side_effect_guardrails(core_contract)
@@ -510,6 +522,62 @@ def _has_local_envelope(side_effect: SideEffectDeclaration) -> bool:
 
 def _side_effect_finding(code: str, path: str, message: str) -> dict[str, str]:
     return {"severity": "blocking", "code": code, "path": path, "message": message}
+
+
+def _side_effect_observation_review_findings(
+    current_policy: dict[str, Any],
+    runtime_outcomes: list[dict[str, Any] | None],
+    *,
+    canonicalize,
+) -> list[dict[str, str]]:
+    latest = next(
+        (item for item in reversed(runtime_outcomes) if isinstance(item, dict)),
+        None,
+    )
+    if latest is None or not _runtime_side_effect_policy_violated(latest):
+        return []
+
+    observed = latest.get("sideEffects") if isinstance(latest.get("sideEffects"), dict) else {}
+    previous_policy = latest.get("sideEffectPolicy")
+    if not isinstance(previous_policy, dict):
+        previous_policy = observed.get("policy") if isinstance(observed.get("policy"), dict) else None
+    policy_changed = isinstance(previous_policy, dict) and canonicalize(previous_policy) != current_policy
+    run_id = str(latest.get("runId") or "the latest run")
+    if policy_changed:
+        return [
+            {
+                "severity": "warning",
+                "code": "side-effect-policy-changed-rerun-required",
+                "path": "sideEffects",
+                "message": (
+                    f"Side-effect policy changed after {run_id} reported a violation. "
+                    "A new clean run is required before strict pass."
+                ),
+            }
+        ]
+    return [
+        {
+            "severity": "blocking",
+            "code": "side-effect-observation-review-required",
+            "path": "sideEffects",
+            "message": (
+                f"{run_id} reported a side-effect policy violation under the current policy. "
+                "Review the observed requests and update the policy explicitly when justified before rerunning."
+            ),
+        }
+    ]
+
+
+def _runtime_side_effect_policy_violated(outcome: dict[str, Any]) -> bool:
+    side_effects = outcome.get("sideEffects") if isinstance(outcome.get("sideEffects"), dict) else {}
+    violations = side_effects.get("violations")
+    if isinstance(violations, list) and any(isinstance(item, dict) for item in violations):
+        return True
+    for field in ("postCommitInterpretation", "resultClassification"):
+        classification = outcome.get(field) if isinstance(outcome.get(field), dict) else {}
+        if str(classification.get("sideEffectStatus") or "") == "violated":
+            return True
+    return str(side_effects.get("status") or "") == "violated"
 
 
 def _default_confirmation_signal_types() -> set[str]:

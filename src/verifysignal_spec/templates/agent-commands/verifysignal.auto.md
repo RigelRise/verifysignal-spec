@@ -23,7 +23,7 @@ workflow; `workflow persist` remains the only path that writes managed
   `browser_snapshot`, `browser_click`, and `browser_type` are available, use
   them as a live authoring aid. Otherwise author from source. The MCP is never
   the validation authority.
-- If repository understanding is missing or stale, route through
+- If product understanding is missing or stale, route through
   `/verifysignal-understand` or Golden Path preparation, then resume.
 
 ## One-pass loop

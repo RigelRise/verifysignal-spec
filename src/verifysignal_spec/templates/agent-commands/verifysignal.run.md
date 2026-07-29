@@ -14,7 +14,7 @@ Run a validated use case by alias through the managed VerifySignal runtime.
 - If the managed runtime, API, entitlement receipt, or runtime download is blocked, classify it as runtime setup/security and route happy-path recovery to `verifysignal init --here --integration codex`; use `verifysignal core setup --core-cmd <path>` only for diagnostics, offline environments, and development overrides. Do not suggest `/verifysignal-repair` for missing runtime, token exchange, receipt, distribution, package verification, or Core entitlement rejection blockers.
 - Do not perform stage-specific work until the check allows it.
 - If `workflow check run` returns `recommendedAction: approve-rerun`, do not execute the browser run until the owner confirms the write rerun. Use `verifysignal workflow approve-rerun --alias <alias> --confirm-risk <confirmation-id> --json`, then re-check/run. Non-interactive run may use the same documented `--confirm-risk <confirmation-id>` token.
-- Stale repository understanding is not automatically a global understand detour for an existing alias. Follow the check output: continue with warning, validate, refresh, or confirm based on impact and write risk.
+- Stale product understanding is not automatically a global understand detour for an existing alias. Follow the check output: continue with warning, validate, refresh, or confirm based on impact and write risk.
 - Resolve the alias to exactly one run request, main skill, and supporting reusable skills.
 - Use parameter values already declared in the run request. Prompt only for runtime values that are still missing.
 - Resolve generated runtime inputs during run preparation and keep the authored run request generic. Record only safe resolved values for that execution.
@@ -30,6 +30,8 @@ Run a validated use case by alias through the managed VerifySignal runtime.
 - Delegate execution through `verifysignal run <alias> --profile normal` unless the user requests another profile. Use-case-specific profile names are allowed when declared by that use case; unknown profiles must block and list available profiles.
 - For human-observable browser debugging, use `--profile debug`; the default debug pacing is `--slow-mo 900` unless the user explicitly overrides it.
 - Report Core/browser status separately from Spec coverage status using `coreBrowserStatus` and `specCoverageStatus`. A Core `passed` result can still be `specCoverageStatus: incomplete` when planned gates are missing, network-only, screenshot-only, or unmapped.
+- A side-effect policy violation makes the Spec run failed even when Core/browser execution and authored gate coverage otherwise pass. Keep the violation attributed to side-effect policy, block a rerun under the unchanged policy, and require an explicit owner policy change before another attempt.
+- Only a later clean rerun can restore `strictPass: true`; changing policy alone produces a rerun-required warning and never rewrites the earlier failed result.
 - Backward-compatible summary wording may still mention that a Core `passed` result can still be `coverageStatus: incomplete`; interpret that as Spec coverage, not browser execution.
 - When Core/browser execution fails, call Spec coverage diagnostic; do not summarize diagnostic coverage as browser validation passed.
 - When public Core result fields show the commit step was reached, summarize the normalized side-effect/rerun assertion instead of enumerating every raw field name. Do not call it a safe pre-commit failure.

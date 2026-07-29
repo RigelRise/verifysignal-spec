@@ -128,6 +128,27 @@ def side_effect_guardrails_with_runtime_confirmation_support(*, dom_supported: b
     return section
 
 
+def browser_authoring_warnings_section() -> list[dict[str, Any]]:
+    return [
+        {
+            "code": "degenerate-text-target",
+            "severity": "warning",
+            "runtimeReadinessSeverity": "blocking",
+            "message": "A text assertion must not search for the same text inside a text-only target.",
+            "remediation": "Use a stable parent target and keep expected text in the step or assertion.",
+            "appliesTo": ["waitForText", "checkText", "assertions.text"],
+        },
+        {
+            "code": "unstable-generated-css-target",
+            "severity": "warning",
+            "runtimeReadinessSeverity": "blocking",
+            "message": "Generated or positional CSS targets are unstable.",
+            "remediation": "Use a stable semantic locator.",
+            "appliesTo": ["targets"],
+        },
+    ]
+
+
 def core_contract_fixture_payload(
     *,
     browser_actions: list[dict[str, Any]] | None = None,
@@ -198,6 +219,7 @@ def core_contract_fixture_payload(
             "targetSignals": [{"name": "testId", "status": "stable"}, {"name": "css", "status": "stable"}],
             "networkMatchKeys": [{"name": "method", "status": "stable"}, {"name": "urlContains", "status": "stable"}],
             "metadataKeys": [{"name": "operationName", "status": "stable"}, {"name": "expectedStatus", "status": "stable"}],
+            "warnings": browser_authoring_warnings_section(),
         }
     if include_credentials:
         data["credentials"] = {
@@ -288,6 +310,7 @@ def current_core_contract_fixture_payload(
             "targetSignals": ["testId", "label", "text", "css", "semanticLocator"],
             "targets": {"composition": {"supportedSignals": ["testId", "css"]}},
             "metadataKeys": [{"name": "operationName", "status": "supported"}, {"name": "expectedStatus", "status": "supported"}],
+            "warnings": browser_authoring_warnings_section(),
         },
         "credentials": {
             "credentialRefs": {

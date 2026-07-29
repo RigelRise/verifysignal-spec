@@ -197,6 +197,7 @@ def browser_authoring_projection(projection: dict[str, Any]) -> dict[str, Any]:
         "assertionRules": browser.get("assertionRules", {}),
         "gateEvidenceRules": browser.get("gateEvidenceRules", {}),
         "timingGuidance": browser.get("timingGuidance", []),
+        "authoringWarnings": browser.get("authoringWarnings", []),
         "experimentalItems": browser.get("experimentalItems", {}),
     }
 
@@ -335,6 +336,7 @@ def _project_browser_workflow(value: Any, findings: list[ContractCompatibilityFi
         "assertionRules": {_name(item): {"required": item.get("requiredFields", [])} for item in stable_assertions},
         "gateEvidenceRules": value.get("gateEvidenceRules") if isinstance(value.get("gateEvidenceRules"), dict) else {},
         "timingGuidance": value.get("timingGuidance") if isinstance(value.get("timingGuidance"), list) else [],
+        "authoringWarnings": _project_authoring_warnings(value.get("warnings")),
         "experimentalItems": {
             "actions": [item for item in actions if _status(item) == "experimental"],
             "assertions": [item for item in assertions if _status(item) == "experimental"],
@@ -350,6 +352,22 @@ def _project_browser_workflow(value: Any, findings: list[ContractCompatibilityFi
             ),
         },
     }
+
+
+def _project_authoring_warnings(value: Any) -> list[dict[str, Any]]:
+    safe_fields = {
+        "code",
+        "severity",
+        "runtimeReadinessSeverity",
+        "message",
+        "remediation",
+        "appliesTo",
+    }
+    return [
+        {key: item[key] for key in safe_fields if key in item}
+        for item in _items(value)
+        if isinstance(item, dict) and isinstance(item.get("code"), str)
+    ]
 
 
 def _project_target_composition_signals(

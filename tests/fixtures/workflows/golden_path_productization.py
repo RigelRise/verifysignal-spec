@@ -61,6 +61,8 @@ def coverage_inventory(*, include_credentials: bool = False) -> dict[str, Any]:
                 "priority": "critical",
                 "requiresEnvironment": True,
                 "knownRuntimeRequirements": ["baseUrl"],
+                "sideEffectClass": "none",
+                "groundingStatus": "observed",
             },
             {
                 "alias": AUTH_ALIAS,
@@ -72,6 +74,8 @@ def coverage_inventory(*, include_credentials: bool = False) -> dict[str, Any]:
                 "priority": "high",
                 "requiresEnvironment": True,
                 "knownRuntimeRequirements": ["baseUrl", "credential:qa-user"] if include_credentials else ["baseUrl"],
+                "sideEffectClass": "none",
+                "groundingStatus": "authentication-required",
             },
             {
                 "alias": CONDITIONAL_ALIAS,
@@ -83,6 +87,8 @@ def coverage_inventory(*, include_credentials: bool = False) -> dict[str, Any]:
                 "priority": "medium",
                 "requiresEnvironment": True,
                 "knownRuntimeRequirements": ["baseUrl", "seeded activity data"],
+                "sideEffectClass": "none",
+                "groundingStatus": "observed",
             },
         ],
     }

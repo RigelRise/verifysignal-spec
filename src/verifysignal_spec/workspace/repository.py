@@ -146,6 +146,8 @@ def init_workspace(project: Path, force: bool = False, core_cmd: str | None = No
         product_context = {
             "schemaVersion": "verifysignal-spec-product-context/v1",
             "productName": project.name,
+            "workspaceKind": "repository",
+            "understandingMode": "repository",
             "repositorySummary": "",
             "localStartInstructions": "",
             "safeInspectionPaths": ["README.md", "src/", "app/", "tests/"],
@@ -480,6 +482,7 @@ def record_run(project: Path, entry: RunHistoryEntry) -> None:
         "partialCoverage": entry.partialCoverage,
         "runtimeContradictions": entry.runtimeContradictions,
         "repairRecommendations": entry.repairRecommendations,
+        "sideEffectPolicy": entry.sideEffectPolicy,
         "sideEffects": entry.sideEffects,
         "runtimeOutputs": entry.runtimeOutputs,
         "resolvedRuntimeInputs": entry.resolvedRuntimeInputs,

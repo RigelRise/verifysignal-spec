@@ -20,10 +20,15 @@ CORE_SETUP_HINT = (
 
 class CoreAdapter:
     def __init__(self, executable: str | None = None, cwd: Path | None = None) -> None:
-        self.executable = executable or os.environ.get("VERIFYSIGNAL_CORE_CMD", "verifysignal")
+        self.executable = executable or os.environ.get("VERIFYSIGNAL_CORE_CMD")
         self.cwd = cwd
 
     def _base_command(self) -> list[str]:
+        if not self.executable:
+            raise CoreMissingError(
+                "VerifySignal Core command is not configured. "
+                f"{CORE_SETUP_HINT}"
+            )
         raw = self.executable.strip()
         path = Path(raw).expanduser()
         if path.exists() and path.is_dir():
@@ -98,7 +103,7 @@ class CoreAdapter:
         env: dict[str, str] | None = None,
         entitlement_receipt: Path | str | None = None,
     ) -> dict[str, Any]:
-        self.require_compatible()
+        compatibility = self.require_compatible()
         args = ["authoring-check", "run-request", str(run_request), "--skill", str(main_skill)]
         for skill in skills:
             if skill != main_skill:
@@ -106,7 +111,13 @@ class CoreAdapter:
         if runtime_readiness:
             args.append("--runtime-readiness")
         args.append("--json")
-        return self._run(args, env={**(env or {}), **_receipt_env(entitlement_receipt)})
+        return self._run(
+            args,
+            env={
+                **(env or {}),
+                **_receipt_env(entitlement_receipt, compatibility=compatibility),
+            },
+        )
 
     def run(
         self,
@@ -121,7 +132,7 @@ class CoreAdapter:
         env: dict[str, str] | None = None,
         entitlement_receipt: Path | str | None = None,
     ) -> dict[str, Any]:
-        self.require_compatible()
+        compatibility = self.require_compatible()
         args = ["run", str(run_request), "--skill", str(main_skill)]
         for skill in skills:
             if skill != main_skill:
@@ -137,7 +148,16 @@ class CoreAdapter:
         if replay:
             args.extend(["--replay", str(replay)])
         args.append("--json")
-        return self._run(args, env={**(env or {}), **_receipt_env(entitlement_receipt)})
+        return self._run(
+            args,
+            env={
+                **(env or {}),
+                **_receipt_env(
+                    entitlement_receipt,
+                    compatibility=compatibility,
+                ),
+            },
+        )
 
     def probe(
         self,
@@ -155,7 +175,7 @@ class CoreAdapter:
         The public Core invocation receives artifact paths and presentation
         options only.
         """
-        self.require_compatible()
+        compatibility = self.require_compatible()
         args = ["probe", str(run_request), "--skill", str(main_skill)]
         for skill in skills:
             if skill != main_skill:
@@ -165,7 +185,16 @@ class CoreAdapter:
         if slow_mo_ms:
             args.extend(["--slow-mo", str(slow_mo_ms)])
         args.append("--json")
-        return self._run(args, env={**(env or {}), **_receipt_env(entitlement_receipt)})
+        return self._run(
+            args,
+            env={
+                **(env or {}),
+                **_receipt_env(
+                    entitlement_receipt,
+                    compatibility=compatibility,
+                ),
+            },
+        )
 
     def discover(
         self,
@@ -178,12 +207,21 @@ class CoreAdapter:
     ) -> dict[str, Any]:
         """Ground a drafted skill's targets against the live DOM via Core's
         optional, entitlement-free `discover` operation (Core feature 016)."""
-        self.require_compatible()
+        compatibility = self.require_compatible()
         args = ["discover", "--url", url, "--skill", str(skill)]
         if headed:
             args.append("--headed")
         args.append("--json")
-        return self._run(args, env={**(env or {}), **_receipt_env(entitlement_receipt)})
+        return self._run(
+            args,
+            env={
+                **(env or {}),
+                **_receipt_env(
+                    entitlement_receipt,
+                    compatibility=compatibility,
+                ),
+            },
+        )
 
     def crystallize(
         self,
@@ -197,23 +235,45 @@ class CoreAdapter:
         optional, entitlement-PROTECTED `crystallize` operation (schema
         `verifysignal.crystallize/v1`). It reads private evidence, so callers
         supply an entitlement receipt just like `run`."""
-        self.require_compatible()
+        compatibility = self.require_compatible()
         args = ["crystallize", str(run_dir)]
         if out:
             args.extend(["--out", str(out)])
         args.append("--json")
-        return self._run(args, env={**(env or {}), **_receipt_env(entitlement_receipt)})
+        return self._run(
+            args,
+            env={
+                **(env or {}),
+                **_receipt_env(
+                    entitlement_receipt,
+                    compatibility=compatibility,
+                ),
+            },
+        )
 
     def inspect_report(self, report_path: Path, entitlement_receipt: Path | str | None = None) -> dict[str, Any]:
-        self.require_compatible()
-        return self._run(["report", "inspect", str(report_path), "--json"], env=_receipt_env(entitlement_receipt))
+        compatibility = self.require_compatible()
+        return self._run(
+            ["report", "inspect", str(report_path), "--json"],
+            env=_receipt_env(
+                entitlement_receipt,
+                compatibility=compatibility,
+            ),
+        )
 
 
-def _receipt_env(entitlement_receipt: Path | str | None) -> dict[str, str]:
+def _receipt_env(
+    entitlement_receipt: Path | str | None,
+    *,
+    compatibility: CompatibilityResult | None = None,
+) -> dict[str, str]:
     env: dict[str, str] = {}
     if entitlement_receipt:
         env["VERIFYSIGNAL_ENTITLEMENT_RECEIPT"] = str(entitlement_receipt)
-    if not os.environ.get("VERIFYSIGNAL_ENTITLEMENT_PUBLIC_KEYS_JSON"):
+    if (
+        not _uses_packaged_runtime_trust(compatibility)
+        and not os.environ.get("VERIFYSIGNAL_ENTITLEMENT_PUBLIC_KEYS_JSON")
+    ):
         try:
             from verifysignal_spec.runtime.distribution import load_verification_keys
 
@@ -224,6 +284,22 @@ def _receipt_env(entitlement_receipt: Path | str | None) -> dict[str, str]:
         except Exception:
             pass
     return env
+
+
+def _uses_packaged_runtime_trust(
+    compatibility: CompatibilityResult | None,
+) -> bool:
+    raw = compatibility.raw if compatibility else None
+    if not isinstance(raw, dict):
+        return False
+    data = raw.get("data")
+    if not isinstance(data, dict):
+        return False
+    runtime = data.get("runtime")
+    if not isinstance(runtime, dict):
+        return False
+    package_id = runtime.get("packageId")
+    return isinstance(package_id, str) and bool(package_id.strip())
 
 
 def readiness(executable: str | None = None, cwd: Path | None = None) -> dict[str, Any]:

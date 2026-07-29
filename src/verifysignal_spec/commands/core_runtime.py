@@ -52,7 +52,11 @@ def update(project: Path, *, api_base_url: str | None = None) -> dict[str, Any]:
         status = "blocked"
         platform = normalize_platform()
         previous_entry = (
-            load_cache_entry(platform=platform, version=str(previous_version))
+            load_cache_entry(
+                platform=platform,
+                version=str(previous_version),
+                api_base_url=api_base_url,
+            )
             if platform and previous_version
             else None
         )

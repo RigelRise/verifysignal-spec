@@ -304,7 +304,7 @@ def _alias_scoped_stale_result(
             alias=alias,
             risk_class=side_effect,
             scope="unknown-refresh-impact",
-            reason=(impact.reason if impact else "Repository understanding is stale and impact on this write-capable use case is unknown."),
+            reason=(impact.reason if impact else "Product understanding is stale and impact on this write-capable use case is unknown."),
             recommended_action="Run validation or refresh understanding before executing, or explicitly confirm the write risk.",
         )
         save_confirmation_requirement(project, confirmation)
@@ -353,7 +353,7 @@ def _evaluate_understanding(project: Path) -> UnderstandingEvaluation:
     if not layout.product_context_path(project).exists():
         missing.append(f"{layout.WORKSPACE_DIR}/{layout.PRODUCT_CONTEXT_FILE}")
     if missing:
-        return UnderstandingEvaluation("missing", {}, missing, [], ["Repository understanding is required before this stage."])
+        return UnderstandingEvaluation("missing", {}, missing, [], ["Product understanding is required before this stage."])
 
     context = load_product_context(project)
     schema = context.get("schemaVersion")
@@ -368,7 +368,8 @@ def _evaluate_understanding(project: Path) -> UnderstandingEvaluation:
 
     metadata = context.get("understanding")
     if not isinstance(metadata, dict):
-        return UnderstandingEvaluation("missing", context, ["understanding"], [], ["Repository understanding metadata is missing."])
+        return UnderstandingEvaluation("missing", context, ["understanding"], [], ["Product understanding metadata is missing."])
+    mode = str(metadata.get("mode") or context.get("understandingMode") or "repository")
     generated_at = metadata.get("generatedAt")
     if not generated_at:
         return UnderstandingEvaluation(
@@ -376,7 +377,7 @@ def _evaluate_understanding(project: Path) -> UnderstandingEvaluation:
             context,
             ["understanding.generatedAt"],
             [],
-            ["Repository understanding metadata is incomplete."],
+            ["Product understanding metadata is incomplete."],
         )
     generated = _parse_iso_datetime(str(generated_at))
     if generated is None:
@@ -385,15 +386,15 @@ def _evaluate_understanding(project: Path) -> UnderstandingEvaluation:
             context,
             ["understanding.generatedAt"],
             [],
-            ["Repository understanding generatedAt is invalid."],
+            ["Product understanding generatedAt is invalid."],
         )
-    if metadata.get("gitAvailable") and not metadata.get("generatedGitHash"):
+    if mode in {"repository", "hybrid"} and metadata.get("gitAvailable") and not metadata.get("generatedGitHash"):
         return UnderstandingEvaluation(
             "missing",
             context,
             ["understanding.generatedGitHash"],
             [],
-            ["Repository understanding Git metadata is incomplete."],
+            ["Product understanding Git metadata is incomplete."],
         )
 
     stale_reasons: list[dict[str, str]] = []
@@ -402,10 +403,10 @@ def _evaluate_understanding(project: Path) -> UnderstandingEvaluation:
         stale_reasons.append(
             {
                 "code": "age",
-                "message": f"Repository understanding is at least {WORKFLOW_UNDERSTANDING_MAX_AGE_DAYS} days old.",
+                "message": f"Product understanding is at least {WORKFLOW_UNDERSTANDING_MAX_AGE_DAYS} days old.",
             }
         )
-    current_hash = current_git_hash(project)
+    current_hash = current_git_hash(project) if mode in {"repository", "hybrid"} else None
     generated_hash = metadata.get("generatedGitHash")
     if current_hash and generated_hash:
         distance = commit_distance(project, str(generated_hash))
@@ -413,7 +414,7 @@ def _evaluate_understanding(project: Path) -> UnderstandingEvaluation:
             stale_reasons.append(
                 {
                     "code": "commit-distance",
-                    "message": f"Repository understanding is more than {WORKFLOW_UNDERSTANDING_COMMIT_THRESHOLD} commits behind HEAD.",
+                    "message": f"Product understanding is more than {WORKFLOW_UNDERSTANDING_COMMIT_THRESHOLD} commits behind HEAD.",
                 }
             )
     return UnderstandingEvaluation("stale" if stale_reasons else "ready", context, [], stale_reasons, [])
@@ -663,20 +664,20 @@ def _native_next(stage: str, alias: str | None) -> str:
 
 def _stale_warnings(stage: str) -> list[str]:
     return [
-        f"Repository understanding may be stale. Refresh is recommended before running /verifysignal-{stage}.",
+        f"Product understanding may be stale. Refresh is recommended before running /verifysignal-{stage}.",
     ]
 
 
 def _stale_declined_warnings(stage: str) -> list[str]:
     return [
-        f"Continuing /verifysignal-{stage} with stale repository understanding because refresh was declined.",
+        f"Continuing /verifysignal-{stage} with stale product understanding because refresh was declined.",
     ]
 
 
 def _alias_scoped_stale_warnings(stage: str, alias: str, impact_status: str) -> list[str]:
     return [
         (
-            f"Repository understanding is stale, but /verifysignal-{stage} {alias} is alias-scoped. "
+            f"Product understanding is stale, but /verifysignal-{stage} {alias} is alias-scoped. "
             f"Use-case impact is {impact_status}; refresh is not the only recovery path."
         )
     ]
@@ -711,6 +712,27 @@ def _result(
     rerunDecision: dict[str, Any] | None = None,
     blockers: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    resolved_missing_artifacts = missing_artifacts or []
+    resolved_next_command = next_command or _native_next(stage, alias)
+    resolved_blockers = list(blockers or [])
+    if (
+        not can_proceed
+        and resolved_missing_artifacts
+        and not resolved_blockers
+    ):
+        resolved_blockers.append(
+            {
+                "code": "workflow.prerequisite-missing",
+                "severity": "blocker",
+                "category": "workflow",
+                "message": (
+                    f"The {stage} stage cannot proceed because required "
+                    "workflow artifacts are missing."
+                ),
+                "missingArtifacts": resolved_missing_artifacts,
+                "recoveryCommand": resolved_next_command,
+            }
+        )
     result: dict[str, Any] = {
         "schemaVersion": WORKFLOW_CAPABILITY_SCHEMA,
         "prerequisiteSchemaVersion": WORKFLOW_PREREQUISITE_CHECK_SCHEMA,
@@ -721,11 +743,11 @@ def _result(
         "status": status,
         "canProceed": can_proceed,
         "requiresConfirmation": requires_confirmation,
-        "missingArtifacts": missing_artifacts or [],
+        "missingArtifacts": resolved_missing_artifacts,
         "staleReasons": stale_reasons or [],
         "warnings": warnings or [],
         "recommendedAction": recommended_action,
-        "nextCommand": next_command or _native_next(stage, alias),
+        "nextCommand": resolved_next_command,
         "recordedDecision": recorded_decision,
         "projectOverview": projectOverview,
         "candidateUseCases": candidateUseCases or [],
@@ -736,7 +758,7 @@ def _result(
         "onboardingPreparation": onboardingPreparation,
         "resumeCommand": resumeCommand,
         "stageCards": stageCards or [],
-        "blockers": blockers or [],
+        "blockers": resolved_blockers,
     }
     if refreshImpact is not None:
         result["refreshImpact"] = refreshImpact

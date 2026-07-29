@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from verifysignal_spec.workspace.artifacts import render_run_request
 
 from tests.fixtures.workflows.side_effect_contract_alignment import create_write_policy_workspace, legacy_rules_policy
@@ -32,3 +34,30 @@ def test_legacy_rules_are_compatibility_input_only_not_rendered(tmp_path) -> Non
     assert policy["allowed"] == [{"id": "allow-backend-graphql", "kind": "network", "methods": ["POST"], "urlContains": "be.example.test/graphql"}]
     assert policy["forbidden"] == [{"id": "forbid-admin", "kind": "network", "methods": [], "urlContains": "/admin"}]
     assert "method" not in policy["allowed"][0]
+
+
+@pytest.mark.parametrize(
+    ("side_effect_class", "expected_mode"),
+    [
+        ("none", "observe"),
+        ("authenticated-read", "observe"),
+        ("write", "enforce"),
+        ("external-notification", "enforce"),
+    ],
+)
+def test_generated_run_request_materializes_core_required_policy_mode(
+    tmp_path,
+    side_effect_class: str,
+    expected_mode: str,
+) -> None:
+    record = create_write_policy_workspace(
+        tmp_path,
+        side_effects={"class": side_effect_class},
+    )
+
+    rendered = json.loads(render_run_request(record))
+
+    assert rendered["sideEffectPolicy"] == {
+        "class": side_effect_class,
+        "mode": expected_mode,
+    }

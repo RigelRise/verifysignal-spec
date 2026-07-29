@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "verifysignal-spec"
-version = "0.21.0"
+version = "0.21.6"
 description = "Project-local CLI and coding-agent interface for VerifySignal use cases."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -45,7 +45,8 @@ dependencies = [
   "pydantic>=2",
   "pathspec>=0.12",
   "packaging>=23",
-  "cryptography>=42"
+  "cryptography>=42",
+  "tomlkit>=0.13,<1"
 ]
 
 [project.optional-dependencies]
@@ -67,7 +68,7 @@ verifysignal-spec = "verifysignal_spec.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-verifysignal_spec = ["templates/**/*"]
+verifysignal_spec = ["templates/**/*.md", "templates/**/*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
