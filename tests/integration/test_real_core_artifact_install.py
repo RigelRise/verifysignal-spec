@@ -2,8 +2,9 @@
 
 Cross-repo guard: each repo's own tests exercise its own fixture layout, so a
 divergence between Core's packaged archive layout and this installer would ship
-silently. This test consumes an actual artifact from the sibling Core repo
-(``../verifysignal/dist/runtime``) when one exists and skips cleanly otherwise.
+silently. This test consumes an actual artifact from ``dist/runtime`` in the
+sibling Core repo when one exists and skips cleanly otherwise. Core is located by
+identity (see ``verifysignal_spec.repos``), never by directory name.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from verifysignal_spec.core.contracts import PUBLIC_CONTRACT_VERSION
 from verifysignal_spec.runtime.distribution import install_from_manifest, normalize_platform
 
 from tests.fixtures.release_signing import signed_manifest_entry
+from tests.helpers import resolve_sibling_repo
 
 
 def _discover_real_artifact() -> Path | None:
@@ -33,7 +35,13 @@ def _discover_real_artifact() -> Path | None:
     platform = normalize_platform()
     if platform is None:
         return None
-    dist_dir = Path(__file__).resolve().parents[2].parent / "verifysignal" / "dist" / "runtime"
+    # By identity, never by directory name: this used to join a literal "verifysignal", so the whole
+    # test skipped on any checkout that called Core something else — a clean skip that looked like
+    # "nothing to check" rather than "the guard is off".
+    core_repo = resolve_sibling_repo("core", Path(__file__).resolve().parents[2])
+    if core_repo is None:
+        return None
+    dist_dir = core_repo / "dist" / "runtime"
     if not dist_dir.is_dir():
         return None
     candidates: list[tuple[tuple[int, int, int], Path]] = []

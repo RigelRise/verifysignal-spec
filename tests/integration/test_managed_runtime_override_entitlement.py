@@ -6,6 +6,7 @@ import json
 from unittest.mock import patch
 
 from helpers import FAKE_CORE
+from verifysignal_spec.repos import CORE_EXECUTABLE_NAMES
 from verifysignal_spec.runtime.distribution import load_verification_keys, save_verification_keys
 from verifysignal_spec.runtime.entitlement import load_receipt, receipt_path
 from verifysignal_spec.runtime.resolver import normalize_platform
@@ -154,7 +155,8 @@ def test_validate_cli_with_override_core_uses_cached_entitlement_receipt(tmp_pat
 def test_validate_cli_with_ancestor_sibling_core_reports_cached_entitlement(tmp_path, monkeypatch) -> None:
     project = tmp_path / "Demo" / "web-app"
     project.mkdir(parents=True)
-    write_fake_core_executable(project.parent / "verifysignal", mode="requires-entitlement")
+    # Named from the real executable list, so the fixture follows if the binary is ever renamed.
+    write_fake_core_executable(project.parent / CORE_EXECUTABLE_NAMES[0], mode="requires-entitlement")
     monkeypatch.setenv("VERIFYSIGNAL_RUNTIME_CACHE_DIR", str(tmp_path / "cache"))
     monkeypatch.setenv("FAKE_VERIFYSIGNAL_MODE", "requires-entitlement")
     monkeypatch.delenv("VERIFYSIGNAL_CORE_CMD", raising=False)
