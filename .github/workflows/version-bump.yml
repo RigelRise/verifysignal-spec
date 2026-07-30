@@ -1,0 +1,100 @@
+# Automated semver from merged-PR titles (conventional commits).
+#
+# Trigger design: the closed-PR event carries the title (merge commits keep it out of git
+# history), and it makes the bump's own push structurally unable to re-enter this workflow —
+# so no skip-ci marker is needed anywhere, and none is allowed: on THIS repo that marker would
+# suppress the tag-push event and silently kill the PyPI publish while every job stays green.
+# Pushes authenticate with the PAT because GITHUB_TOKEN pushes trigger no workflows: the tag
+# push IS the PyPI hand-off (release.yml is tag-triggered), and the bump commit must be
+# validated by ci.
+#
+# The decider is cumulative-since-last-tag and idempotent (reconcile guard for hand-bumps and
+# partial failures), so the no-cancel concurrency group can queue racing merges without ever
+# dropping a bump.
+name: version-bump
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      explicit_version:
+        description: "Bootstrap/catch-up: set this exact version (e.g. 0.22.0)"
+        required: false
+      fallback_bump:
+        description: "Classify unparseable titles in range as this class, for ONE run"
+        type: choice
+        options: [none, patch, minor, major]
+        default: none
+
+concurrency:
+  group: version-bump
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  bump:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Decide the next version from merged-PR titles since the last v* tag
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPLICIT_VERSION: ${{ inputs.explicit_version }}
+          FALLBACK_BUMP: ${{ inputs.fallback_bump }}
+        run: python scripts/release/decide_bump.py
+
+      - name: Nothing to release in range
+        if: steps.decide.outputs.decision == 'none' || steps.decide.outputs.decision == 'no-baseline'
+        env:
+          DECISION: ${{ steps.decide.outputs.decision }}
+        run: echo "decision was ${DECISION} — exiting without a bump"
+
+      - name: Rewrite every version surface (pyproject, __init__, CHANGELOG)
+        if: steps.decide.outputs.decision == 'bump'
+        env:
+          NEXT: ${{ steps.decide.outputs.next }}
+        run: python scripts/release/bump_version.py --to "$NEXT"
+
+      - name: Gate — the bumped tree must pass the unit and contract suites
+        if: steps.decide.outputs.decision == 'bump'
+        run: |
+          python -m pip install -e . pytest
+          python -m pytest tests/unit tests/contract -q
+
+      - name: Commit, tag, and push with the PAT (the tag push is the PyPI hand-off)
+        if: steps.decide.outputs.decision == 'bump' || steps.decide.outputs.decision == 'reconcile'
+        env:
+          PAT: ${{ secrets.VERIFYSIGNAL_CROSSREPO_TOKEN }}
+          DECISION: ${{ steps.decide.outputs.decision }}
+          NEXT: ${{ steps.decide.outputs.next }}
+          CURRENT: ${{ steps.decide.outputs.current }}
+        run: |
+          REMOTE="https://x-access-token:${PAT}@github.com/${GITHUB_REPOSITORY}.git"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ "$DECISION" = "reconcile" ]; then
+            # A bump commit already landed untagged (partial failure or an in-PR hand-bump
+            # under the old convention): tag what exists instead of bumping on top of it.
+            git tag "v${CURRENT}"
+            git push "$REMOTE" "refs/tags/v${CURRENT}"
+            exit 0
+          fi
+          git add pyproject.toml src/verifysignal_spec/__init__.py CHANGELOG.md
+          git commit -m "chore(release): bump verifysignal-spec to ${NEXT}"
+          git tag "v${NEXT}"
+          git push "$REMOTE" HEAD:main
+          git push "$REMOTE" "refs/tags/v${NEXT}"
