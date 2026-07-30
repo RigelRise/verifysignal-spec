@@ -20,5 +20,5 @@ Closes #
 - [ ] Existing behavior preserved, or intentionally migrated with coverage for old and new paths
 - [ ] No private Core imports; interaction stays behind the public CLI JSON contract
 - [ ] No secret-looking values added to code, tests, docs, or examples
-- [ ] Version bumped consistently in `pyproject.toml` and `src/verifysignal_spec/__init__.py` (if behavior/CLI/schema/template/packaging changed)
+- [ ] PR title follows Conventional Commits and carries the intended release class (`feat`/`fix`/`!`); the version itself is bumped by automation after merge — do not hand-bump
 - [ ] Docs updated if user-facing behavior changed
