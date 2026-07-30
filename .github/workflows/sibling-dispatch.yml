@@ -1,0 +1,32 @@
+# Sibling-only changes never push to the Core repo, so nothing re-ran the authoritative
+# cross-repo product-truth gate before the daily cron. Every push to main now POSTs a
+# repository_dispatch to RigelRise/verifysignal-core, whose product-truth workflow consumes
+# it. The gate IGNORES the payload and composes the siblings' MAIN heads — repository/sha
+# ride along for run-log observability only. Requires the cross-repo PAT secret with write
+# access on the Core repo (the dispatches endpoint needs write; GITHUB_TOKEN cannot cross
+# repositories).
+name: sibling-dispatch
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Trigger the Core product-truth gate
+        env:
+          # Env indirection on purpose: no expression expansion inside run:.
+          PAT: ${{ secrets.VERIFYSIGNAL_CROSSREPO_TOKEN }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          curl --fail-with-body -sS -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${PAT}" \
+            https://api.github.com/repos/RigelRise/verifysignal-core/dispatches \
+            -d "{\"event_type\":\"sibling-push\",\"client_payload\":{\"repository\":\"${SOURCE_REPOSITORY}\",\"sha\":\"${SOURCE_SHA}\"}}"
