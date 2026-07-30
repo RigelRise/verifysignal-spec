@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.22.0 - 2026-07-30
 
 ### Embedded release-anchor acceptance
 
@@ -11,6 +11,7 @@
   prove the signing secret corresponds to the shipped anchor.
 - Documented the embedded release trust anchor and its additive-only
   environment override in the installation guide.
+- Bumped VerifySignal Spec to `0.22.0`.
 
 ## 0.21.6 - 2026-07-30
 

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "verifysignal-spec"
-version = "0.21.6"
+version = "0.22.0"
 description = "Project-local CLI and coding-agent interface for VerifySignal use cases."
 readme = "README.md"
 requires-python = ">=3.11"
