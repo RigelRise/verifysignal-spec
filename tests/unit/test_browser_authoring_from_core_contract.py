@@ -139,3 +139,29 @@ def test_browser_validation_rejects_composition_signal_not_declared_by_core() ->
 
     assert blockers
     assert "testId" in blockers[0]
+
+
+def test_browser_validation_fallback_accepts_wait_for_location() -> None:
+    # Core spec 019: waitForLocation is the first-class click-to-navigation wait. The managed path
+    # projects it from Core contract discovery; the offline fallback list must accept it too.
+    browser = {
+        "targets": {"page": {"testId": "page"}},
+        "steps": [{"id": "await-dashboard-url", "action": "waitForLocation", "value": "/dashboard"}],
+        "assertions": [],
+    }
+
+    assert validate_browser_payload(browser) == []
+
+
+def test_browser_validation_fallback_requires_wait_for_location_value() -> None:
+    browser = {
+        "targets": {"page": {"testId": "page"}},
+        "steps": [{"id": "await-dashboard-url", "action": "waitForLocation"}],
+        "assertions": [],
+    }
+
+    blockers = validate_browser_payload(browser)
+
+    assert blockers
+    assert "waitForLocation" in blockers[0]
+    assert "value" in blockers[0]

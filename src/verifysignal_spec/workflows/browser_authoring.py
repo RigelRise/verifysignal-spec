@@ -16,6 +16,7 @@ VALID_BROWSER_ACTIONS = {
     "waitForText",
     "checkText",
     "checkLocation",
+    "waitForLocation",
     "captureScreenshot",
     "scrollIntoView",
     "awaitNetwork",
@@ -36,6 +37,7 @@ ACTION_REQUIREMENTS = {
     "waitForText": {"required": ["target", "value"], "notes": "Use a named target plus the text to wait for."},
     "checkText": {"required": ["target", "value"], "notes": "Use a named target plus the expected visible text."},
     "checkLocation": {"required": ["value"], "notes": "value is the URL fragment or location expectation."},
+    "waitForLocation": {"required": ["value"], "notes": "value is the URL fragment to wait for; timeoutMs bounds the wait."},
     "captureScreenshot": {"required": [], "notes": "value may name the evidence screenshot."},
     "scrollIntoView": {"required": ["target"], "notes": "target must name a browser.targets entry."},
     "awaitNetwork": {"required": ["match"], "notes": "match must include at least one supported network field."},
@@ -176,7 +178,7 @@ def _validate_step(step: Any, index: int, targets: dict[str, Any], rules: dict[s
 
     if action in {"click", "fill", "select", "waitForText", "checkText", "scrollIntoView"}:
         blockers.extend(_require_named_target(step, step_id, targets))
-    if action in {"fill", "select", "waitForText", "checkText", "checkLocation"} and not isinstance(step.get("value"), str):
+    if action in {"fill", "select", "waitForText", "checkText", "checkLocation", "waitForLocation"} and not isinstance(step.get("value"), str):
         blockers.append(f"Step {step_id} action {action} requires string value.")
     if action == "awaitNetwork":
         blockers.extend(_validate_network_match(step.get("match"), f"Step {step_id}", rules))
