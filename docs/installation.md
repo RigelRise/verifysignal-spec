@@ -181,6 +181,13 @@ the message does not arrive, press Enter at the token prompt to preserve the
 pending-delivery blocker. Delivery failure or throttling returns its original
 blocker immediately and does not attempt a token exchange.
 
+Runtime packages are verified against the production release public key that
+ships embedded in this package (keyId `verifysignal-core-release-2026`), so a
+clean install needs no key configuration. `VERIFYSIGNAL_RUNTIME_RELEASE_PUBLIC_KEYS`
+can add trusted keys for staging or development, but it can never remove the
+embedded anchor; the committed test key is trusted only when
+`VERIFYSIGNAL_ALLOW_TEST_RELEASE_KEYS=1` is set explicitly.
+
 For staging, local backend development, and tests, use an explicit API override:
 
 ```sh
