@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -111,7 +112,12 @@ REAL_CORE_REPOSITORY = Path(
 def test_sibling_core_advertises_probe_only_through_the_public_version_contract() -> None:
     response = CoreAdapter(executable=str(REAL_CORE_REPOSITORY)).version()
 
-    assert response["data"]["verifysignalVersion"] == "0.6.1"
+    # The expectation derives from the sibling source: Core's version-bump automation moves
+    # every version surface together (package.json included), so a hardcoded literal here
+    # would fail on every Core release without catching anything real. Exact equality against
+    # the declared version still proves the probe advertises the version the source ships.
+    declared_version = json.loads((REAL_CORE_REPOSITORY / "package.json").read_text(encoding="utf-8"))["version"]
+    assert response["data"]["verifysignalVersion"] == declared_version
     assert core_supports_probe(response)
 
 
