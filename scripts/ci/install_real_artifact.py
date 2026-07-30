@@ -14,6 +14,10 @@ and the sibling Core checkout with dist/runtime built. Usage:
 The path argument is optional: without it, Core is located by identity (see scripts/sibling_repos.py)
 rather than by a hardcoded directory name, so this works whether the checkout is called `verifysignal`
 or `verifysignal-core`. VERIFYSIGNAL_CORE_DIR pins it explicitly.
+
+The inverse leg is scripts/ci/install_with_embedded_anchor.py: env trust is REQUIRED here and
+FORBIDDEN there, so that leg proves a real release verifies under the embedded production anchor
+(Core's release workflow runs it in its embedded-anchor-acceptance job).
 """
 
 from __future__ import annotations

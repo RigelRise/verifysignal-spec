@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Embedded release-anchor acceptance
+
+- Added `scripts/ci/install_with_embedded_anchor.py`: a clean-machine
+  acceptance leg that installs a real signed Core release trusting only the
+  production key embedded in this package (all release-trust environment
+  variables are refused). Core's release workflow runs it on every release to
+  prove the signing secret corresponds to the shipped anchor.
+- Documented the embedded release trust anchor and its additive-only
+  environment override in the installation guide.
+
 ## 0.21.6 - 2026-07-30
 
 ### Hermetic Core update and test readiness
