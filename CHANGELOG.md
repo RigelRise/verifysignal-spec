@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.21.6 - 2026-07-30
 
 ### Hermetic Core update and test readiness
 
