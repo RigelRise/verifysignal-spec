@@ -41,14 +41,17 @@ A green suite means you are ready.
 - **Red, then green.** For behavior changes, write the failing test first, confirm it fails for the right reason, then make the smallest change that passes. Do not weaken assertions to match an implementation; change the spec first if the intent changed.
 - **Preserve behavior.** Existing tests, flags, schemas, templates, and workspace semantics are compatibility contracts. Changes are additive or migrated, with coverage for old and new paths.
 - **Secrets never persist.** Credentials resolve from the environment at run time. Never add a secret-looking value to code, tests, docs, or examples.
-- **Bump the version together.** Any behavior, CLI, schema, template, or packaging change updates `pyproject.toml` and `src/verifysignal_spec/__init__.py` together. `tests/unit/test_version_consistency.py` keeps them in sync.
+- **Versions bump themselves.** Do not hand-edit the version: when a PR merges, the version-bump workflow classifies the PR title, updates `pyproject.toml`, `src/verifysignal_spec/__init__.py`, and `CHANGELOG.md` together, tags `vX.Y.Z`, and the tag publishes to PyPI. `tests/unit/test_version_consistency.py` keeps the declarations in sync.
 - **English** for committed artifacts.
 
 ## Commits and pull requests
 
-Use [Conventional Commits](https://www.conventionalcommits.org): `feat(...)`,
-`fix(...)`, `docs(...)`, `test(...)`, `ci:`. Keep pull requests focused, fill in
-the template, confirm `python -m pytest` is green, and link the issue.
+Use [Conventional Commits](https://www.conventionalcommits.org) for commits AND
+for the PR title: `feat(...)`, `fix(...)`, `docs(...)`, `test(...)`, `ci:`. The
+merged-PR title is what decides the release (`!` -> major, feat -> minor,
+fix/perf -> patch, others -> none) — the pr-title check enforces the grammar.
+Keep pull requests focused, fill in the template, confirm `python -m pytest` is
+green, and link the issue.
 
 ## Issues and security
 

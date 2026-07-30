@@ -1,0 +1,21 @@
+# Conventional-commit PR titles are the machine-readable release signal: version-bump.yml
+# derives the next version from merged-PR titles, and merge commits mean the title never enters
+# git history — this check is what keeps that signal trustworthy BEFORE the merge happens.
+# A non-conforming title that still merges fails the bump run loudly (never silently).
+name: pr-title
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+jobs:
+  pr-title:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate the PR title against the release convention
+        env:
+          # Env indirection on purpose: the title is user-controlled text; expanding it inside
+          # `run:` would be a script-injection vector.
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: python scripts/release/check_pr_title.py

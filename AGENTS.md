@@ -44,12 +44,14 @@ Preserve existing features by default:
   relevant regression tests for adjacent behavior that could be affected.
 
 Evaluate version impact after changes:
-- Before finishing code, behavior, CLI, schema, template, or packaging changes,
-  check the current package version from `pyproject.toml` and
-  `src/verifysignal_spec/__init__.py`.
-- Decide whether the completed change requires a version bump. Use patch for
-  fixes and internal-compatible refinements, minor for new backwards-compatible
-  capabilities, and major for intentional breaking changes.
-- If a bump is required, update all version declarations consistently and note
-  the old and new versions in the final response. If no bump is required, state
-  why the version remains unchanged.
+- Version bumps are AUTOMATED. When a PR merges to `main`, the version-bump
+  workflow classifies the merged-PR title (`!` -> major; feat -> minor;
+  fix/perf -> patch; docs/test/ci/chore/refactor/build/style -> none), rewrites
+  `pyproject.toml`, `src/verifysignal_spec/__init__.py`, and `CHANGELOG.md`
+  together, tags `vX.Y.Z`, and the tag triggers the PyPI release.
+- Do NOT hand-bump the version in a PR. Declare the intended release class
+  through the PR title (enforced by the pr-title check) and the template's
+  "Type of change" checkbox. If a hand-bump lands anyway, the automation
+  reconciles by tagging the declared version instead of bumping again.
+- Still state the expected version impact in the final response: which class
+  the PR title carries and why (or why it correctly classifies as none).
