@@ -73,5 +73,9 @@ def test_script_never_reaches_for_the_shortcuts() -> None:
     text = SCRIPT.read_text(encoding="utf-8")
     assert "--core-cmd" not in text
     assert "managed_runtime" not in text
+    # The lifecycle-identity gate is the point of fase 2 — the journey must bind the BE-issued
+    # receipt id across envelope, manifest, and replay, and the gate cannot be silently dropped.
+    assert "lifecycleIdentity" in text
+    assert "entitlementReceiptId" in text
     assert 'VERIFYSIGNAL_ALLOW_TEST_RELEASE_KEYS"] = ' not in text
     assert '"VERIFYSIGNAL_ALLOW_TEST_RELEASE_KEYS": ' not in text

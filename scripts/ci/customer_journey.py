@@ -993,6 +993,14 @@ def main() -> int:
                 "managed-local-contamination",
             )
             summary["gates"]["managedCache"] = "passed"
+            receipt_id = str(
+                (check_runtime.get("entitlement") or {}).get("receiptId") or ""
+            )
+            require(
+                receipt_id.startswith("rcpt_"),
+                "receipt-id-missing",
+                f"managedRuntimeReadiness.entitlement.receiptId was {receipt_id!r}",
+            )
 
             version_document = require_success(
                 spec_cli(
@@ -1459,6 +1467,53 @@ def main() -> int:
                 f"replayComparison was {comparison!r}",
             )
             summary["gates"]["offlineReplay"] = "passed"
+
+            # Fase 2: ONE lifecycle identity across every surface — the BE-issued receipt id
+            # and the packaged runtime identity must be what the run envelope, the crystallize
+            # manifest, and the offline replay all declare; and the distributed golden must
+            # NOT freeze the live receipt reference (volatile by contract).
+            def lifecycle_of(document: dict[str, Any], code: str) -> dict[str, Any]:
+                block = (document.get("core") or {}).get("data", {}).get("lifecycle")
+                require(isinstance(block, dict), code, "run envelope carried no lifecycle block")
+                return block
+
+            for label, document in (("committed", committed_run), ("recorded", recorded), ("replayed", replayed)):
+                block = lifecycle_of(document, f"lifecycle-{label}-missing")
+                require(
+                    block.get("entitlementReceiptId") == receipt_id,
+                    f"lifecycle-{label}-receipt",
+                    f"{label}: {block.get('entitlementReceiptId')!r} != {receipt_id!r}",
+                )
+                runtime_identity = block.get("runtime") or {}
+                require(
+                    runtime_identity.get("distribution") == "packaged"
+                    and runtime_identity.get("packageId") == package_id
+                    and runtime_identity.get("coreVersion") == core_version,
+                    f"lifecycle-{label}-runtime",
+                    f"{label}: {runtime_identity!r}",
+                )
+            manifest_document = json.loads(
+                Path(str(crystallized.get("data", {}).get("fixture", {}).get("manifestPath"))).read_text(
+                    encoding="utf-8"
+                )
+            )
+            manifest_source = manifest_document.get("source", {})
+            require(
+                manifest_source.get("entitlementReceiptId") == receipt_id,
+                "lifecycle-manifest-receipt",
+                f"manifest source: {manifest_source!r}",
+            )
+            require(
+                (manifest_source.get("runtime") or {}).get("packageId") == package_id,
+                "lifecycle-manifest-runtime",
+            )
+            golden_text = (fixture_dir / "expected-report.json").read_text(encoding="utf-8")
+            require(receipt_id not in golden_text, "lifecycle-golden-freezes-receipt")
+            summary["gates"]["lifecycleIdentity"] = "passed"
+            summary["observations"]["lifecycleIdentity"] = {
+                "entitlementReceiptId": receipt_id,
+                "packageId": package_id,
+            }
             summary["status"] = "green"
         except JourneyFailure as error:
             summary["blocker"] = {"code": error.code, "message": str(error)}
