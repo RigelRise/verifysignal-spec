@@ -5,8 +5,10 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from verifysignal_spec.process import run_text
 from typing import Any
+
+from verifysignal_spec.process import run_text
+from verifysignal_spec.security.file_protection import describe_protection, harden_owner_only
 
 from verifysignal_spec.runtime.env_file import (
     EnvironmentFileError,
@@ -92,7 +94,12 @@ def prepare(project: Path, alias: str, *, env_file: Path) -> dict[str, Any]:
         "appendedKeys": appended,
         "preservedKeys": preserved,
         "gitExcluded": True,
-        "permissions": "0600",
+        # Read back from the file rather than asserted from the fact that a call was made. The old
+        # unconditional "0600" was a POSIX mode number stated even on hosts where it means nothing,
+        # and where it was therefore simply false. `permissions` stays as a POSIX-only alias for one
+        # minor release so existing readers do not break.
+        "protection": describe_protection(target),
+        "permissions": "0600" if os.name != "nt" else None,
         "valuesIncluded": False,
         "blockers": [],
     }
@@ -144,11 +151,15 @@ def _atomic_owner_only_write(path: Path, content: str) -> None:
     fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     temp_path = Path(temporary)
     try:
-        os.fchmod(fd, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(content)
+        # The temp file is hardened BEFORE the secret is written into it, so the content never
+        # exists at default permissions -- not even briefly. os.fchmod, used here previously, does
+        # not exist on Windows at all, and the AttributeError it raised was not an OSError, so the
+        # caller's handler did not catch it and the CLI crashed with a traceback.
+        os.close(fd)
+        harden_owner_only(temp_path)
+        temp_path.write_text(content, encoding="utf-8", newline="\n")
         temp_path.replace(path)
-        path.chmod(0o600)
+        harden_owner_only(path)
     finally:
         if temp_path.exists():
             temp_path.unlink()

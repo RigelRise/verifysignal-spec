@@ -22,6 +22,7 @@ from .models import (
     RuntimeEntitlementStatus,
     RuntimeSetupBlocker,
 )
+from verifysignal_spec.security.file_protection import harden_owner_only
 
 # The canonical API host is www: the apex (verifysignal.io) 308-redirects to it, and urllib does not
 # reliably re-POST across a 308, so the CLI must target www directly or every POST (exchange/refresh/
@@ -132,7 +133,7 @@ def save_receipt(
     else:
         path.write_text(json.dumps(receipt.to_file_dict(), indent=2), encoding="utf-8")
     try:
-        path.chmod(0o600)
+        harden_owner_only(path)
     except OSError:
         pass
     receipt.path = str(path)
@@ -157,7 +158,7 @@ def save_refresh_credential(
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"schema": "verifysignal.refresh-credential/v1", "credential": credential}), encoding="utf-8")
     try:
-        path.chmod(0o600)
+        harden_owner_only(path)
     except OSError:
         pass
 
@@ -210,7 +211,7 @@ def load_or_create_pending_refresh_key(
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"schema": "verifysignal.refresh-pending/v1", "idempotencyKey": key}), encoding="utf-8")
     try:
-        path.chmod(0o600)
+        harden_owner_only(path)
     except OSError:
         pass
     return key

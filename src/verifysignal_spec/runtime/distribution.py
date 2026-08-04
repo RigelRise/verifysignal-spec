@@ -24,6 +24,7 @@ import base64
 from .cache import cache_root, platform_cache_dir, save_cache_entry
 from .models import EntitlementClientConfig, RuntimeEntitlementReceipt, RuntimeEntitlementStatus, RuntimeSetupBlocker, RuntimeVerificationKeyStatus
 from .release_signature import verify_release_signature
+from verifysignal_spec.security.file_protection import harden_owner_only
 
 
 @dataclass(slots=True)
@@ -420,7 +421,7 @@ def save_verification_keys(data: dict[str, Any], *, source_api_base_url: str | N
     payload.setdefault("retrievedAt", datetime.now(UTC).isoformat().replace("+00:00", "Z"))
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     try:
-        path.chmod(0o600)
+        harden_owner_only(path)
     except OSError:
         pass
     return path
