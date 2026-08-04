@@ -7,23 +7,29 @@
 # the missing step: it installs uv when it is absent, and uv in turn downloads a managed Python
 # 3.11+ when the machine has none. So the only real prerequisite left is curl (or wget).
 #
-# What it deliberately does NOT do: install Node.js or Chromium. Those belong to run-time readiness,
-# which `verifysignal check` already owns and reports far better than a bootstrap script could. We
-# warn about them and stop there — an installer that reaches for a package manager to satisfy a
-# runtime dependency is an installer that fails on the machines it was written to help.
+# When npm is present it also pre-installs the pinned Playwright MCP provider, which is what gives
+# the agent its browser tools. `verifysignal init` installs that provider too, so this is a pre-warm
+# rather than the only chance — what it buys is TIMING: a machine with no Node otherwise installs
+# cleanly here, comes back blocked at `init`, and starts its first agent session with no browser
+# tooling at all. Better to say so while the terminal is still open on the install command.
+#
+# What it deliberately does NOT do: install Node.js or Chromium. An installer that reaches for a
+# package manager to satisfy a runtime dependency is an installer that fails on the machines it was
+# written to help. It warns instead, and names the command that fixes each gap.
 #
 # Usage:
 #   curl -LsSf https://verifysignal.io/install.sh | sh
 #   curl -LsSf https://verifysignal.io/install.sh | sh -s -- --version 0.22.0
 #
 # Options:
-#   --version <X.Y.Z>   Install an exact release from PyPI instead of the latest.
-#   --from <spec>       Install from an arbitrary source (e.g. a git+https URL) instead of PyPI.
-#   --no-modify-path    Do not let uv touch shell profiles to put its bin directory on PATH.
-#   --help              Print this usage and exit.
+#   --version <X.Y.Z>       Install an exact release from PyPI instead of the latest.
+#   --from <spec>           Install from an arbitrary source (e.g. a git+https URL) instead of PyPI.
+#   --no-modify-path        Do not let uv touch shell profiles to put its bin directory on PATH.
+#   --skip-playwright-mcp   Do not pre-install the Playwright MCP provider (offline installs, CI).
+#   --help                  Print this usage and exit.
 #
 # Environment equivalents: VERIFYSIGNAL_INSTALL_VERSION, VERIFYSIGNAL_INSTALL_FROM,
-# VERIFYSIGNAL_NO_MODIFY_PATH.
+# VERIFYSIGNAL_NO_MODIFY_PATH, VERIFYSIGNAL_SKIP_PLAYWRIGHT_MCP.
 set -eu
 
 PACKAGE="verifysignal-spec"
@@ -31,6 +37,7 @@ PACKAGE="verifysignal-spec"
 # is identical on a machine with Python 3.9, a machine with 3.13, and a machine with none at all.
 PYTHON_VERSION="3.12"
 UV_INSTALLER_URL="https://astral.sh/uv/install.sh"
+PLAYWRIGHT_MCP_SETUP="verifysignal integration setup-playwright-mcp"
 DOCS_URL="https://github.com/RigelRise/verifysignal-spec/blob/main/docs/installation.md"
 WINDOWS_ONELINER='powershell -ExecutionPolicy Bypass -c "irm https://verifysignal.io/install.ps1 | iex"'
 
@@ -39,6 +46,10 @@ from_spec="${VERIFYSIGNAL_INSTALL_FROM:-}"
 modify_path=1
 if [ -n "${VERIFYSIGNAL_NO_MODIFY_PATH:-}" ]; then
   modify_path=0
+fi
+setup_mcp=1
+if [ -n "${VERIFYSIGNAL_SKIP_PLAYWRIGHT_MCP:-}" ]; then
+  setup_mcp=0
 fi
 
 # Colour only when stdout is a terminal. Piped into a log or a CI transcript, escape codes are noise.
@@ -78,13 +89,14 @@ Usage:
   curl -LsSf https://verifysignal.io/install.sh | sh -s -- --version 0.22.0
 
 Options:
-  --version <X.Y.Z>   Install an exact release from PyPI instead of the latest.
-  --from <spec>       Install from an arbitrary source (e.g. a git+https URL) instead of PyPI.
-  --no-modify-path    Do not let uv touch shell profiles to put its bin directory on PATH.
-  -h, --help          Print this usage and exit.
+  --version <X.Y.Z>       Install an exact release from PyPI instead of the latest.
+  --from <spec>           Install from an arbitrary source (e.g. a git+https URL) instead of PyPI.
+  --no-modify-path        Do not let uv touch shell profiles to put its bin directory on PATH.
+  --skip-playwright-mcp   Do not pre-install the Playwright MCP provider (offline installs, CI).
+  -h, --help              Print this usage and exit.
 
 Environment equivalents: VERIFYSIGNAL_INSTALL_VERSION, VERIFYSIGNAL_INSTALL_FROM,
-VERIFYSIGNAL_NO_MODIFY_PATH.
+VERIFYSIGNAL_NO_MODIFY_PATH, VERIFYSIGNAL_SKIP_PLAYWRIGHT_MCP.
 USAGE
 }
 
@@ -110,6 +122,10 @@ while [ $# -gt 0 ]; do
       ;;
     --no-modify-path)
       modify_path=0
+      shift
+      ;;
+    --skip-playwright-mcp)
+      setup_mcp=0
       shift
       ;;
     -h | --help)
@@ -235,11 +251,21 @@ installed_version="$("$verifysignal_bin" --version 2>&1)" ||
 say ""
 printf '%s✓%s %s\n' "$green" "$reset" "$installed_version" >&2
 
-# --- runtime readiness (warn only) ---------------------------------------------------------------
+# --- browser tooling ------------------------------------------------------------------------------
+# The agent authors against a live page through the pinned Playwright MCP provider. `verifysignal
+# init` installs it too, so this is a pre-warm rather than the only opportunity — but doing it here
+# changes WHEN the user learns that Node is missing. Without this, a machine with no npm installs
+# cleanly, `init` comes back blocked, and the first agent session starts with no browser tools at
+# all (the launcher exits 78). Better to say it now, while the terminal is still open on the
+# install command. The provider lands in a user-level cache, so running it twice is a cache hit.
+node_major=""
 if command -v node >/dev/null 2>&1; then
   node_major="$(node --version 2>/dev/null | sed 's/^v//' | cut -d. -f1)"
   case "$node_major" in
-    '' | *[!0-9]*) warn "could not read the Node.js version; VerifySignal needs Node.js 24+" ;;
+    '' | *[!0-9]*)
+      node_major=""
+      warn "could not read the Node.js version; VerifySignal needs Node.js 24+"
+      ;;
     *)
       [ "$node_major" -ge 24 ] ||
         warn "Node.js $node_major found; VerifySignal needs Node.js 24+ to run validations"
@@ -247,6 +273,23 @@ if command -v node >/dev/null 2>&1; then
   esac
 else
   warn "Node.js not found; VerifySignal needs Node.js 24+ to run validations"
+fi
+
+if [ "$setup_mcp" -eq 0 ]; then
+  say "  skipping Playwright MCP setup (--skip-playwright-mcp)"
+elif ! command -v npm >/dev/null 2>&1; then
+  warn "npm not found, so the Playwright MCP provider was not installed.
+    Install Node.js 24+, then run: $PLAYWRIGHT_MCP_SETUP
+    Until then \`verifysignal init\` cannot set up browser tooling and the agent starts without it."
+else
+  step "Installing the pinned Playwright MCP provider (this can take a minute)"
+  # Non-fatal by design: the CLI is installed and useful, and this step depends on the npm registry.
+  # Failing the whole install over a provider that `init` will retry would be the wrong trade.
+  if "$verifysignal_bin" integration setup-playwright-mcp >/dev/null 2>&1; then
+    say "  browser tooling ready"
+  else
+    warn "could not install the Playwright MCP provider. Retry with: $PLAYWRIGHT_MCP_SETUP"
+  fi
 fi
 
 say ""
@@ -257,4 +300,4 @@ case ":$PATH:" in
 esac
 say "  1. cd into your project"
 say "  2. verifysignal init --here --integration claude   # or: codex"
-say "  3. verifysignal check                              # reports Node.js and Chromium readiness"
+say "  3. verifysignal check                              # workspace and Core runtime readiness"

@@ -10,9 +10,15 @@
     the missing step: it installs uv when it is absent, and uv in turn downloads a managed Python
     3.11+ when the machine has none. Windows Powershell 5.1 (shipped with the OS) is enough.
 
-    What it deliberately does NOT do: install Node.js or Chromium. Those belong to run-time
-    readiness, which `verifysignal check` already owns and reports far better than a bootstrap
-    script could. We warn about them and stop there.
+    When npm is present it also pre-installs the pinned Playwright MCP provider, which is what
+    gives the agent its browser tools. `verifysignal init` installs that provider too, so this is a
+    pre-warm rather than the only chance - what it buys is TIMING: a machine with no Node otherwise
+    installs cleanly here, comes back blocked at `init`, and starts its first agent session with no
+    browser tooling at all.
+
+    What it deliberately does NOT do: install Node.js or Chromium. An installer that reaches for a
+    package manager to satisfy a runtime dependency is an installer that fails on the machines it
+    was written to help. It warns instead, and names the command that fixes each gap.
 
     This is the Windows twin of scripts/install.sh; keep the two in step.
 
@@ -25,6 +31,9 @@
 .PARAMETER NoModifyPath
     Do not let uv touch the user PATH environment variable.
 
+.PARAMETER SkipPlaywrightMcp
+    Do not pre-install the Playwright MCP provider (offline installs, CI).
+
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -c "irm https://verifysignal.io/install.ps1 | iex"
 
@@ -35,7 +44,8 @@
 param(
     [string]$Version = $env:VERIFYSIGNAL_INSTALL_VERSION,
     [string]$From = $env:VERIFYSIGNAL_INSTALL_FROM,
-    [switch]$NoModifyPath
+    [switch]$NoModifyPath,
+    [switch]$SkipPlaywrightMcp
 )
 
 $ErrorActionPreference = 'Stop'
@@ -45,6 +55,7 @@ $Package = 'verifysignal-spec'
 # that the install is identical on a machine with 3.9, a machine with 3.13, and a machine with none.
 $PythonVersion = '3.12'
 $UvInstallerUrl = 'https://astral.sh/uv/install.ps1'
+$PlaywrightMcpSetup = 'verifysignal integration setup-playwright-mcp'
 $DocsUrl = 'https://github.com/RigelRise/verifysignal-spec/blob/main/docs/installation.md'
 
 # Windows PowerShell 5.1 still negotiates SSLv3/TLS1.0 by default on older builds, and both
@@ -69,6 +80,10 @@ if ($Version -and $From) {
 
 if ($env:VERIFYSIGNAL_NO_MODIFY_PATH) {
     $NoModifyPath = $true
+}
+
+if ($env:VERIFYSIGNAL_SKIP_PLAYWRIGHT_MCP) {
+    $SkipPlaywrightMcp = $true
 }
 
 # --- resolve uv ---------------------------------------------------------------------------------
@@ -171,7 +186,11 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host ''
 Write-Host "OK $installedVersion" -ForegroundColor Green
 
-# --- runtime readiness (warn only) ----------------------------------------------------------------
+# --- browser tooling ------------------------------------------------------------------------------
+# See scripts/install.sh for why this runs here: `verifysignal init` installs the same provider, but
+# a machine with no Node only finds that out mid-onboarding, after `init` comes back blocked and the
+# first agent session has no browser tools. The provider lands in a user cache, so this is a cache
+# hit on a re-run.
 $node = Get-Command node -ErrorAction SilentlyContinue
 if ($node) {
     $nodeVersion = (& node --version 2>$null | Out-String).Trim()
@@ -186,6 +205,22 @@ if ($node) {
     Write-Warn 'Node.js not found; VerifySignal needs Node.js 24+ to run validations.'
 }
 
+if ($SkipPlaywrightMcp) {
+    Write-Note 'Skipping Playwright MCP setup (-SkipPlaywrightMcp).'
+} elseif (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+    Write-Warn "npm not found, so the Playwright MCP provider was not installed. Install Node.js 24+, then run: $PlaywrightMcpSetup - until then ``verifysignal init`` cannot set up browser tooling and the agent starts without it."
+} else {
+    Write-Step 'Installing the pinned Playwright MCP provider (this can take a minute)'
+    # Non-fatal by design: the CLI is installed and useful, and this step depends on the npm
+    # registry. Failing the whole install over a provider that `init` will retry is the wrong trade.
+    & $verifysignal integration setup-playwright-mcp *> $null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Note 'Browser tooling ready.'
+    } else {
+        Write-Warn "Could not install the Playwright MCP provider. Retry with: $PlaywrightMcpSetup"
+    }
+}
+
 Write-Host ''
 Write-Host 'Next steps:'
 if (($env:Path -split ';') -notcontains $toolDir.TrimEnd('\')) {
@@ -193,4 +228,4 @@ if (($env:Path -split ';') -notcontains $toolDir.TrimEnd('\')) {
 }
 Write-Host '  1. cd into your project'
 Write-Host '  2. verifysignal init --here --integration claude   # or: codex'
-Write-Host '  3. verifysignal check                              # reports Node.js and Chromium readiness'
+Write-Host '  3. verifysignal check                              # workspace and Core runtime readiness'

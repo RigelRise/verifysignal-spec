@@ -92,14 +92,42 @@ def test_installers_bootstrap_uv_from_the_vendor_and_install_this_package(script
 
 
 @pytest.mark.parametrize("script", [INSTALL_SH, INSTALL_PS1])
-def test_installers_do_not_install_runtime_dependencies(script):
-    # Deliberate scope line: runtime readiness belongs to `verifysignal check`, which reports it far
-    # better than a bootstrap script could. An installer that reaches for a package manager to
-    # satisfy Node or Chromium is an installer that fails on the machines it was written to help.
+def test_installers_do_not_reach_for_a_system_package_manager(script):
+    # Deliberate scope line: an installer that shells out to apt/brew/winget to satisfy Node or
+    # Chromium is an installer that fails on the machines it was written to help. It warns instead.
     text = script.read_text(encoding="utf-8").lower()
     for manager in ("apt-get install", "brew install", "winget install", "choco install"):
         assert manager not in text, f"{script.name} must not install system packages ({manager})"
-    assert "verifysignal check" in text, f"{script.name} must point at the readiness command"
+
+
+@pytest.mark.parametrize(
+    ("script", "skip_flag"),
+    # The opt-out spells itself the way each shell does: a POSIX long flag, a PowerShell switch.
+    [(INSTALL_SH, "--skip-playwright-mcp"), (INSTALL_PS1, "SkipPlaywrightMcp")],
+)
+def test_installers_set_up_the_browser_tooling_and_can_skip_it(script, skip_flag):
+    # The agent authors against a live page through the pinned Playwright MCP provider. `init`
+    # installs it too, but a machine with no npm only finds that out mid-onboarding, after init
+    # comes back blocked and the first agent session has no browser tools at all.
+    text = script.read_text(encoding="utf-8")
+    assert "integration setup-playwright-mcp" in text, (
+        f"{script.name} must pre-install the Playwright MCP provider"
+    )
+    # Offline installs and CI need a way out; the provider setup hits the npm registry.
+    assert skip_flag in text, f"{script.name} must offer {skip_flag}"
+    assert "VERIFYSIGNAL_SKIP_PLAYWRIGHT_MCP" in text, f"{script.name} must honour the env opt-out"
+    assert "npm" in text, f"{script.name} must handle a machine without npm"
+
+
+@pytest.mark.parametrize("script", [INSTALL_SH, INSTALL_PS1])
+def test_installers_do_not_claim_check_reports_node_or_chromium(script):
+    # commands/check.py covers the workspace, the Core runtime, and integrations. It does NOT look
+    # at Node, Chromium, or the MCP provider — telling a user otherwise sends them to a command that
+    # will happily pass while the thing they are missing is still missing.
+    text = script.read_text(encoding="utf-8")
+    assert "verifysignal check" in text, f"{script.name} must still point at the readiness command"
+    for claim in ("check                              # reports Node", "check reports Node"):
+        assert claim not in text, f"{script.name} overstates what `verifysignal check` covers"
 
 
 def test_the_advertised_one_liners_match_the_scripts_that_exist():

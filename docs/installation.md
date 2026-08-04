@@ -38,8 +38,24 @@ If `verifysignal` is not found, open a new terminal: the installer adds uv's too
 directory (`~/.local/bin` on macOS and Linux, `%USERPROFILE%\.local\bin` on
 Windows) to your shell profile, which the current session has already read.
 
-The installer does not install Node.js or Chromium. It warns when Node.js 24+ is
-missing; `verifysignal check` reports full runtime readiness inside a project.
+### What the installer does and does not set up
+
+When `npm` is available, the installer also pre-installs the pinned Playwright
+MCP provider — the browser tooling your coding agent authors against.
+`verifysignal init` installs the same provider, so this is a pre-warm; what it
+buys is finding out *now* if the machine cannot support it, rather than at
+`init`, when the first agent session would start with no browser tools. Skip it
+with `--skip-playwright-mcp` (`-SkipPlaywrightMcp`) for offline installs and CI.
+
+It does **not** install Node.js or Chromium. It warns when Node.js 24+ is
+missing and names the command that fixes the gap:
+
+```sh
+verifysignal integration setup-playwright-mcp
+```
+
+Note that `verifysignal check` reports workspace and Core runtime readiness — it
+does not check Node.js, Chromium, or the MCP provider.
 
 ### Already have uv or pipx?
 
@@ -77,6 +93,7 @@ Both URLs redirect to the scripts in this repository
 | `--version X.Y.Z` (`-Version`) | Install an exact release instead of the latest. |
 | `--from <spec>` (`-From`) | Install from another source, e.g. a `git+https` URL. |
 | `--no-modify-path` (`-NoModifyPath`) | Leave shell profiles and `PATH` untouched. |
+| `--skip-playwright-mcp` (`-SkipPlaywrightMcp`) | Do not pre-install the Playwright MCP provider. |
 
 Pass them after `--` when piping: `curl -LsSf https://verifysignal.io/install.sh | sh -s -- --version 0.22.0`.
 
