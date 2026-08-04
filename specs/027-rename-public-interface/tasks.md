@@ -68,9 +68,9 @@
 
 ## Post-Rename Patch Evidence (2026-08-04)
 
-- RED (`8dee7ea`): 5 expected failures across active repository URLs, project metadata, and Trusted Publisher guidance.
-- GREEN (`aff4260`): 11/11 focused repository/distribution/release assertions green.
-- Rebased regression: 31 focused distribution, compatibility, release, freshness, prerequisite, and browser-first tests passed; full clean-runner GitHub `spec` CI passed without deselection. The rebase inherits #24's fixture-freshness ratchet instead of duplicating its concurrent fix.
+- RED (`b0249f6`): 5 expected failures across active repository URLs, project metadata, and Trusted Publisher guidance.
+- GREEN (`1bde2c9`): 11/11 focused repository/distribution/release assertions green.
+- Rebased regression: 32 focused distribution, compatibility, release, freshness, prerequisite, and browser-first tests passed; full clean-runner GitHub `spec` CI passed without deselection. The rebase inherits #24's fixture-freshness ratchet instead of duplicating its concurrent fix.
 - Cross-repository dogfood passed after restoring the Core worktree's native macOS dependencies.
 - Artifact: `uv build` produced the current pre-release-automation canonical 0.22.1 wheel and sdist; both passed `twine check`.
 - Isolated install: distribution metadata is `verifysignal`; `verifysignal` and `verifysignal-spec` both run; `verifysignal_spec.runtime.release_signature` imports.

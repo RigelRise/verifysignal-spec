@@ -39,8 +39,8 @@ Follow `contracts/release-cutover.md` exactly. Record PyPI project/version URLs,
 ## Post-rename patch evidence (2026-08-04)
 
 - Repository identity RED: 5 expected failures; GREEN: 11/11 focused assertions.
-- Unit/contract regression: every non-baseline assertion passed; the sole failure was the exact `stale`/`ready` baseline already reproduced on `origin/main`.
-- Integration regression: green with the three exact reproduced integration baseline node IDs deselected; real Core dogfood included.
+- Focused regression: 32 distribution, compatibility, release, freshness, prerequisite, and browser-first assertions pass after the safe-replacement contract was added.
+- Full clean-runner GitHub `spec` CI passes without deselection after inheriting #24's fixture-freshness ratchet; real Core dogfood remains covered separately.
 - Canonical wheel/sdist build and `twine check`: passed.
 - Isolated wheel: canonical metadata, both console scripts, and the stable trust-helper import passed.
 - Docker: all 11 post-rename contracts passed.
