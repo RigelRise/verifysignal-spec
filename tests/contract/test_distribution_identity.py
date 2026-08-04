@@ -72,3 +72,15 @@ def test_active_public_prose_uses_verify_signal_and_runtime_names() -> None:
     assert "VerifySignal Runtime" in readme
     assert "VerifySignal Core" not in readme
 
+
+def test_source_does_not_reintroduce_the_retired_public_spec_product_name() -> None:
+    source_root = ROOT / "src" / "verifysignal_spec"
+    offenders = [
+        str(path.relative_to(ROOT))
+        for path in sorted(source_root.rglob("*"))
+        if path.is_file()
+        and path.suffix in {".py", ".md", ".yaml"}
+        and "VerifySignal Spec" in path.read_text(encoding="utf-8")
+    ]
+
+    assert offenders == []
