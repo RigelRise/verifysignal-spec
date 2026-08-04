@@ -7,7 +7,7 @@ credentials and evidence, seriously.
 
 Please do not open a public issue for a security problem. Report it privately:
 
-- <https://github.com/RigelRise/verifysignal-spec/security/advisories/new>
+- <https://github.com/RigelRise/verifysignal/security/advisories/new>
 
 Include the affected version (`verifysignal --version`), a description, steps to
 reproduce, and impact. Never include real credentials, tokens, or captured

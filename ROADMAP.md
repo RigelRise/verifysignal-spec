@@ -2,7 +2,7 @@
 
 VerifySignal is pre-1.0. This is directional, not a commitment. See
 [GOVERNANCE.md](GOVERNANCE.md) for how decisions are made, and the
-[open issues](https://github.com/RigelRise/verifysignal-spec/issues) for what is
+[open issues](https://github.com/RigelRise/verifysignal/issues) for what is
 in flight.
 
 ## Now
@@ -28,6 +28,6 @@ in flight.
   machine with neither uv nor Python is one line away from a working CLI.
 
 Have a request? Open a
-[feature request](https://github.com/RigelRise/verifysignal-spec/issues/new/choose)
+[feature request](https://github.com/RigelRise/verifysignal/issues/new/choose)
 or start a
-[discussion](https://github.com/RigelRise/verifysignal-spec/discussions).
+[discussion](https://github.com/RigelRise/verifysignal/discussions).

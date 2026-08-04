@@ -3,7 +3,7 @@
 # Triggered by pushing a version tag (e.g. `v0.20.0`). The publish job uses
 # OIDC Trusted Publishing (no stored API token). One-time setup on PyPI:
 #   pypi.org > project > Publishing > add a GitHub publisher:
-#     owner=RigelRise, repo=verifysignal-spec, workflow=release.yml, environment=pypi
+#     owner=RigelRise, repo=verifysignal, workflow=release.yml, environment=pypi
 name: release
 
 on:

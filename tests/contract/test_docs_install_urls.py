@@ -51,7 +51,7 @@ def test_every_advertised_github_repo_url_is_the_canonical_one() -> None:
         for path, text in _surfaces_with_text()
         for match in GITHUB_URL_PATTERN.finditer(text)
         if match.group(0).startswith("github.com/RigelRise/")
-        and match.group(0) != CANONICAL_REPO
+        and match.group(0).removesuffix(".git") != CANONICAL_REPO
     ]
     assert offenders == [], f"docs advertise a non-canonical GitHub repo: {offenders}"
 

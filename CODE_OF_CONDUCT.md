@@ -61,7 +61,7 @@ representative at an online or offline event.
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
 reported to the community leaders responsible for enforcement through GitHub's
 private reporting:
-<https://github.com/RigelRise/verifysignal-spec/security/advisories/new>.
+<https://github.com/RigelRise/verifysignal/security/advisories/new>.
 
 <!-- Maintainers: you may prefer a dedicated conduct email here (e.g.
 conduct@your-domain). Replace the link above if so. -->
