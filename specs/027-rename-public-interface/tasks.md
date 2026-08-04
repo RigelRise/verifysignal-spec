@@ -40,7 +40,7 @@
 - [X] T016 [P] [US1] Add the canonical interface manifest alias in `src/verifysignal_spec/repos.py`
 - [X] T017 [US1] Run focused tests green and commit the minimal canonical implementation
 - [X] T018 [US1] Run full pytest, build, twine check, isolated dual-command/import smoke, and Docker regression
-- [ ] T019 [US1] Push and open the canonical feature PR with expected 0.23.0 release evidence
+- [X] T019 [US1] Push and open the canonical feature PR with expected 0.23.0 release evidence
 
 ## Phase 5: User Story 3b - Manual canonical publication gate (P2)
 
