@@ -232,7 +232,11 @@ def validate_workspace(project: Path) -> list[dict[str, str]]:
             continue
         for path in root_dir.rglob("*.yaml"):
             data = load_document(path, default={})
-            rel = f"{layout.WORKSPACE_DIR}/{directory}/{path.relative_to(root_dir)}"
+            # `.as_posix()` because interpolating the Path directly stringifies it with os.sep, and
+            # on Windows a nested file would yield a mixed separator like
+            # `.verifysignal/readiness/sub\file.yaml` in the finding's public `path`. Every other
+            # project-relative path in this codebase is posix; this was the one exception.
+            rel = f"{layout.WORKSPACE_DIR}/{directory}/{path.relative_to(root_dir).as_posix()}"
             findings.extend(validate_no_secret_values(data, rel))
             if directory == layout.CREDENTIAL_HINTS_DIR and isinstance(data, dict):
                 findings.extend(validate_credential_readiness_hint(data))

@@ -46,6 +46,21 @@ class WorkspaceModelTests(CliTestCase):
         findings = validate_workspace(self.project)
         self.assertTrue(any(item["code"] == "secret-looking-value" for item in findings))
 
+    def test_nested_workspace_findings_report_posix_paths(self) -> None:
+        # The scanned-directory branch of validate_workspace builds its finding path by hand. It was
+        # the one place in the codebase that stringified a Path instead of calling .as_posix(), so a
+        # nested file on Windows produced a mixed separator (`.verifysignal/readiness/sub\hint.yaml`)
+        # in public output. This pins the contract; the Windows CI leg is what can observe the break.
+        init_workspace(self.project)
+        nested = self.project / ".verifysignal" / "readiness" / "sub"
+        nested.mkdir(parents=True, exist_ok=True)
+        (nested / "hint.yaml").write_text("token: fake-credential-value-abcdefghijklmnop\n", encoding="utf-8")
+
+        paths = [item["path"] for item in validate_workspace(self.project) if item["code"] == "secret-looking-value"]
+
+        self.assertTrue(any(item.startswith(".verifysignal/readiness/sub/hint.yaml") for item in paths), paths)
+        self.assertEqual([], [item for item in paths if "\\" in item])
+
     def test_generated_artifacts_use_core_compliant_skill_envelopes(self) -> None:
         init_workspace(self.project)
         record = UseCaseRecord(
