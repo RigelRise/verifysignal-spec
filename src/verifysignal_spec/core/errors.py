@@ -7,7 +7,7 @@ class CoreMissingError(CoreError):
 
 
 class CoreIncompatibleError(CoreError):
-    """VerifySignal Core public contract is incompatible with VerifySignal Spec."""
+    """VerifySignal Runtime public contract is incompatible with the VerifySignal CLI."""
 
 
 class CoreExecutionError(CoreError):

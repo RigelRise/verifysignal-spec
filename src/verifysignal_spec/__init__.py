@@ -1,3 +1,3 @@
-"""VerifySignal Spec CLI package."""
+"""VerifySignal CLI package."""
 
 __version__ = "0.25.0"

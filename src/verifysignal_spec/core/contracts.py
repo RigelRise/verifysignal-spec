@@ -63,7 +63,7 @@ class CompatibilityResult:
     incompatibleOperations: list[dict[str, Any]] | None = None
     message: str = ""
     raw: dict[str, Any] | None = None
-    recoveryAction: str = "Upgrade VerifySignal Core or VerifySignal Spec to compatible public CLI JSON schemas."
+    recoveryAction: str = "Upgrade VerifySignal Runtime or VerifySignal CLI to compatible public CLI JSON schemas."
 
     def to_dict(self) -> dict[str, Any]:
         compatibility_status = "compatible"
@@ -122,7 +122,7 @@ def validate_version_response(data: dict[str, Any]) -> CompatibilityResult:
                     "actualSchemaVersion": actual_version,
                     "compatibilityStatus": "incompatible",
                     "severity": "blocked",
-                    "recoveryAction": "Upgrade VerifySignal Core or VerifySignal Spec to compatible public CLI JSON schemas.",
+                    "recoveryAction": "Upgrade VerifySignal Runtime or VerifySignal CLI to compatible public CLI JSON schemas.",
                 }
             )
     compatible = contract_version == PUBLIC_CONTRACT_VERSION and not missing
@@ -136,7 +136,7 @@ def validate_version_response(data: dict[str, Any]) -> CompatibilityResult:
                 "actualSchemaVersion": None,
                 "compatibilityStatus": "incompatible",
                 "severity": "blocked",
-                "recoveryAction": "Upgrade VerifySignal Core or VerifySignal Spec to compatible public CLI JSON schemas.",
+                "recoveryAction": "Upgrade VerifySignal Runtime or VerifySignal CLI to compatible public CLI JSON schemas.",
             }
         )
     compatible = compatible and not incompatible

@@ -1,1 +1,1 @@
-"""Project-local VerifySignal Spec workspace helpers."""
+"""Project-local VerifySignal workspace helpers."""
