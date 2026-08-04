@@ -4,23 +4,101 @@ VerifySignal uses the public `verifysignal` CLI as the user-facing command.
 `verifysignal-spec` remains a backward-compatible alias for existing projects and
 generated guidance.
 
-## From PyPI (recommended)
+## Install (recommended)
 
-Once released, install the CLI from PyPI:
+Pick your platform. The installer sets up [uv](https://docs.astral.sh/uv/) if it
+is missing, and uv provides a managed Python 3.11+ — so neither uv nor Python is
+a prerequisite.
+
+**macOS**
+
+```sh
+curl -LsSf https://verifysignal.io/install.sh | sh
+```
+
+**Linux**
+
+```sh
+curl -LsSf https://verifysignal.io/install.sh | sh
+```
+
+**Windows (PowerShell)**
+
+```powershell
+powershell -ExecutionPolicy Bypass -c "irm https://verifysignal.io/install.ps1 | iex"
+```
+
+Then verify:
+
+```sh
+verifysignal --version
+```
+
+If `verifysignal` is not found, open a new terminal: the installer adds uv's tool
+directory (`~/.local/bin` on macOS and Linux, `%USERPROFILE%\.local\bin` on
+Windows) to your shell profile, which the current session has already read.
+
+### What the installer does and does not set up
+
+When `npm` is available, the installer also pre-installs the pinned Playwright
+MCP provider — the browser tooling your coding agent authors against.
+`verifysignal init` installs the same provider, so this is a pre-warm; what it
+buys is finding out *now* if the machine cannot support it, rather than at
+`init`, when the first agent session would start with no browser tools. Skip it
+with `--skip-playwright-mcp` (`-SkipPlaywrightMcp`) for offline installs and CI.
+
+It does **not** install Node.js or Chromium. It warns when Node.js 24+ is
+missing and names the command that fixes the gap:
+
+```sh
+verifysignal integration setup-playwright-mcp
+```
+
+Note that `verifysignal check` reports workspace and Core runtime readiness — it
+does not check Node.js, Chromium, or the MCP provider.
+
+### Already have uv or pipx?
+
+Skip the bootstrap and install the package directly:
 
 ```sh
 uv tool install verifysignal-spec        # or: pipx install verifysignal-spec
 verifysignal --version
 ```
 
-Run it once without installing:
+### Inspect before running
+
+Piping a script into a shell is only as trustworthy as the source. Download,
+read, then run:
 
 ```sh
-uvx verifysignal-spec --version
+curl -LsSf https://verifysignal.io/install.sh -o verifysignal-install.sh
+less verifysignal-install.sh
+sh verifysignal-install.sh
 ```
 
+```powershell
+irm https://verifysignal.io/install.ps1 -OutFile verifysignal-install.ps1
+notepad verifysignal-install.ps1
+powershell -ExecutionPolicy Bypass -File verifysignal-install.ps1
+```
+
+Both URLs redirect to the scripts in this repository
+(`scripts/install.sh`, `scripts/install.ps1`), which you can also read on GitHub.
+
+### Installer options
+
+| Option | Effect |
+| --- | --- |
+| `--version X.Y.Z` (`-Version`) | Install an exact release instead of the latest. |
+| `--from <spec>` (`-From`) | Install from another source, e.g. a `git+https` URL. |
+| `--no-modify-path` (`-NoModifyPath`) | Leave shell profiles and `PATH` untouched. |
+| `--skip-playwright-mcp` (`-SkipPlaywrightMcp`) | Do not pre-install the Playwright MCP provider. |
+
+Pass them after `--` when piping: `curl -LsSf https://verifysignal.io/install.sh | sh -s -- --version 0.22.0`.
+
 The sections below install directly from the Git repository. Useful for the
-bleeding edge, a fork, or before the first tagged release is published to PyPI.
+bleeding edge, a fork, or a commit that is not on PyPI yet.
 
 ## Persistent Installation
 
@@ -50,10 +128,10 @@ Upgrade:
 uv tool install verifysignal-spec --force --from git+https://github.com/RigelRise/verifysignal-spec.git@vX.Y.Z
 ```
 
-Uninstall:
+Uninstall (the tool is registered under its package name, not the command name):
 
 ```sh
-uv tool uninstall verifysignal
+uv tool uninstall verifysignal-spec
 ```
 
 ## One-Time Usage
@@ -311,9 +389,9 @@ malformed quoting, and group/other-readable permissions are rejected before
 Core starts. Only declared values are passed to the Core child process, and the
 parent process environment is not mutated.
 
-## Local Checkout Before Publishing
+## Local Checkout
 
-If the repository has not been published yet:
+To install from a checkout on disk:
 
 ```sh
 uv tool install verifysignal-spec --from /path/to/verifysignal-spec

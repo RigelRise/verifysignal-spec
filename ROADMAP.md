@@ -7,7 +7,6 @@ in flight.
 
 ## Now
 
-- Ship to PyPI via Trusted Publishing, so `uv tool install verifysignal-spec` is the one-line install.
 - Cut the first tagged release with notes.
 - Grow the [`examples/`](examples/) gallery and record the demo.
 
@@ -22,6 +21,11 @@ in flight.
 - Target surfaces beyond the browser.
 - A hosted docs site.
 - Discussions, a chat channel, and a curated "good first issue" set.
+
+## Shipped
+
+- PyPI publishing via Trusted Publishing, plus per-OS bootstrap installers, so a
+  machine with neither uv nor Python is one line away from a working CLI.
 
 Have a request? Open a
 [feature request](https://github.com/RigelRise/verifysignal-spec/issues/new/choose)

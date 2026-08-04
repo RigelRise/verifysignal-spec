@@ -8,6 +8,6 @@
   <text x="80" y="310" font-size="58" font-weight="800" fill="#DCE6EF" letter-spacing="-1">Validation that runs on its</text>
   <text x="80" y="380" font-size="58" font-weight="800" letter-spacing="-1"><tspan fill="#DCE6EF">own, and leaves </tspan><tspan fill="#37E5C4">proof.</tspan></text>
   <text x="80" y="452" font-size="26" fill="#8A9AAA">AI authors it. A deterministic runtime proves it.</text>
-  <text x="80" y="556" font-size="21" fill="#5A6875" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">$ uv tool install verifysignal-spec</text>
+  <text x="80" y="556" font-size="21" fill="#5A6875" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">$ curl -LsSf https://verifysignal.io/install.sh | sh</text>
   <text x="1120" y="556" font-size="19" fill="#5A6875" text-anchor="end" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">Apache-2.0 · open-core</text>
 </svg>

@@ -2,8 +2,8 @@
 #
 # Regenerate:   vhs docs/assets/demo.tape   →   docs/assets/demo.gif
 #
-# This drives the REAL CLI, so install it first (`uv tool install verifysignal-spec`
-# or `pip install -e .`). To record without the proprietary runtime, point the CLI
+# This drives the REAL CLI, so install it first (`sh scripts/install.sh`,
+# `uv tool install verifysignal-spec`, or `pip install -e .`). To record without the proprietary runtime, point the CLI
 # at the bundled fake Core:
 #   export VERIFYSIGNAL_CORE_CMD="python tests/fixtures/verifysignal-core/fake_verifysignal.py"
 # Then swap in a live target + real Core for the published cut.
