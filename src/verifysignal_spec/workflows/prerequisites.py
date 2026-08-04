@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from verifysignal_spec.process import run_text
 from verifysignal_spec.workspace import layout
 from verifysignal_spec.workspace.product_context import (
     load_product_context,
@@ -421,10 +422,9 @@ def _evaluate_understanding(project: Path) -> UnderstandingEvaluation:
 
 
 def current_git_hash(project: Path) -> str | None:
-    result = subprocess.run(
+    result = run_text(
         ["git", "-C", str(project), "rev-parse", "HEAD"],
         capture_output=True,
-        text=True,
         check=False,
     )
     if result.returncode != 0:
@@ -434,10 +434,9 @@ def current_git_hash(project: Path) -> str | None:
 
 
 def commit_distance(project: Path, generated_hash: str) -> int | None:
-    result = subprocess.run(
+    result = run_text(
         ["git", "-C", str(project), "rev-list", "--count", f"{generated_hash}..HEAD"],
         capture_output=True,
-        text=True,
         check=False,
     )
     if result.returncode != 0:

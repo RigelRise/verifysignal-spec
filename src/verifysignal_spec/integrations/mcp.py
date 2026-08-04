@@ -25,6 +25,7 @@ from typing import Any
 import tomlkit
 from tomlkit.exceptions import ParseError
 
+from verifysignal_spec.process import popen_text, run_text
 from verifysignal_spec.workspace.repository import save_document
 
 # Exact legacy entry emitted through 0.21.0 and the first 0.21.1 parity draft.
@@ -99,7 +100,7 @@ def register_agent_user_mcp(
     integration_key: str,
     *,
     agent_command: str | None = None,
-    command_runner: AgentCommandRunner = subprocess.run,
+    command_runner: AgentCommandRunner = run_text,
     timeout_seconds: float = 30,
 ) -> dict[str, Any]:
     """Register the managed Playwright server through the host's public CLI.
@@ -337,7 +338,6 @@ def _run_agent_command(
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
             timeout=timeout_seconds,
             check=False,
         )
@@ -558,7 +558,7 @@ def _verify_playwright_mcp_handshake(
         output_dir = temporary_path / ".playwright-mcp"
         output_dir.mkdir(mode=0o700)
         try:
-            process = subprocess.Popen(
+            process = popen_text(
                 [
                     str(executable),
                     "--isolated",
@@ -569,7 +569,6 @@ def _verify_playwright_mcp_handshake(
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True,
             )
             stdout, _stderr = process.communicate(
                 payload,
@@ -682,12 +681,11 @@ def ensure_playwright_mcp_runtime(
         PLAYWRIGHT_MCP_PACKAGE,
     ]
     try:
-        completed = subprocess.run(
+        completed = run_text(
             command,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
             timeout=timeout_seconds,
             check=False,
         )

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__
+from .process import configure_stdio
 from .commands import author as author_command
 from .commands import check as check_command
 from .commands import core_setup as core_setup_command
@@ -288,6 +289,10 @@ def create_app() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Before anything prints. A REDIRECTED stdout uses the locale encoding, so on Windows
+    # `verifysignal list > out.txt` raised UnicodeEncodeError on the status icons this CLI emits --
+    # and agents pipe `--json` output constantly.
+    configure_stdio()
     parser = create_app()
     args = parser.parse_args(argv)
     if args.version:

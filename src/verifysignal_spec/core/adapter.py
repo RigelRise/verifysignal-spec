@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import json
 import os
-import shlex
 import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
 
 from .contracts import CompatibilityResult, normalize_status, validate_version_response
+from ..process import join_command, run_text, split_command
 from .errors import CoreExecutionError, CoreIncompatibleError, CoreMissingError
 
 CORE_SETUP_HINT = (
@@ -38,7 +38,9 @@ class CoreAdapter:
         if path.exists() and path.is_file():
             return [str(path.resolve())]
 
-        parts = shlex.split(raw)
+        # split_command, not shlex.split: shlex runs in POSIX mode where a backslash ESCAPES, so a
+        # persisted `C:\Tools\core.exe --flag` came back as `C:Toolscore.exe`.
+        parts = split_command(raw)
         if len(parts) > 1:
             resolved = shutil.which(parts[0])
             if not resolved:
@@ -51,15 +53,17 @@ class CoreAdapter:
         return [resolved]
 
     def resolved_command(self) -> str:
-        return shlex.join(self._base_command())
+        return join_command(self._base_command())
 
     def _run(self, args: list[str], env: dict[str, str] | None = None) -> dict[str, Any]:
         base_command = self._base_command()
-        proc = subprocess.run(
+        # run_text, not subprocess.run(text=True): Core emits UTF-8 JSON and the default decodes
+        # with the host locale (cp1252 on most Windows installs), so one accented character in a
+        # page title or an error message either raises UnicodeDecodeError or mojibakes into json.loads.
+        proc = run_text(
             [*base_command, *args],
             cwd=str(self.cwd) if self.cwd else None,
             env={**os.environ, **(env or {})},
-            text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             check=False,
