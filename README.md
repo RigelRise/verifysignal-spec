@@ -31,11 +31,25 @@ is a signed download, unlocked with a free email. No account.
 
 ## Quickstart
 
-You need Python 3.11+ and Node 24+. Install the CLI:
+Install the CLI. The installer sets up `uv` if it is missing, and uv provides a
+managed Python 3.11+, so the only thing you need beforehand is Node 24+ for
+running validations.
+
+macOS and Linux:
 
 ```sh
-uv tool install verifysignal-spec        # or: pipx install verifysignal-spec
+curl -LsSf https://verifysignal.io/install.sh | sh
 ```
+
+Windows (PowerShell):
+
+```powershell
+powershell -ExecutionPolicy Bypass -c "irm https://verifysignal.io/install.ps1 | iex"
+```
+
+Already have uv or pipx? `uv tool install verifysignal-spec` (or
+`pipx install verifysignal-spec`) does the same thing. Prefer to read the script
+first? See [Installation](docs/installation.md).
 
 Set up your project and check readiness:
 
