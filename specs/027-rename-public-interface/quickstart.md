@@ -35,3 +35,13 @@ Follow `contracts/release-cutover.md` exactly. Record PyPI project/version URLs,
 - Regression: full clean-runner GitHub `spec` CI passes after inheriting #24's fixture-freshness ratchet; cross-repository structural dogfood is green with dependencies available in the temporary Core worktree.
 - Artifact: `uv build` produces `verifysignal-0.25.0` before automated release bump; wheel and sdist pass `twine check`; isolated metadata is `verifysignal`, both console scripts run, and `verifysignal_spec.runtime.release_signature` imports.
 - Docker: 14 canonical distribution, compatibility, URL, and migration contracts pass under the declared toolchain.
+
+## Post-rename patch evidence (2026-08-04)
+
+- Repository identity RED: 5 expected failures; GREEN: 11/11 focused assertions.
+- Unit/contract regression: every non-baseline assertion passed; the sole failure was the exact `stale`/`ready` baseline already reproduced on `origin/main`.
+- Integration regression: green with the three exact reproduced integration baseline node IDs deselected; real Core dogfood included.
+- Canonical wheel/sdist build and `twine check`: passed.
+- Isolated wheel: canonical metadata, both console scripts, and the stable trust-helper import passed.
+- Docker: all 11 post-rename contracts passed.
+- Manual gates still block merge/release: repository rename, new exact PyPI publisher binding, 0.23.1 verification, and only then removal of the old binding.
