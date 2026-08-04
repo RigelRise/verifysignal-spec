@@ -1,8 +1,8 @@
 # Feature Specification: Canonical VerifySignal Distribution
 
-**Feature Branch**: `027-rename-public-interface`  
-**Created**: 2026-08-04  
-**Status**: Draft  
+**Feature Branch**: `027-rename-public-interface`
+**Created**: 2026-08-04
+**Status**: Draft
 **Input**: Rename the public open-source interface from VerifySignal Spec to VerifySignal while preserving compatibility and using a staged PyPI and GitHub migration.
 
 ## Constitution Alignment *(mandatory)*
@@ -129,4 +129,3 @@ A maintainer can publish one final old-name release, establish the canonical PyP
 - GitHub repository redirects are retained by never reusing the old slug.
 - Version 0.22.1 is the intended final old-name patch, 0.23.0 the first canonical release, and 0.23.1 the first post-rename patch, subject to existing automated release calculation.
 - Cross-repository Core and backend PRs merge only after the canonical package and repository gates they reference are live.
-

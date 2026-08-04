@@ -38,4 +38,3 @@
 - Never reuse the old GitHub slug.
 - Do not merge downstream Core or backend PRs until Stage D is green.
 - If a stage fails, repair that stage without advancing external identities.
-

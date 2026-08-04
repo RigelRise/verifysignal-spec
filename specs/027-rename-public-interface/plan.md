@@ -9,14 +9,14 @@ Execute a three-release identity cutover: announce migration in final `verifysig
 
 ## Technical Context
 
-**Language/Version**: Python 3.11+; GitHub Actions YAML  
-**Primary Dependencies**: Typer, Rich, Pydantic 2, PyYAML, cryptography, setuptools  
-**Storage**: Project-local `.verifysignal/` files remain schema-compatible; no migration  
-**Testing**: pytest 8, `build`, `twine`, isolated `uv`/venv installation, Docker regression  
-**Target Platform**: PyPI and Python 3.11-3.13 on supported desktop/CI platforms  
-**Project Type**: Open-source Python CLI, workspace engine, integration/skill templates, and Runtime adapter  
-**Performance Goals**: No CLI or workflow performance regression; packaging-only overhead is zero at runtime  
-**Constraints**: Immutable PyPI identities; exact trusted-publisher repository binding; automated version bumps only; one final old-name release; no internal identifier rewrite  
+**Language/Version**: Python 3.11+; GitHub Actions YAML
+**Primary Dependencies**: Typer, Rich, Pydantic 2, PyYAML, cryptography, setuptools
+**Storage**: Project-local `.verifysignal/` files remain schema-compatible; no migration
+**Testing**: pytest 8, `build`, `twine`, isolated `uv`/venv installation, Docker regression
+**Target Platform**: PyPI and Python 3.11-3.13 on supported desktop/CI platforms
+**Project Type**: Open-source Python CLI, workspace engine, integration/skill templates, and Runtime adapter
+**Performance Goals**: No CLI or workflow performance regression; packaging-only overhead is zero at runtime
+**Constraints**: Immutable PyPI identities; exact trusted-publisher repository binding; automated version bumps only; one final old-name release; no internal identifier rewrite
 **Scale/Scope**: One distribution metadata switch, two entry points, 47 distinct versioned schema IDs, hundreds of existing tests, staged GitHub/PyPI operations
 
 ## Constitution Check
@@ -95,4 +95,3 @@ tests/
 ## Complexity Tracking
 
 No constitution violations require justification. The staged release sequence is required by immutable PyPI project identity and exact trusted-publisher bindings, not by a new application abstraction.
-

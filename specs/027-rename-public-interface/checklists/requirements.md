@@ -1,7 +1,7 @@
 # Specification Quality Checklist: Canonical VerifySignal Distribution
 
-**Purpose**: Validate specification completeness before planning  
-**Created**: 2026-08-04  
+**Purpose**: Validate specification completeness before planning
+**Created**: 2026-08-04
 **Feature**: [spec.md](../spec.md)
 
 ## Constitution Alignment
@@ -33,4 +33,3 @@
 ## Notes
 
 - Manual authenticated PyPI and GitHub operations remain required at the documented gates.
-

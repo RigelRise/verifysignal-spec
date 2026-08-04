@@ -37,4 +37,3 @@
 8. `migration_complete`
 
 Transitions require the artifact and smoke evidence defined in `contracts/release-cutover.md`; no stage is skipped.
-

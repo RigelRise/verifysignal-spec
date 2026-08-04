@@ -17,4 +17,3 @@
 | GitHub repository | rename | `RigelRise/verifysignal` | old URL redirect retained and slug never reused |
 
 New canonical names are acquisition identity. Preserved names are technical or persisted compatibility identity and must not be rewritten by broad search/replace.
-

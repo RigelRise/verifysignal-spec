@@ -1,6 +1,6 @@
 # Tasks: Canonical VerifySignal Distribution
 
-**Input**: Design documents from `specs/027-rename-public-interface/`  
+**Input**: Design documents from `specs/027-rename-public-interface/`
 **Tests**: Required; every automatable behavior uses separate red and green commits. Manual registry/repository transitions require captured evidence.
 
 ## Phase 1: Setup
@@ -10,10 +10,10 @@
 
 ## Phase 2: Foundational compatibility guardrails
 
-- [ ] T003 Add a frozen compatibility inventory test in `tests/contract/test_public_identity_compatibility.py`
-- [ ] T004 Add package metadata and dual-entry-point expectations in `tests/contract/test_distribution_identity.py`
-- [ ] T005 Add release-stage and publisher-identity expectations in `tests/contract/test_release_migration_contract.py`
-- [ ] T006 Run focused tests red and commit the test-only compatibility baseline
+- [X] T003 Add a frozen compatibility inventory test in `tests/contract/test_public_identity_compatibility.py`
+- [X] T004 Add package metadata and dual-entry-point expectations in `tests/contract/test_distribution_identity.py`
+- [X] T005 Add release-stage and publisher-identity expectations in `tests/contract/test_release_migration_contract.py`
+- [X] T006 Run focused tests red and commit the test-only compatibility baseline
 
 ## Phase 3: User Story 3a - Final old-name release (P2)
 
@@ -21,11 +21,11 @@
 
 **Independent Test**: Old artifact metadata remains old-name, both commands work, and public migration notice names the canonical install path.
 
-- [ ] T007 [US3] Add a failing final-release migration-notice contract in `tests/contract/test_release_migration_contract.py` on `fix/announce-verifysignal-distribution`
-- [ ] T008 [US3] Run the notice contract red and commit tests only
-- [ ] T009 [US3] Add the migration notice to `README.md` and `docs/installation.md`
-- [ ] T010 [US3] Run focused and full tests green, build/check the old-name artifact, and commit implementation
-- [ ] T011 [US3] Push and open the old-name patch PR with expected 0.22.1 release evidence
+- [X] T007 [US3] Add a failing final-release migration-notice contract in `tests/contract/test_release_migration_contract.py` on `fix/announce-verifysignal-distribution`
+- [X] T008 [US3] Run the notice contract red and commit tests only
+- [X] T009 [US3] Add the migration notice to `README.md` and `docs/installation.md`
+- [X] T010 [US3] Run focused and full tests green, build/check the old-name artifact, and commit implementation
+- [X] T011 [US3] Push and open the old-name patch PR with expected 0.22.1 release evidence
 
 ## Phase 4: User Story 1 - Canonical distribution (P1)
 
@@ -33,13 +33,13 @@
 
 **Independent Test**: Canonical wheel metadata, both commands, stable import, and frozen identities pass in an isolated environment.
 
-- [ ] T012 [US1] Bring the final old-name migration commit into `027-rename-public-interface` without losing feature artifacts
-- [ ] T013 [US1] Run distribution and compatibility contract tests red against the old metadata and commit the test-only change
-- [ ] T014 [US1] Change only the project distribution name in `pyproject.toml`
-- [ ] T015 [P] [US1] Update canonical install/product wording in `README.md`, `docs/installation.md`, and active guidance while retaining the live pre-rename repository URL
-- [ ] T016 [P] [US1] Add the canonical interface manifest alias in `src/verifysignal_spec/repos.py`
-- [ ] T017 [US1] Run focused tests green and commit the minimal canonical implementation
-- [ ] T018 [US1] Run full pytest, build, twine check, isolated dual-command/import smoke, and Docker regression
+- [X] T012 [US1] Bring the final old-name migration commit into `027-rename-public-interface` without losing feature artifacts
+- [X] T013 [US1] Run distribution and compatibility contract tests red against the old metadata and commit the test-only change
+- [X] T014 [US1] Change only the project distribution name in `pyproject.toml`
+- [X] T015 [P] [US1] Update canonical install/product wording in `README.md`, `docs/installation.md`, and active guidance while retaining the live pre-rename repository URL
+- [X] T016 [P] [US1] Add the canonical interface manifest alias in `src/verifysignal_spec/repos.py`
+- [X] T017 [US1] Run focused tests green and commit the minimal canonical implementation
+- [X] T018 [US1] Run full pytest, build, twine check, isolated dual-command/import smoke, and Docker regression
 - [ ] T019 [US1] Push and open the canonical feature PR with expected 0.23.0 release evidence
 
 ## Phase 5: User Story 3b - Manual canonical publication gate (P2)

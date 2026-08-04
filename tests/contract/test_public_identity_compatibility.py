@@ -108,4 +108,3 @@ def test_legacy_agent_skill_directories_remain_packaged() -> None:
             if path.is_dir() and path.name.startswith("verifysignal-spec-")
         }
         assert actual == expected
-

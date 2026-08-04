@@ -29,4 +29,3 @@
 - **Decision**: Leave final `verifysignal-spec` release installable and not yanked, with a migration notice.
 - **Rationale**: Existing lockfiles, tool installs, and recovery workflows need immutable historical artifacts.
 - **Alternatives considered**: Delete/yank or continue dual feature releases. Rejected because deletion breaks users and dual releases obscure the canonical path.
-
