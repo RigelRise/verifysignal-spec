@@ -4,6 +4,12 @@ VerifySignal uses the public `verifysignal` CLI as the user-facing command.
 `verifysignal-spec` remains a backward-compatible alias for existing projects and
 generated guidance.
 
+Version 0.25.x is the final distribution line published as
+`verifysignal-spec`. Read the [distribution name migration](distribution-migration.md)
+for the canonical `verifysignal` installation path and the exact compatibility
+identifiers that remain unchanged. The commands below intentionally describe
+the still-current 0.25.x package.
+
 ## Install (recommended)
 
 Pick your platform. The installer sets up [uv](https://docs.astral.sh/uv/) if it

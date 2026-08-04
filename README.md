@@ -15,6 +15,12 @@
 
 ---
 
+> **Distribution name migration:** 0.22.x is the final release line published
+> as `verifysignal-spec`. The project is moving to the canonical PyPI name
+> `verifysignal` while preserving existing commands, imports, workspaces, and
+> schemas. See [Distribution name migration](docs/distribution-migration.md)
+> before changing an existing installation.
+
 AI multiplied your features. Validating each one is still manual. VerifySignal
 turns a product flow (login, checkout, onboarding) into an automatic, repeatable
 validation with evidence, starting from your repository or a live product URL

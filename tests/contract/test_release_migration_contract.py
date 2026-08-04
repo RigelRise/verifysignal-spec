@@ -38,4 +38,3 @@ def test_migration_notice_freezes_technical_compatibility_identifiers() -> None:
         "`/verifysignal-specify`",
     ):
         assert preserved_identity in migration
-
