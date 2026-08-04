@@ -4,6 +4,8 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
+
+from verifysignal_spec.process import run_text
 from typing import Any
 
 from verifysignal_spec.runtime.env_file import (
@@ -97,9 +99,8 @@ def prepare(project: Path, alias: str, *, env_file: Path) -> dict[str, Any]:
 
 
 def _git_exclude_path(project: Path) -> Path:
-    proc = subprocess.run(
+    proc = run_text(
         ["git", "-C", str(project), "rev-parse", "--git-path", "info/exclude"],
-        text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=False,

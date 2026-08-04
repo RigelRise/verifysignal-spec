@@ -10,6 +10,7 @@ from typing import Any
 from verifysignal_spec import __version__ as SPEC_VERSION
 
 from . import layout
+from ..process import run_text
 from .textio import atomic_write_text_lf
 from .models import (
     ArtifactCapabilityPolicy,
@@ -689,10 +690,9 @@ def artifact_fingerprints(project: Path, record: UseCaseRecord) -> dict[str, str
 
 
 def current_project_revision(project: Path) -> str | None:
-    result = subprocess.run(
+    result = run_text(
         ["git", "-C", str(project), "rev-parse", "HEAD"],
         capture_output=True,
-        text=True,
         check=False,
     )
     if result.returncode != 0:
