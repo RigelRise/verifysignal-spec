@@ -3,43 +3,55 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-# RATCHET (onboarding honesty). The ProofSignal -> VerifySignal rebrand rewrote every advertised
-# install URL to github.com/RigelRise/verifysignal-spec while the actual GitHub repository was still
-# named proofsignal-spec — so the documented Quickstart install 404'd for every new user, and no test
-# noticed because docs are not type-checked or executed.
+# RATCHET (onboarding honesty). Repository URLs have drifted during both public renames, leaving
+# documented installs and support links pointed at retired slugs. Docs are not type-checked or
+# executed, so the post-rename patch freezes the exact canonical GitHub identity.
 #
-# This guard pins the live pre-rename repository path across every doc that advertises it during the
-# first canonical PyPI release. The repository changes in a separate post-rename patch, only after
-# the canonical artifact is proven. It does NOT (and cannot) prove the remote exists.
+# This guard pins the post-rename path across every active repository surface. It does NOT (and
+# cannot) prove the remote exists; the redirect and exact live URL remain manual cutover checks.
 
-CANONICAL_REPO = "github.com/RigelRise/verifysignal-spec"
-STALE_REPO_PATTERN = re.compile(r"github\.com/[\w.-]+/proofsignal[\w.-]*")
+CANONICAL_REPO = "github.com/RigelRise/verifysignal"
+STALE_REPO_PATTERN = re.compile(
+    r"github\.com/RigelRise/(?:proofsignal[\w.-]*|verifysignal-spec)"
+)
 GITHUB_URL_PATTERN = re.compile(r"github\.com/[\w.-]+/[\w.-]+")
 
 ROOT = Path(__file__).resolve().parents[2]
 DOC_PATHS = [ROOT / "README.md", *sorted((ROOT / "docs").glob("*.md"))]
+REPOSITORY_SURFACE_PATHS = [
+    *DOC_PATHS,
+    ROOT / "SECURITY.md",
+    ROOT / "CODE_OF_CONDUCT.md",
+    ROOT / "ROADMAP.md",
+    ROOT / ".github" / "ISSUE_TEMPLATE" / "config.yml",
+]
 
 
-def _docs_with_text() -> list[tuple[Path, str]]:
-    return [(path, path.read_text(encoding="utf-8")) for path in DOC_PATHS if path.exists()]
+def _surfaces_with_text() -> list[tuple[Path, str]]:
+    return [
+        (path, path.read_text(encoding="utf-8"))
+        for path in REPOSITORY_SURFACE_PATHS
+        if path.exists()
+    ]
 
 
 def test_docs_have_no_stale_proofsignal_repo_urls() -> None:
     offenders = [
         f"{path.relative_to(ROOT)}: {match.group(0)}"
-        for path, text in _docs_with_text()
+        for path, text in _surfaces_with_text()
         for match in STALE_REPO_PATTERN.finditer(text)
     ]
     assert offenders == [], f"docs still advertise the pre-rebrand repository: {offenders}"
 
 
 def test_every_advertised_github_repo_url_is_the_canonical_one() -> None:
-    # Any GitHub repo URL in 0.26.0 docs must still identify the live pre-rename repository.
+    # Any advertised GitHub repo URL after the rename must identify the canonical repository.
     offenders = [
         f"{path.relative_to(ROOT)}: {match.group(0)}"
-        for path, text in _docs_with_text()
+        for path, text in _surfaces_with_text()
         for match in GITHUB_URL_PATTERN.finditer(text)
-        if not match.group(0).startswith(CANONICAL_REPO)
+        if match.group(0).startswith("github.com/RigelRise/")
+        and match.group(0) != CANONICAL_REPO
     ]
     assert offenders == [], f"docs advertise a non-canonical GitHub repo: {offenders}"
 
