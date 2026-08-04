@@ -5,7 +5,7 @@
 
 ## Summary
 
-Execute a three-release identity cutover: announce migration in final `verifysignal-spec` patch 0.22.1; publish the same compatible interface as canonical distribution `verifysignal` 0.23.0 before repository rename; then canonicalize GitHub metadata and trusted publishing in 0.23.1 after rename. Preserve the import package, both console scripts, all schemas, workspace state, environment variables, roles, commands, skill aliases, Runtime contracts, and secret behavior.
+Execute a three-release identity cutover: announce migration in final `verifysignal-spec` patch 0.22.2 (0.22.1 was published independently while this stack was open); publish the same compatible interface as canonical distribution `verifysignal` 0.23.0 before repository rename; then canonicalize GitHub metadata and trusted publishing in 0.23.1 after rename. Preserve the import package, both console scripts, all schemas, workspace state, environment variables, roles, commands, skill aliases, Runtime contracts, and secret behavior.
 
 ## Technical Context
 
@@ -16,7 +16,7 @@ Execute a three-release identity cutover: announce migration in final `verifysig
 **Target Platform**: PyPI and Python 3.11-3.13 on supported desktop/CI platforms
 **Project Type**: Open-source Python CLI, workspace engine, integration/skill templates, and Runtime adapter
 **Performance Goals**: No CLI or workflow performance regression; packaging-only overhead is zero at runtime
-**Constraints**: Immutable PyPI identities; exact trusted-publisher repository binding; automated version bumps only; one final old-name release; no internal identifier rewrite
+**Constraints**: Immutable PyPI identities; exact trusted-publisher repository binding; automated version bumps only; one final old-name release; overlapping old/new distributions must be replaced rather than co-installed; no internal identifier rewrite
 **Scale/Scope**: One distribution metadata switch, two entry points, 47 distinct versioned schema IDs, hundreds of existing tests, staged GitHub/PyPI operations
 
 ## Constitution Check
@@ -75,7 +75,7 @@ tests/
 
 ## Release and Branch Sequence
 
-1. `fix/announce-verifysignal-distribution` from current main: red migration-notice contract, green notice, focused/full tests, PR title `fix: announce the verifysignal distribution migration`; merge and verify automated 0.22.1.
+1. `fix/announce-verifysignal-distribution` from current main: red migration-notice and safe-replacement contracts, green notice, focused/full tests, PR title `fix: announce the verifysignal distribution migration`; merge and verify automated 0.22.2. Version 0.22.1 was already published from #24 and cannot be reused.
 2. Manual gate: create pending PyPI trusted publisher for project `verifysignal`, owner `RigelRise`, repository `verifysignal-spec`, workflow `release.yml`, environment `pypi`.
 3. `027-rename-public-interface`: include the notice commit, red packaging/compatibility tests, green canonical distribution and public wording, build/isolated/full regression; PR title `feat: publish the canonical verifysignal distribution`; merge and verify automated 0.23.0.
 4. Manual gate: rename GitHub repository to `RigelRise/verifysignal`, retain old redirect, and add the exact new trusted publisher binding.

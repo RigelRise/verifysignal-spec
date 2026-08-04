@@ -28,10 +28,10 @@ Follow `contracts/release-cutover.md` exactly. Record PyPI project/version URLs,
 
 ## Local validation evidence (2026-08-04)
 
-- Legacy release: RED 2 expected failures, GREEN 2 passes; adjacent contracts 7 passes; Docker 2 passes; old-name wheel/sdist pass `twine check`; both commands and import pass in an isolated environment; draft PR #21.
+- Legacy release: migration notice RED 2 / GREEN 2, safe replacement RED 1 / GREEN 8 focused; Docker contracts, old-name wheel/sdist `twine check`, both commands, and import pass; draft PR #21 targets automated 0.22.2 because 0.22.1 was independently published from #24.
 - Canonical identity: RED 7 expected failures, GREEN 27 passes for distribution, documentation, compatibility inventory, and sibling resolution; draft PR #22.
 - Public naming: RED source/recovery assertions, GREEN 19 passes after Runtime/CLI wording; `src/` contains zero `VerifySignal Spec` product labels.
 - Release automation: RED 3 expected failures, GREEN 42 passes while retaining the pre-rename OIDC repository identity.
-- Regression: the complete pytest suite passes with four known baseline node IDs deselected; all four reproduce on `origin/main`. Cross-repository structural dogfood is green with dependencies available in the temporary Core worktree.
-- Artifact: `uv build` produces `verifysignal-0.22.0` before automated release bump; wheel and sdist pass `twine check`; isolated metadata is `verifysignal`, both console scripts run, and `verifysignal_spec.runtime.release_signature` imports.
+- Regression: full clean-runner GitHub `spec` CI passes after inheriting #24's fixture-freshness ratchet; cross-repository structural dogfood is green with dependencies available in the temporary Core worktree.
+- Artifact: `uv build` produces `verifysignal-0.22.1` before automated release bump; wheel and sdist pass `twine check`; isolated metadata is `verifysignal`, both console scripts run, and `verifysignal_spec.runtime.release_signature` imports.
 - Docker: 14 canonical distribution, compatibility, URL, and migration contracts pass under the declared toolchain.

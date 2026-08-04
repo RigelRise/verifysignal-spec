@@ -23,7 +23,7 @@
 
 - [X] T007 [US3] Add a failing final-release migration-notice contract in `tests/contract/test_release_migration_contract.py` on `fix/announce-verifysignal-distribution`
 - [X] T008 [US3] Run the notice contract red and commit tests only
-- [X] T009 [US3] Add the migration notice to `README.md` and `docs/installation.md`
+- [X] T009 [US3] Add the migration notice and ordered old-to-canonical replacement guidance to `README.md`, `docs/installation.md`, and `docs/distribution-migration.md`
 - [X] T010 [US3] Run focused and full tests green, build/check the old-name artifact, and commit implementation
 - [X] T011 [US3] Push and open the old-name patch PR with expected 0.22.2 release evidence
 

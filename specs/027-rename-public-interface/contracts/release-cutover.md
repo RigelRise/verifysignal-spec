@@ -4,8 +4,8 @@
 
 - Branch: `fix/announce-verifysignal-distribution`
 - PR title: `fix: announce the verifysignal distribution migration`
-- Expected automated version: 0.22.1
-- Required evidence: migration-notice contract, full pytest, artifact build/check, isolated old-name CLI smoke.
+- Expected automated version: 0.22.2 (0.22.1 was independently published from #24).
+- Required evidence: migration-notice and ordered replacement contracts, full pytest, artifact build/check, isolated old-name CLI smoke.
 - Exit condition: release visible on old PyPI project and migration notice rendered.
 
 ## Stage B: First canonical release

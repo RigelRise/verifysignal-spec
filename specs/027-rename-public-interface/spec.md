@@ -68,7 +68,7 @@ A maintainer can publish one final old-name release, establish the canonical PyP
 - The PyPI name appears public but ownership is not authenticated or reservable.
 - A pending trusted publisher does not reserve the canonical PyPI project until first publication.
 - GitHub redirects repository URLs but GitHub Actions and trusted-publisher identity use exact repository names.
-- Both distribution artifacts expose the same console scripts and import package.
+- Both distribution artifacts expose the same console scripts and import package, so installing them side by side or uninstalling the old one after the new one can corrupt an environment.
 - An internal schema contains `verifysignal-spec` and must not be renamed as marketing copy.
 - A generated integration includes a legacy alias intentionally while user-facing prose should use VerifySignal.
 - A contributor has an old local sibling directory after the GitHub repository rename.
@@ -98,6 +98,7 @@ A maintainer can publish one final old-name release, establish the canonical PyP
 - **FR-018**: Every behavior change MUST begin with a failing focused test and retain that test after implementation.
 - **FR-019**: Existing CLI, Runtime resolution, entitlement, browser, secret-safety, and agent-neutral regression suites MUST remain green.
 - **FR-020**: Canonical distribution and repository changes MUST be independently reversible until each publication stage is verified.
+- **FR-021**: Migration guidance MUST replace `verifysignal-spec` before installing `verifysignal` in the same `uv tool` or `pip` environment and MUST state that project-local `.verifysignal/` workspaces are retained.
 
 ### Key Entities
 
@@ -120,6 +121,7 @@ A maintainer can publish one final old-name release, establish the canonical PyP
 - **SC-005**: Public repository metadata and onboarding use `RigelRise/verifysignal` after rename, while the old GitHub URL redirects and the old PyPI project remains installable.
 - **SC-006**: Full unit, contract, integration, Docker, and cross-repository regression suites remain green at the appropriate migration gates.
 - **SC-007**: No release step relies on an outdated trusted-publisher repository identity.
+- **SC-008**: Existing users receive ordered `uv tool` and `pip` replacement commands that cannot leave both overlapping distributions installed together.
 
 ## Assumptions
 
@@ -127,5 +129,5 @@ A maintainer can publish one final old-name release, establish the canonical PyP
 - Public availability checks do not prove authenticated ownership; manual authenticated confirmation remains required.
 - PyPI project names cannot be renamed, so old and canonical distributions are separate projects.
 - GitHub repository redirects are retained by never reusing the old slug.
-- Version 0.22.1 is the intended final old-name patch, 0.23.0 the first canonical release, and 0.23.1 the first post-rename patch, subject to existing automated release calculation.
+- Version 0.22.2 is the intended final old-name patch because 0.22.1 was independently published from #24 while this stack was open; 0.23.0 remains the first canonical release and 0.23.1 the first post-rename patch, subject to existing automated release calculation.
 - Cross-repository Core and backend PRs merge only after the canonical package and repository gates they reference are live.
