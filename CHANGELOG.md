@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.22.1 - 2026-08-04
+
+- Bumped VerifySignal Spec to `0.22.1`.
+
 ## 0.22.0 - 2026-07-30
 
 ### Embedded release-anchor acceptance
