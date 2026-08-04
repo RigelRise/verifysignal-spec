@@ -5,7 +5,7 @@
 
 ## Phase 1: Setup
 
-- [ ] T001 Confirm clean worktrees and branch bases for all three release stages against `specs/027-rename-public-interface/contracts/release-cutover.md`
+- [X] T001 Confirm clean worktrees and branch bases for all three release stages against `specs/027-rename-public-interface/contracts/release-cutover.md`
 - [X] T002 Inventory all distribution, import, executable, schema, workspace, environment, role, command, skill, repository, and publisher identities in `specs/027-rename-public-interface/contracts/public-identity-compatibility.md`
 
 ## Phase 2: Foundational compatibility guardrails
@@ -25,7 +25,7 @@
 - [X] T008 [US3] Run the notice contract red and commit tests only
 - [X] T009 [US3] Add the migration notice to `README.md` and `docs/installation.md`
 - [X] T010 [US3] Run focused and full tests green, build/check the old-name artifact, and commit implementation
-- [X] T011 [US3] Push and open the old-name patch PR with expected 0.22.1 release evidence
+- [X] T011 [US3] Push and open the old-name patch PR with expected 0.22.2 release evidence
 
 ## Phase 4: User Story 1 - Canonical distribution (P1)
 
@@ -68,7 +68,7 @@
 
 ## Dependencies
 
-- Phase 3 completes and 0.22.1 is verified before Phase 4 merges.
+- Phase 3 completes and 0.22.2 is verified before Phase 4 merges. Version 0.22.1 was published independently from #24 while this stack was open.
 - T020 blocks canonical merge and first publication.
 - Canonical 0.23.0 verification blocks GitHub rename.
 - Repository rename and new publisher binding block the post-rename patch.
