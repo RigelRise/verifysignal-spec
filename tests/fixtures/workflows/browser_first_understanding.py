@@ -1,10 +1,21 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 
-OBSERVED_AT = "2026-07-26T18:00:00Z"
+# Relative to now, never a written-out date. This fixture stands for a RECENT understanding — every
+# test using it asserts `check_prerequisites(...) == "ready"`. A hardcoded timestamp does not mean
+# "recent", it means "recent for a while": WORKFLOW_UNDERSTANDING_MAX_AGE_DAYS is 7, so a fixture
+# stamped 2026-07-26 silently became stale on 2026-08-02 and turned main red with no code change,
+# in a repository where nothing else had moved. The product behaviour was correct; the fixture was
+# asserting against a calendar.
+#
+# One day back rather than zero: `age >= timedelta(days=MAX_AGE)` is the staleness rule, so any
+# value strictly inside the window works, and a day of slack keeps the fixture honest about
+# representing an understanding generated in a previous session rather than this instant.
+OBSERVED_AT = (datetime.now(UTC) - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def browser_understanding_payload(
