@@ -9,12 +9,12 @@ INSTALLATION = ROOT / "docs" / "installation.md"
 MIGRATION = ROOT / "docs" / "distribution-migration.md"
 
 
-def test_final_legacy_release_announces_the_canonical_distribution() -> None:
+def test_canonical_release_keeps_the_final_legacy_release_migration_notice() -> None:
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     readme = README.read_text(encoding="utf-8")
     installation = INSTALLATION.read_text(encoding="utf-8")
 
-    assert 'name = "verifysignal-spec"' in pyproject
+    assert 'name = "verifysignal"' in pyproject
     assert "[Distribution name migration](docs/distribution-migration.md)" in readme
     assert "[distribution name migration](distribution-migration.md)" in installation
     assert MIGRATION.exists()
