@@ -69,3 +69,16 @@ def test_migration_notice_replaces_the_old_distribution_before_installing_the_ne
     assert replacement.index(pip_uninstall) < replacement.index(pip_install)
     assert "must not be installed side by side" in replacement
     assert "does not remove `.verifysignal/`" in replacement
+
+
+def test_first_canonical_release_uses_canonical_pypi_and_pre_rename_oidc_identity() -> None:
+    release_workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
+        encoding="utf-8"
+    )
+    version_workflow = (
+        ROOT / ".github" / "workflows" / "version-bump.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "repo=verifysignal-spec, workflow=release.yml, environment=pypi" in release_workflow
+    assert "url: https://pypi.org/project/verifysignal/" in release_workflow
+    assert 'git commit -m "chore(release): bump verifysignal to ${NEXT}"' in version_workflow
