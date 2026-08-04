@@ -1,0 +1,23 @@
+# Check every text file out with LF, on every platform.
+#
+# Without this, a Windows clone with `core.autocrlf=true` rewrites `.py`, `.md`, `.yaml` and `.json`
+# to CRLF. That matters here because this CLI hashes text: managed integration files are compared by
+# byte hash to decide whether the user edited them, and workspace artifacts are fingerprinted the
+# same way. A CRLF checkout made both read as "changed" on a machine that had changed nothing.
+#
+# It also keeps `scripts/install.sh` usable: that file is piped straight into `sh` from the landing
+# page, and `sh` chokes on a CRLF shebang line.
+#
+# The CLI pins its own writes to LF separately (workspace/textio.py), because it writes into trees it
+# did not check out. The two are complementary: this fixes the checkout, that fixes everything else.
+* text=auto eol=lf
+
+# Binary payloads git must never touch.
+*.png binary
+*.jpg binary
+*.gif binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.tar binary
+*.whl binary
