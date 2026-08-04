@@ -76,7 +76,7 @@
 - Isolated install: distribution metadata is `verifysignal`; `verifysignal` and `verifysignal-spec` both run; `verifysignal_spec.runtime.release_signature` imports.
 - Docker: 11/11 post-rename contracts passed under the declared Playwright/Python toolchain.
 - Compatibility inventory: all four frozen-inventory assertions passed, including the exact 47 schema IDs.
-- T027 is only partially prepared: the branch and draft PR can exist before the rename, but 0.23.1 publication and old-publisher retirement remain manual post-merge gates.
+- T027 is partially prepared in draft PR #25: branch/PR publication is complete, but 0.23.1 verification and old-publisher retirement remain manual post-merge gates.
 - T028 remains manual: re-check the old PyPI project after all canonical releases complete, then freeze it without deleting or yanking artifacts.
 
 ## Dependencies
