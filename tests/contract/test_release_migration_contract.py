@@ -42,6 +42,7 @@ def test_migration_notice_freezes_technical_compatibility_identifiers() -> None:
 
 def test_migration_notice_replaces_the_old_distribution_before_installing_the_new_one() -> None:
     migration = MIGRATION.read_text(encoding="utf-8")
+    replacement = migration.split("## Moving an existing installation", 1)[1]
 
     uv_uninstall = "uv tool uninstall verifysignal-spec"
     uv_install = "uv tool install verifysignal"
@@ -49,9 +50,9 @@ def test_migration_notice_replaces_the_old_distribution_before_installing_the_ne
     pip_install = "python -m pip install verifysignal"
 
     for command in (uv_uninstall, uv_install, pip_uninstall, pip_install):
-        assert command in migration
+        assert command in replacement
 
-    assert migration.index(uv_uninstall) < migration.index(uv_install)
-    assert migration.index(pip_uninstall) < migration.index(pip_install)
-    assert "must not be installed side by side" in migration
-    assert "does not remove `.verifysignal/`" in migration
+    assert replacement.index(uv_uninstall) < replacement.index(uv_install)
+    assert replacement.index(pip_uninstall) < replacement.index(pip_install)
+    assert "must not be installed side by side" in replacement
+    assert "does not remove `.verifysignal/`" in replacement
