@@ -8,6 +8,7 @@ import pytest
 from verifysignal_spec.repos import (
     CORE_DEV_SCRIPT,
     CORE_EXECUTABLE_NAMES,
+    is_core_executable_name,
     SIBLING_IDENTITY,
     ancestor_core_candidates,
     find_repo_root,
@@ -134,6 +135,29 @@ def test_ancestor_walk_still_accepts_a_bare_executable(tmp_path: Path) -> None:
     binary.write_text("#!/bin/sh\n", encoding="utf-8")
     # A binary IS identified by its name; dropping this would break "a runtime next to your project".
     assert binary in ancestor_core_candidates(project)
+
+
+def test_core_executable_names_cover_the_windows_forms(monkeypatch) -> None:
+    # On POSIX an executable carries no extension, so an exact match is the whole rule.
+    assert is_core_executable_name("verifysignal")
+    assert is_core_executable_name("verifysignal-core")
+    assert not is_core_executable_name("verifysignal.exe")
+
+    # On Windows the same runtime is `verifysignal.exe` (pip's console script) or
+    # `verifysignal-core.cmd` (an npm shim). The exact-name match found NEITHER, so a Core sitting
+    # next to the project was invisible there.
+    monkeypatch.setenv("PATHEXT", ".COM;.EXE;.BAT;.CMD")
+    assert is_core_executable_name("verifysignal.exe", os_name="nt")
+    assert is_core_executable_name("verifysignal-core.cmd", os_name="nt")
+    # PATHEXT is case-insensitive on Windows, and npm shims are routinely written `.CMD`.
+    assert is_core_executable_name("verifysignal-core.CMD", os_name="nt")
+
+    # A suffix PATHEXT does not list is not executable, so it is not a runtime either. `.ps1` is the
+    # one that matters: npm ships one next to every shim and it cannot be launched directly.
+    assert not is_core_executable_name("verifysignal.ps1", os_name="nt")
+    assert not is_core_executable_name("verifysignal.txt", os_name="nt")
+    # A different stem is not a Core runtime whatever its suffix.
+    assert not is_core_executable_name("something.exe", os_name="nt")
 
 
 def test_ancestor_walk_ignores_unrelated_directories(tmp_path: Path) -> None:

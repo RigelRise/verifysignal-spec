@@ -119,6 +119,40 @@ def resolve_sibling_repo(role: Role, from_repo_root: Path | None = None) -> Path
 #: identified by its name — this is the same lookup ``shutil.which`` performs, one level out.
 CORE_EXECUTABLE_NAMES = ("verifysignal", "verifysignal-core")
 
+#: Fallback for the rare Windows install with no PATHEXT set. ``shutil.which`` uses the same list.
+_DEFAULT_PATHEXT = ".COM;.EXE;.BAT;.CMD"
+
+
+def is_core_executable_name(name: str, *, os_name: str | None = None) -> bool:
+    """Does this file name publish a Core runtime?
+
+    On POSIX an executable carries no extension, so an exact match is the whole rule. On Windows the
+    same binary is ``verifysignal.exe`` (the console script pip generates) or
+    ``verifysignal-core.cmd`` (an npm shim), and a name without a PATHEXT suffix is not executable at
+    all — so the exact-name match found nothing there, and a sibling Core checkout was invisible.
+
+    Matching against PATHEXT rather than a hardcoded suffix list keeps this in step with what the
+    host will actually run, which is the same rule ``shutil.which`` applies.
+
+    ``os_name`` defaults to the host's and is injectable so the Windows behaviour is testable from a
+    POSIX host, the same seam ``normalize_platform(system=, machine=)`` already uses.
+    """
+
+    if name in CORE_EXECUTABLE_NAMES:
+        return True
+    if (os_name or os.name) != "nt":
+        return False
+
+    stem, separator, suffix = name.rpartition(".")
+    if not separator or stem not in CORE_EXECUTABLE_NAMES:
+        return False
+    executable_suffixes = {
+        entry.strip().upper()
+        for entry in (os.environ.get("PATHEXT") or _DEFAULT_PATHEXT).split(";")
+        if entry.strip()
+    }
+    return f".{suffix}".upper() in executable_suffixes
+
 #: The npm script the adapter invokes for a directory-shaped Core command (see docs/installation.md:
 #: "When the value points to a directory with package.json, VerifySignal runs npm ... verifysignal:dev").
 CORE_DEV_SCRIPT = "verifysignal:dev"
@@ -176,7 +210,7 @@ def ancestor_core_candidates(project: Path) -> list[Path]:
             if candidate.is_dir():
                 if _is_core_dev_checkout(resolved):
                     found.append(resolved)
-            elif candidate.name in CORE_EXECUTABLE_NAMES:
+            elif is_core_executable_name(candidate.name):
                 found.append(resolved)
     return found
 

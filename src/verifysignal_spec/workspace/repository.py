@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import json
-import os
 import hashlib
 import subprocess
-import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -13,6 +11,7 @@ from verifysignal_spec import __version__ as SPEC_VERSION
 
 from . import layout
 from ..process import run_text
+from .textio import atomic_write_text_lf
 from .models import (
     ArtifactCapabilityPolicy,
     ArtifactCapabilityStamp,
@@ -47,17 +46,9 @@ def load_document(path: Path, default: Any | None = None) -> Any:
 
 
 def save_document(path: Path, data: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    serialized = json.dumps(data, indent=2, sort_keys=False) + "\n"
-    fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent))
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(serialized)
-        Path(tmp).replace(path)
-    finally:
-        tmp_path = Path(tmp)
-        if tmp_path.exists():
-            tmp_path.unlink()
+    # LF regardless of host: artifact_fingerprints below hashes these files' BYTES, so a CRLF
+    # translation on Windows would make the same workspace fingerprint differently there.
+    atomic_write_text_lf(path, json.dumps(data, indent=2, sort_keys=False) + "\n")
 
 
 def _named_outputs_path(project: Path) -> Path:
