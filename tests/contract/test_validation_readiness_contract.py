@@ -137,7 +137,7 @@ class ValidationReadinessContractTests(CliTestCase):
         self.assertEqual(result["coreReadiness"]["status"], "incompatible")
         self.assertEqual(result["coreReadiness"]["incompatibleOperations"][0]["operationName"], "run")
         self.assertEqual(result["coreReadiness"]["incompatibleOperations"][0]["actualSchema"], "verifysignal.run/v2")
-        self.assertIn("Upgrade VerifySignal Core", result["coreReadiness"]["recoveryAction"])
+        self.assertIn("Upgrade VerifySignal Runtime", result["coreReadiness"]["recoveryAction"])
 
     def test_malformed_registry_returns_migration_plan(self) -> None:
         create_registry_missing_record_path(self.project, "login")
