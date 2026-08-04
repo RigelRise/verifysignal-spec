@@ -38,3 +38,20 @@ def test_migration_notice_freezes_technical_compatibility_identifiers() -> None:
         "`/verifysignal-specify`",
     ):
         assert preserved_identity in migration
+
+
+def test_migration_notice_replaces_the_old_distribution_before_installing_the_new_one() -> None:
+    migration = MIGRATION.read_text(encoding="utf-8")
+
+    uv_uninstall = "uv tool uninstall verifysignal-spec"
+    uv_install = "uv tool install verifysignal"
+    pip_uninstall = "python -m pip uninstall verifysignal-spec"
+    pip_install = "python -m pip install verifysignal"
+
+    for command in (uv_uninstall, uv_install, pip_uninstall, pip_install):
+        assert command in migration
+
+    assert migration.index(uv_uninstall) < migration.index(uv_install)
+    assert migration.index(pip_uninstall) < migration.index(pip_install)
+    assert "must not be installed side by side" in migration
+    assert "does not remove `.verifysignal/`" in migration
