@@ -7,6 +7,7 @@ from typing import Any
 from verifysignal_spec.workspace import layout
 from verifysignal_spec.workspace.models import AgentIntegrationState, ManagedFileRecord
 from verifysignal_spec.workspace.repository import load_document, now_iso, save_document
+from verifysignal_spec.workspace.textio import write_text_lf
 
 from .base import RenderedFile
 
@@ -78,8 +79,10 @@ def install_rendered_files(project: Path, key: str, display_name: str, invoke_st
                 # User-owned existing file. Preserve by default.
                 records.append(ManagedFileRecord(path=item.path, sha256=current_hash, source=item.source, kind=item.kind))
                 continue
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(item.content, encoding="utf-8")
+        # LF, because content_hash above was taken from the LF string and the next run compares it
+        # against these bytes. A CRLF translation makes every managed file read as user-modified
+        # forever: never refreshed, never removed on uninstall.
+        write_text_lf(target, item.content)
         records.append(ManagedFileRecord(path=item.path, sha256=content_hash, source=item.source, kind=item.kind))
     state = AgentIntegrationState(
         key=key,

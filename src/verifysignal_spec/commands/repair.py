@@ -5,6 +5,7 @@ from typing import Any
 
 from verifysignal_spec.core.adapter import CoreAdapter
 from verifysignal_spec.integrations.manifests import sha256_text
+from verifysignal_spec.workspace.textio import write_text_lf
 from verifysignal_spec.runtime.entitlement import api_base_url_for_runtime, valid_receipt_path
 from verifysignal_spec.runtime.resolver import ensure_core_runtime
 from verifysignal_spec.workflows.first_run import advance_guided_first_run_state
@@ -351,7 +352,9 @@ def _apply_safe_artifact_repair(project: Path, record: Any, recommendation: Any)
     if after_text == before_text:
         return None
     before = sha256_text(before_text)
-    run_path.write_text(after_text, encoding="utf-8")
+    # LF: `after` is hashed from the string, so the file has to carry those exact bytes or the
+    # reported hash does not describe the file it names.
+    write_text_lf(run_path, after_text)
     after = sha256_text(after_text)
     return {"changed": [path], "before": {path: before}, "after": {path: after}}
 
