@@ -52,13 +52,13 @@ class CodexIntegration(AgentIntegration):
 
 
 def _context(filename: str) -> str:
-    return f"""# VerifySignal Spec Agent Guidance
+    return f"""# VerifySignal Agent Guidance
 
 Use `$verifysignal-*` workflow skills for staged VerifySignal use case authoring.
 Use `verifysignal` commands from the target repository root for deterministic
 non-AI operations. Keep generated project artifacts and guidance in English.
 Use pt-BR only for conversation with the project owner when appropriate. Store
-VerifySignal Spec state in `.verifysignal/`. Do not import private VerifySignal
+VerifySignal state in `.verifysignal/`. Do not import private VerifySignal
 Core packages.
 
 Avoid sensitive files by default and ask before reading local environment files

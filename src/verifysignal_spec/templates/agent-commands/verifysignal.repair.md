@@ -38,7 +38,7 @@ Repair invalid or failed use cases through the workflow.
 - For absent planned gates, propose one of: update target data/runtime assumptions, mark the gate conditional with an explicit condition, or replan the use case.
 - Identify every use case affected by an edit to a reusable or source-only skill.
 - Require user approval before applying edits.
-- Do not write managed `.verifysignal/` artifacts directly. Persist managed artifacts through VerifySignal Spec CLI operations only.
+- Do not write managed `.verifysignal/` artifacts directly. Persist managed artifacts through VerifySignal CLI operations only.
 - Preserve original specification, plan, task history, and skill reuse relationships.
 - Never persist credential values.
 - Never print or persist raw email addresses, email unlock tokens, signed download URLs, receipt payloads, credentials, browser storage, screenshots, MCP accessibility snapshots, MCP DOM dumps, source snapshots, or private runtime contents.

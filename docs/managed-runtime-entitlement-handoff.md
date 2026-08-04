@@ -2,9 +2,10 @@
 
 ## Problem
 
-VerifySignal Spec owns the public user experience, but it is open source. If Spec
-is the only place where token validation happens, users can bypass or modify the
-checks and still try to acquire or run the private Core runtime.
+VerifySignal owns the public user experience, and its open interface is open
+source. If that interface is the only place where token validation happens,
+users can bypass or modify the checks and still try to acquire or run the
+private Runtime.
 
 The user experience must remain smooth: users should install the public
 `verifysignal` CLI and run it without manually downloading Core. Spec should guide
@@ -218,4 +219,3 @@ Recommended blocker codes:
   operations with stable JSON/readiness blockers.
 - Spec never imports private Core packages and never reads undocumented Core
   report internals.
-

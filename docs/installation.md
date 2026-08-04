@@ -1,14 +1,12 @@
 # Installation
 
-VerifySignal uses the public `verifysignal` CLI as the user-facing command.
-`verifysignal-spec` remains a backward-compatible alias for existing projects and
-generated guidance.
+VerifySignal is published as the `verifysignal` distribution and uses the public
+`verifysignal` CLI as the user-facing command. `verifysignal-spec` remains a
+backward-compatible executable alias for existing projects and generated guidance.
 
-Version 0.25.x is the final distribution line published as
-`verifysignal-spec`. Read the [distribution name migration](distribution-migration.md)
-for the canonical `verifysignal` installation path and the exact compatibility
-identifiers that remain unchanged. The commands below intentionally describe
-the still-current 0.25.x package.
+Version 0.25.x is the final distribution line published as `verifysignal-spec`.
+Read the [distribution name migration](distribution-migration.md) for the exact
+compatibility identifiers that remain unchanged.
 
 ## Install (recommended)
 
@@ -68,7 +66,7 @@ does not check Node.js, Chromium, or the MCP provider.
 Skip the bootstrap and install the package directly:
 
 ```sh
-uv tool install verifysignal-spec        # or: pipx install verifysignal-spec
+uv tool install verifysignal             # or: pipx install verifysignal
 verifysignal --version
 ```
 
@@ -101,7 +99,7 @@ Both URLs redirect to the scripts in this repository
 | `--no-modify-path` (`-NoModifyPath`) | Leave shell profiles and `PATH` untouched. |
 | `--skip-playwright-mcp` (`-SkipPlaywrightMcp`) | Do not pre-install the Playwright MCP provider. |
 
-Pass them after `--` when piping: `curl -LsSf https://verifysignal.io/install.sh | sh -s -- --version 0.22.0`.
+Pass them after `--` when piping: `curl -LsSf https://verifysignal.io/install.sh | sh -s -- --version 0.26.0`.
 
 The sections below install directly from the Git repository. Useful for the
 bleeding edge, a fork, or a commit that is not on PyPI yet.
@@ -112,13 +110,13 @@ Install a tagged release (replace `vX.Y.Z` with a real tag; the `@vX.Y.Z` forms 
 once a release has been tagged on the repository; until then use the default-branch form):
 
 ```sh
-uv tool install verifysignal-spec --from git+https://github.com/RigelRise/verifysignal-spec.git@vX.Y.Z
+uv tool install verifysignal --from git+https://github.com/RigelRise/verifysignal-spec.git@vX.Y.Z
 ```
 
 Install the latest commit from the default branch:
 
 ```sh
-uv tool install verifysignal-spec --from git+https://github.com/RigelRise/verifysignal-spec.git
+uv tool install verifysignal --from git+https://github.com/RigelRise/verifysignal-spec.git
 ```
 
 Verify:
@@ -131,13 +129,13 @@ verifysignal --help
 Upgrade:
 
 ```sh
-uv tool install verifysignal-spec --force --from git+https://github.com/RigelRise/verifysignal-spec.git@vX.Y.Z
+uv tool install verifysignal --force --from git+https://github.com/RigelRise/verifysignal-spec.git@vX.Y.Z
 ```
 
 Uninstall (the tool is registered under its package name, not the command name):
 
 ```sh
-uv tool uninstall verifysignal-spec
+uv tool uninstall verifysignal
 ```
 
 ## One-Time Usage
@@ -400,7 +398,7 @@ parent process environment is not mutated.
 To install from a checkout on disk:
 
 ```sh
-uv tool install verifysignal-spec --from /path/to/verifysignal-spec
+uv tool install verifysignal --from /path/to/verifysignal-spec
 ```
 
 For development inside this repository:

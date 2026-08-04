@@ -1,6 +1,6 @@
 # Golden Path
 
-The Golden Path is the first VerifySignal Spec experience for a new project. It
+The Golden Path is the first VerifySignal experience for a new project. It
 guides the user toward the simplest stable validation candidate on a real target
 they care about, asks them to accept or skip that recommendation, and presents
 each step with clear agent-chat stage cards.
