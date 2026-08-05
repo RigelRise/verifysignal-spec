@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import time
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -72,7 +74,18 @@ def create_stage_states(project: Path, alias: str) -> list[WorkflowStageState]:
     ]
 
 
-def state_document(project: Path, alias: str, run: WorkflowRun | None = None, current_stage: str = "understand", status: str = "paused") -> dict[str, Any]:
+def state_document(
+    project: Path,
+    alias: str,
+    run: WorkflowRun | None = None,
+    current_stage: str = "understand",
+    status: str = "paused",
+) -> dict[str, Any]:
+    if run is not None:
+        if run.useCaseAlias != alias:
+            raise ValueError("Workflow run alias does not match rendered state alias.")
+        current_stage = run.currentStage
+        status = run.status
     states = run.stageStates if run else create_stage_states(project, alias)
     documents = {
         "understanding": project_relative(project, layout.workflow_stage_document_path(project, alias, "understand")),
@@ -85,31 +98,51 @@ def state_document(project: Path, alias: str, run: WorkflowRun | None = None, cu
         "schemaVersion": WORKFLOW_STATE_SCHEMA,
         "useCaseAlias": alias,
         "workflowId": WORKFLOW_ID,
+        **({"runId": run.runId} if run else {}),
         "currentStage": current_stage,
         "status": status,
         "documents": documents,
         "stageStates": [item.to_dict() for item in states],
         "nextCommand": run.nextCommand if run else f"/verifysignal-{current_stage} {alias}",
-        "updatedAt": now_iso(),
+        **({"resumeCommand": run.resumeCommand} if run and run.resumeCommand else {}),
+        "updatedAt": run.updatedAt if run and run.updatedAt else now_iso(),
     }
 
 
-def save_workflow_state(project: Path, alias: str, data: dict[str, Any]) -> None:
+def render_workflow_state(project: Path, run: WorkflowRun) -> dict[str, Any]:
+    return state_document(
+        project,
+        run.useCaseAlias,
+        run,
+        current_stage=run.currentStage,
+        status=run.status,
+    )
+
+
+def save_workflow_state(
+    project: Path,
+    alias: str,
+    data: dict[str, Any],
+    *,
+    integration: str | None = None,
+) -> None:
     layout.ensure_path_safe_alias(alias)
     rendered = render_agent_invocations_in_value(
         data,
-        project_integration(project),
+        integration or project_integration(project),
     )
     _reject_secrets(rendered)
     save_document(layout.workflow_state_path(project, alias), rendered)
 
 
 def load_workflow_state(project: Path, alias: str) -> dict[str, Any]:
-    return load_document(layout.workflow_state_path(project, alias), default={}) or {}
+    data = load_document(layout.workflow_state_path(project, alias), default={})
+    return data if isinstance(data, dict) else {}
 
 
 def save_workflow_run(project: Path, run: WorkflowRun) -> None:
-    run.updatedAt = now_iso()
+    layout.ensure_path_safe_run_id(run.runId)
+    run.updatedAt = _next_workflow_update_iso(project)
     rendered = render_agent_invocations_in_value(
         run.to_dict(),
         run.integration or project_integration(project),
@@ -119,12 +152,16 @@ def save_workflow_run(project: Path, run: WorkflowRun) -> None:
 
 
 def load_workflow_run(project: Path, run_id: str) -> WorkflowRun:
+    run_id = layout.ensure_path_safe_run_id(run_id)
     data = load_document(layout.workflow_run_path(project, run_id))
     if not data:
         raise FileNotFoundError(f"Workflow run not found: {run_id}")
     if data.get("schemaVersion") and data.get("schemaVersion") != WORKFLOW_RUN_SCHEMA:
         raise ValueError(f"Unsupported workflow run schema: {data.get('schemaVersion')}")
-    return WorkflowRun.from_dict(data)
+    run = WorkflowRun.from_dict(data)
+    if run.runId != run_id:
+        raise ValueError("Workflow run document identity does not match its path.")
+    return run
 
 
 def list_workflow_runs(project: Path) -> list[WorkflowRun]:
@@ -140,6 +177,88 @@ def list_workflow_runs(project: Path) -> list[WorkflowRun]:
     return runs
 
 
+def load_active_workflow_run(project: Path, alias: str) -> WorkflowRun | None:
+    record = load_use_case(project, alias)
+    workflow = record.workflow if isinstance(record.workflow, dict) else {}
+    run_id = workflow.get("lastWorkflowRunId")
+    matching = _matching_workflow_runs(project, alias)
+    if not matching:
+        return None
+    referenced = next(
+        (run for run in matching if run.runId == str(run_id)),
+        None,
+    )
+    newest_stamp = max(_workflow_run_stamp(run) for run in matching)
+    newest = [
+        run for run in matching if _workflow_run_stamp(run) == newest_stamp
+    ]
+    if referenced is not None and _workflow_run_stamp(referenced) == newest_stamp:
+        return referenced
+    if len(newest) != 1:
+        raise ValueError(
+            "Workflow authority is ambiguous: multiple matching runs have the "
+            "same newest update timestamp."
+        )
+    return newest[0]
+
+
+def _matching_workflow_runs(
+    project: Path,
+    alias: str,
+) -> list[WorkflowRun]:
+    runs: list[WorkflowRun] = []
+    directory = layout.workflow_runs_dir(project)
+    if not directory.exists():
+        return runs
+    for path in directory.glob("*.yaml"):
+        try:
+            run = load_workflow_run(project, path.stem)
+        except (FileNotFoundError, TypeError, ValueError):
+            continue
+        if run.useCaseAlias == alias:
+            runs.append(run)
+    return runs
+
+
+def _workflow_run_stamp(run: WorkflowRun) -> str:
+    return run.updatedAt or run.startedAt or ""
+
+
+def _next_workflow_update_iso(project: Path) -> str:
+    candidate = time.time_ns()
+    directory = layout.workflow_runs_dir(project)
+    if directory.exists():
+        for path in directory.glob("*.yaml"):
+            data = load_document(path, default={})
+            if not isinstance(data, dict):
+                continue
+            persisted = _workflow_iso_to_ns(data.get("updatedAt"))
+            if persisted is not None:
+                candidate = max(candidate, persisted + 1)
+    return _workflow_ns_to_iso(candidate)
+
+
+def _workflow_iso_to_ns(value: Any) -> int | None:
+    text = str(value or "").strip()
+    if not text.endswith("Z"):
+        return None
+    body = text[:-1]
+    whole, separator, fraction = body.partition(".")
+    try:
+        seconds = int(datetime.fromisoformat(whole).replace(tzinfo=UTC).timestamp())
+    except ValueError:
+        return None
+    digits = "".join(character for character in fraction if character.isdigit())
+    nanoseconds = int((digits + "000000000")[:9]) if separator else 0
+    return seconds * 1_000_000_000 + nanoseconds
+
+
+def _workflow_ns_to_iso(value: int) -> str:
+    seconds, nanoseconds = divmod(value, 1_000_000_000)
+    prefix = datetime.fromtimestamp(seconds, UTC).strftime("%Y-%m-%dT%H:%M:%S")
+    return f"{prefix}.{nanoseconds:09d}Z"
+
+
 def create_or_load_use_case(project: Path, alias: str, goal: str) -> UseCaseRecord:
     try:
         return load_use_case(project, alias)
@@ -153,15 +272,90 @@ def create_or_load_use_case(project: Path, alias: str, goal: str) -> UseCaseReco
         return record
 
 
-def link_workflow_reference(project: Path, alias: str, run: WorkflowRun, status: str = "paused") -> UseCaseRecord:
+def workflow_reference_document(
+    project: Path,
+    alias: str,
+    run: WorkflowRun,
+) -> dict[str, Any]:
+    if run.useCaseAlias != alias:
+        raise ValueError("Workflow run alias does not match projection alias.")
+    record = load_use_case(project, alias)
+    workflow = dict(record.workflow or {})
     reference = UseCaseWorkflowReference(
         workflowDir=workflow_dir_rel(project, alias),
         currentStage=run.currentStage,
-        workflowStatus=status,
+        workflowStatus=run.status,
         lastWorkflowRunId=run.runId,
-        lastUpdatedAt=now_iso(),
+        lastUpdatedAt=run.updatedAt or now_iso(),
     )
-    return update_use_case_workflow_reference(project, alias, reference.to_dict())
+    workflow.update(reference.to_dict())
+    return workflow
+
+
+def link_workflow_reference(
+    project: Path,
+    alias: str,
+    run: WorkflowRun,
+    status: str | None = None,
+) -> UseCaseRecord:
+    if status is not None and status != run.status:
+        raise ValueError("Workflow reference status must match the authoritative run.")
+    return update_use_case_workflow_reference(
+        project,
+        alias,
+        workflow_reference_document(project, alias, run),
+    )
+
+
+def workflow_projection_differences(
+    project: Path,
+    run: WorkflowRun,
+) -> list[str]:
+    record = load_use_case(project, run.useCaseAlias)
+    workflow = record.workflow if isinstance(record.workflow, dict) else {}
+    state = load_workflow_state(project, run.useCaseAlias)
+    expected_states = [item.to_dict() for item in run.stageStates]
+    differences: list[str] = []
+    expected_reference = {
+        "lastWorkflowRunId": run.runId,
+        "currentStage": run.currentStage,
+        "workflowStatus": run.status,
+    }
+    for key, expected in expected_reference.items():
+        if workflow.get(key) != expected:
+            differences.append(f"workflow.{key}")
+    expected_state = {
+        "runId": run.runId,
+        "currentStage": run.currentStage,
+        "status": run.status,
+        "stageStates": expected_states,
+    }
+    for key, expected in expected_state.items():
+        if state.get(key) != expected:
+            differences.append(f"state.{key}")
+    return differences
+
+
+def save_workflow_projections(
+    project: Path,
+    run: WorkflowRun,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    record = link_workflow_reference(
+        project,
+        run.useCaseAlias,
+        run,
+        run.status,
+    )
+    save_workflow_state(
+        project,
+        run.useCaseAlias,
+        render_workflow_state(project, run),
+        integration=run.integration,
+    )
+    return dict(record.workflow or {}), load_workflow_state(
+        project,
+        run.useCaseAlias,
+    )
 
 
 def import_legacy_use_case(project: Path, alias: str, run_id: str | None = None) -> dict[str, Any]:
@@ -179,8 +373,7 @@ def import_legacy_use_case(project: Path, alias: str, run_id: str | None = None)
         nextCommand=f"/verifysignal-{('validate' if record.runRequest and record.mainSkill else 'plan')} {alias}",
     )
     save_workflow_run(project, run)
-    save_workflow_state(project, alias, state_document(project, alias, run, run.currentStage, run.status))
-    link_workflow_reference(project, alias, run, run.status)
+    save_workflow_projections(project, run)
     return {"alias": alias, "runId": run.runId, "currentStage": run.currentStage}
 
 
