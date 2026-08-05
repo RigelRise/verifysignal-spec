@@ -2,8 +2,9 @@ from __future__ import annotations
 
 BROWSER_TARGET_BEFORE_PLANNING = "Confirm the browser target environment before planning executable artifacts"
 RUNTIME_READINESS_BOUNDARY = (
-    "workflow check validate reports structural readiness only; runtime readiness separately verifies "
-    "target resolution, target reachability, required runtime prerequisites, entitlement, and Core authoring readiness"
+    "workflow check validate reports structural readiness only; runtime readiness separately reports command compatibility "
+    "and trust-material inputs, then proves protected-operation readiness only after the exact public Core authoring-check "
+    "schema passes; compatible inputs alone are never protected-operation readiness"
 )
 CONFIRMED_REPAIR_BOUNDARY = "Selector, flow, data, and coverage changes require confirmation"
 # SAFE_MECHANICAL_REPAIR_GUIDANCE was deleted here, not rewritten. It claimed selector, wait,

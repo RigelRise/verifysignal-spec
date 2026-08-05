@@ -147,6 +147,8 @@ def _entitlement_free_discover_from_cache(
     return ManagedRuntimeReadinessResult(
         status="ready",
         source="managed-cache",
+        commandCompatibilityStatus="passed",
+        trustMaterialStatus="ready",
         runtimeCommand=entry.runtimeCommand,
         runtimeVersion=compatibility.verifysignalVersion or entry.coreVersion,
         contractVersion=compatibility.contractVersion or entry.contractVersion,
@@ -239,6 +241,8 @@ def ensure_core_runtime(
             return ManagedRuntimeReadinessResult(
                 status="ready",
                 source=source,  # type: ignore[arg-type]
+                commandCompatibilityStatus="passed",
+                trustMaterialStatus="ready",
                 runtimeCommand=command,
                 runtimeVersion=attempt.runtimeVersion,
                 contractVersion=attempt.contractVersion or PUBLIC_CONTRACT_VERSION,
@@ -399,6 +403,8 @@ def ensure_core_runtime(
                 return ManagedRuntimeReadinessResult(
                     status="ready",
                     source="managed-cache",
+                    commandCompatibilityStatus="passed",
+                    trustMaterialStatus="ready",
                     runtimeCommand=entry.runtimeCommand,
                     runtimeVersion=entry.coreVersion,
                     contractVersion=attempt.contractVersion or entry.contractVersion,
@@ -511,6 +517,8 @@ def ensure_core_runtime(
         return ManagedRuntimeReadinessResult(
             status="ready",
             source="managed-download",
+            commandCompatibilityStatus="passed",
+            trustMaterialStatus="ready",
             runtimeCommand=runtime_command,
             runtimeVersion=runtime_core_version,
             contractVersion=attempt.contractVersion or PUBLIC_CONTRACT_VERSION,

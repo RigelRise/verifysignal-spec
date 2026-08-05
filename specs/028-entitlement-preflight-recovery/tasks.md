@@ -91,14 +91,14 @@ the exact layered readiness and normalized outcome defined by the contracts.
 
 ### Implementation for User Story 2
 
-- [ ] T024 [US2] Implement the redacted operation-aware normalized outcome model and exact schema table in `src/verifysignal_spec/core/outcomes.py`
-- [ ] T025 [US2] Route top-level error codes first, retain findings fallback, and centralize safe blocker mapping in `src/verifysignal_spec/core/contracts.py`
-- [ ] T026 [US2] Add readiness component fields with conservative legacy defaults in `src/verifysignal_spec/workspace/models.py` and `src/verifysignal_spec/workflows/models.py`
-- [ ] T027 [US2] Populate command, trust, protected, and scope states during runtime resolution in `src/verifysignal_spec/runtime/resolver.py`
-- [ ] T028 [US2] Normalize authoring-check before readiness/persistence and block unknown schemas in `src/verifysignal_spec/commands/validate.py`
-- [ ] T029 [US2] Replace onboarding language that conflates trust inputs with protected readiness in `src/verifysignal_spec/workflows/core_setup.py` and `src/verifysignal_spec/templates/agent_guidance.py`
-- [ ] T030 [US2] Run US2 tests to green and retain red/green SHAs using `tests/integration/test_protected_readiness_scope.py`
-- [ ] T031 [US2] Run adjacent adapter, entitlement, readiness, and public-boundary suites in `tests/unit/test_core_adapter.py`, `tests/unit/test_runtime_readiness.py`, and `tests/contract/test_core_public_boundary_contract.py`
+- [X] T024 [US2] Implement the redacted operation-aware normalized outcome model and exact schema table in `src/verifysignal_spec/core/outcomes.py`
+- [X] T025 [US2] Route top-level error codes first, retain findings fallback, and centralize safe blocker mapping in `src/verifysignal_spec/core/contracts.py`
+- [X] T026 [US2] Add readiness component fields with conservative legacy defaults in `src/verifysignal_spec/workspace/models.py` and `src/verifysignal_spec/workflows/models.py`
+- [X] T027 [US2] Populate command, trust, protected, and scope states during runtime resolution in `src/verifysignal_spec/runtime/resolver.py`
+- [X] T028 [US2] Normalize authoring-check before readiness/persistence and block unknown schemas in `src/verifysignal_spec/commands/validate.py`
+- [X] T029 [US2] Replace onboarding language that conflates trust inputs with protected readiness in `src/verifysignal_spec/workflows/core_setup.py` and `src/verifysignal_spec/templates/agent_guidance.py`
+- [X] T030 [US2] Run US2 tests to green and retain red/green SHAs using `tests/integration/test_protected_readiness_scope.py`
+- [X] T031 [US2] Run adjacent adapter, entitlement, readiness, and public-boundary suites in `tests/unit/test_core_adapter.py`, `tests/unit/test_runtime_readiness.py`, and `tests/contract/test_core_public_boundary_contract.py`
 
 **Checkpoint**: A protected pass is distinguishable from compatible inputs, and
 no Core error is eligible for run persistence.

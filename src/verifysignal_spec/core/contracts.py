@@ -53,6 +53,8 @@ CORE_ENTITLEMENT_ERROR_MAP = {
     "entitlement.subject-invalid": "entitlement.rejected",
 }
 
+GENERIC_CORE_ERROR_BLOCKER = "core.error"
+
 
 @dataclass(slots=True)
 class CompatibilityResult:
@@ -238,14 +240,46 @@ def normalize_status(data: dict[str, Any]) -> str:
     return "error"
 
 
-def core_entitlement_blocker_code(data: dict[str, Any]) -> str | None:
-    findings = data.get("data", {}).get("findings", [])
+def core_public_error_code(data: dict[str, Any]) -> str | None:
+    """Return the authoritative public Core error code, when one is usable.
+
+    Current ``verifysignal.error/v1`` envelopes publish ``error.code``. Older
+    envelopes exposed entitlement failures only through findings. A present
+    top-level code is authoritative even when it is not known to this Spec
+    version; consulting findings in that case would silently replace Core's
+    stated error with a different legacy finding.
+    """
+
+    error = data.get("error")
+    if isinstance(error, dict):
+        top_level = error.get("code")
+        if isinstance(top_level, str) and top_level.strip():
+            return top_level.strip()
+
+    payload = data.get("data")
+    findings = payload.get("findings", []) if isinstance(payload, dict) else []
     if not isinstance(findings, list):
         return None
     for finding in findings:
         if not isinstance(finding, dict):
             continue
-        code = str(finding.get("code") or "")
+        value = finding.get("code")
+        code = value.strip() if isinstance(value, str) else ""
         if code in CORE_ENTITLEMENT_ERROR_MAP:
-            return CORE_ENTITLEMENT_ERROR_MAP[code]
+            return code
     return None
+
+
+def core_blocker_code(error_code: str | None) -> str:
+    """Map a public Core error code to a stable, safe Spec blocker."""
+
+    if error_code:
+        return CORE_ENTITLEMENT_ERROR_MAP.get(error_code, GENERIC_CORE_ERROR_BLOCKER)
+    return GENERIC_CORE_ERROR_BLOCKER
+
+
+def core_entitlement_blocker_code(data: dict[str, Any]) -> str | None:
+    """Compatibility helper for callers interested only in entitlement errors."""
+
+    code = core_public_error_code(data)
+    return CORE_ENTITLEMENT_ERROR_MAP.get(code) if code else None

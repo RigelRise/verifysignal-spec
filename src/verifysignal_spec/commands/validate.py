@@ -9,9 +9,9 @@ from verifysignal_spec.commands.run_request_preparation import (
     write_prepared_run_request,
 )
 from verifysignal_spec.core.adapter import CoreAdapter
-from verifysignal_spec.core.contracts import core_entitlement_blocker_code
 from verifysignal_spec.core.errors import CoreExecutionError, CoreIncompatibleError, CoreMissingError
 from verifysignal_spec.core.executable_contract import project_core_contract
+from verifysignal_spec.core.outcomes import NormalizedCoreOutcome, normalize_core_outcome
 from verifysignal_spec.runtime.entitlement import api_base_url_for_runtime, valid_receipt_path
 from verifysignal_spec.runtime.env_file import (
     EnvironmentFileError,
@@ -20,7 +20,6 @@ from verifysignal_spec.runtime.env_file import (
     load_environment_file,
     resolve_environment_file_path,
 )
-from verifysignal_spec.runtime.models import RuntimeSetupBlocker
 from verifysignal_spec.runtime.resolver import ensure_core_runtime
 from verifysignal_spec.workflows.first_run import advance_guided_first_run_state
 from verifysignal_spec.workflows.models import WORKFLOW_VALIDATION_READINESS_SCHEMA, CoreReadiness, ReadinessBlocker, ValidationReadinessSummary
@@ -258,25 +257,30 @@ def run(
             api_base_url_for_runtime(managed_runtime, api_base_url),
         ),
     )
+    outcome = normalize_core_outcome("authoring-check", result)
+    normalized_outcome = outcome.to_dict()
     runtime_check = (
         evaluate_runtime_readiness(
             project,
             alias,
-            authoring_result=result,
+            authoring_result=normalized_outcome,
             core_contract=core_contract,
             environment_values=environment_values,
+            command_compatibility_status=managed_runtime.commandCompatibilityStatus,
+            trust_material_status=managed_runtime.trustMaterialStatus,
         )
         if runtime_readiness
         else None
     )
     wrapped = {
         "alias": alias,
-        "status": result.get("status", "error"),
+        "status": outcome.status,
         "selectedMainSkill": _selected_main_skill(record.mainSkill, main_skill),
         "skillSelectionStatus": "matched",
         "authoringCoherence": coherence.to_dict(),
         "managedRuntimeReadiness": managed_runtime.to_dict(),
-        "core": result,
+        "core": result if outcome.kind == "success" else normalized_outcome,
+        "coreOutcome": normalized_outcome,
     }
     if environment_warnings:
         wrapped["credentialWarnings"] = environment_warnings
@@ -288,15 +292,6 @@ def run(
     named_outputs = _named_output_summary(record)
     if named_outputs:
         wrapped["namedOutputs"] = named_outputs
-    entitlement_blocker_code = core_entitlement_blocker_code(result)
-    if entitlement_blocker_code:
-        blocker = RuntimeSetupBlocker(
-            code=entitlement_blocker_code,
-            message="VerifySignal Core rejected the entitlement receipt for this protected operation.",
-            recoveryCommand="Run `verifysignal init --here --integration codex` to unlock or refresh runtime entitlement.",
-        )
-        wrapped["status"] = "blocked"
-        wrapped["blockers"] = [ReadinessBlocker.from_dict(blocker.to_dict()).to_dict()]
     authored_evidence_status = _authored_evidence_coverage_status(coherence.to_dict().get("gateCoverage", []))
     runtime_status = "not-run"
     if runtime_check:
@@ -312,6 +307,10 @@ def run(
                 ).to_dict()
                 for finding in runtime_check.findingIds
             ]
+    if outcome.kind != "success":
+        blocker = _normalized_outcome_blocker(outcome, alias)
+        wrapped["status"] = "blocked"
+        wrapped["blockers"] = [blocker.to_dict()]
     summary = ValidationReadinessSummary(
         alias=alias,
         status="blocked" if wrapped.get("status") == "blocked" else ("passed" if wrapped.get("status") == "passed" else "failed"),
@@ -350,6 +349,33 @@ def run(
         wrapped["guidedFirstRunState"] = guided_stage
     _persist_readiness_snapshot(project, alias, wrapped)
     return wrapped
+
+
+def _normalized_outcome_blocker(
+    outcome: NormalizedCoreOutcome,
+    alias: str,
+) -> ReadinessBlocker:
+    code = outcome.blockerCode or "core.error"
+    if code == "core.contract-invalid":
+        return ReadinessBlocker(
+            code=code,
+            category="compatibility",
+            message="VerifySignal Core returned a response that does not match the protected operation's public schema.",
+            recoveryCommand="Upgrade VerifySignal Core or VerifySignal Spec to compatible public CLI JSON schemas.",
+        )
+    if code.startswith("entitlement."):
+        return ReadinessBlocker(
+            code=code,
+            category="entitlement",
+            message="VerifySignal Core rejected the entitlement receipt for this protected operation.",
+            recoveryCommand="Refresh the managed runtime or request a new entitlement receipt, then rerun protected validation.",
+        )
+    return ReadinessBlocker(
+        code=code,
+        category="environment",
+        message="VerifySignal Core blocked the protected authoring check.",
+        recoveryCommand=f"verifysignal validate {alias} --runtime-readiness --json",
+    )
 
 
 def _persist_readiness_snapshot(project: Path, alias: str, result: dict[str, Any]) -> None:

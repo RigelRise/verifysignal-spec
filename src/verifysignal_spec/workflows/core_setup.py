@@ -170,8 +170,8 @@ def run_core_setup(project: Path, explicit_core_cmd: str | None = None, *, persi
                 missingOperations=[],
                 incompatibleOperations=[],
                 attempts=attempts,
-                message="VerifySignal Core is ready.",
-                nextAction="Continue with validation or run.",
+                message="VerifySignal Core command compatibility passed; protected-operation readiness has not been checked.",
+                nextAction="Run protected validation before browser execution.",
             )
         if compatibility:
             last_compatibility = compatibility
@@ -189,12 +189,15 @@ def onboarding_core_status(result: CoreSetupResult) -> dict[str, object]:
     if result.status == "ready":
         return {
             "statusMarker": "[READY]",
-            "summary": "VerifySignal Core is ready.",
+            "summary": "VerifySignal Core is ready for protected validation; browser-run readiness is not established yet.",
             "source": result.source,
             "coreCommand": result.coreCommand,
             "selectedCandidate": selected,
-            "nextAction": "Continue with validation or run.",
-            "guideText": "VerifySignal Core is ready. Full validation and browser execution can use the selected Core command.",
+            "nextAction": "Run protected validation before browser execution.",
+            "guideText": (
+                "VerifySignal Core is ready for protected validation: command compatibility passed, but setup alone does not prove "
+                "that the protected operation accepts the available trust material. Run protected validation before browser execution."
+            ),
         }
     if result.status == "missing":
         return {

@@ -786,13 +786,33 @@ def load_capability_policy(project: Path, capability: str) -> ArtifactCapability
 
 def create_readiness_snapshot_from_validation(project: Path, alias: str, result: dict[str, Any]) -> ReadinessSnapshot:
     record = load_use_case(project, alias)
-    status = "ready" if result.get("status") == "passed" else "blocked"
     managed = result.get("managedRuntimeReadiness") if isinstance(result.get("managedRuntimeReadiness"), dict) else {}
     runtime = result.get("runtimeReadiness") if isinstance(result.get("runtimeReadiness"), dict) else {}
+    outcome = result.get("coreOutcome") if isinstance(result.get("coreOutcome"), dict) else {}
+    command_status = str(runtime.get("commandCompatibilityStatus") or managed.get("commandCompatibilityStatus") or "not-checked")
+    trust_status = str(runtime.get("trustMaterialStatus") or managed.get("trustMaterialStatus") or "not-checked")
+    protected_status = str(
+        runtime.get("protectedOperationStatus")
+        or ("passed" if outcome.get("kind") == "success" and outcome.get("status") == "passed" else "blocked" if outcome else "not-checked")
+    )
+    readiness_scope = str(runtime.get("readinessScope") or ("protected-operation" if outcome else "command-and-trust-inputs"))
+    status = (
+        "ready"
+        if result.get("status") == "passed"
+        and command_status == "passed"
+        and trust_status == "ready"
+        and protected_status == "passed"
+        and readiness_scope == "protected-operation"
+        else "blocked"
+    )
     snapshot = ReadinessSnapshot(
         alias=alias,
         status=status,
         checkedAt=now_iso(),
+        commandCompatibilityStatus=command_status,  # type: ignore[arg-type]
+        trustMaterialStatus=trust_status,  # type: ignore[arg-type]
+        protectedOperationStatus=protected_status,  # type: ignore[arg-type]
+        readinessScope=readiness_scope,  # type: ignore[arg-type]
         artifactFingerprints=artifact_fingerprints(project, record),
         specVersion=SPEC_VERSION,
         artifactContractVersion=record.schemaVersion,

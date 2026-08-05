@@ -586,6 +586,10 @@ class ReadinessSnapshot:
     alias: str
     status: ReadinessCurrentStatus
     checkedAt: str
+    commandCompatibilityStatus: Literal["not-checked", "passed", "blocked"] = "not-checked"
+    trustMaterialStatus: Literal["not-checked", "ready", "blocked"] = "not-checked"
+    protectedOperationStatus: Literal["not-checked", "passed", "blocked"] = "not-checked"
+    readinessScope: Literal["command-and-trust-inputs", "protected-operation"] = "command-and-trust-inputs"
     artifactFingerprints: dict[str, str] = field(default_factory=dict)
     specVersion: str | None = None
     artifactContractVersion: str | None = None
@@ -606,6 +610,10 @@ class ReadinessSnapshot:
             alias=str(data.get("alias", "")),
             status=data.get("status", "unknown"),
             checkedAt=str(data.get("checkedAt", "")),
+            commandCompatibilityStatus=data.get("commandCompatibilityStatus", "not-checked"),
+            trustMaterialStatus=data.get("trustMaterialStatus", "not-checked"),
+            protectedOperationStatus=data.get("protectedOperationStatus", "not-checked"),
+            readinessScope=data.get("readinessScope", "command-and-trust-inputs"),
             artifactFingerprints={str(k): str(v) for k, v in dict(data.get("artifactFingerprints", {})).items()},
             specVersion=data.get("specVersion"),
             artifactContractVersion=data.get("artifactContractVersion"),
