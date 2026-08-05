@@ -86,8 +86,8 @@ def implementation_payload(*, composed_main: bool = False) -> dict[str, Any]:
     }
 
 
-def create_planned_workspace(project: Path) -> None:
-    init_workspace(project)
+def create_planned_workspace(project: Path, *, core_cmd: str | None = None) -> None:
+    init_workspace(project, core_cmd=core_cmd)
     save_use_case(
         project,
         UseCaseRecord(

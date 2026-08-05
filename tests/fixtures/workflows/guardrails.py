@@ -8,8 +8,13 @@ from verifysignal_spec.workspace.models import ArtifactReference, UseCaseRecord
 from verifysignal_spec.workspace.repository import init_workspace, load_registry, save_document, save_registry, save_use_case
 
 
-def create_ready_use_case_workspace(project: Path, alias: str = "login") -> Path:
-    init_workspace(project)
+def create_ready_use_case_workspace(
+    project: Path,
+    alias: str = "login",
+    *,
+    core_cmd: str | None = None,
+) -> Path:
+    init_workspace(project, core_cmd=core_cmd)
     run_request = f"{layout.WORKSPACE_DIR}/{layout.RUN_REQUESTS_DIR}/{alias}.yaml"
     skill = f"{layout.WORKSPACE_DIR}/{layout.SKILLS_DIR}/{alias}.browser.md"
     record = UseCaseRecord(

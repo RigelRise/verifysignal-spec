@@ -15,6 +15,7 @@ from verifysignal_spec.runtime.resolver import normalize_platform
 from verifysignal_spec.runtime.resolver import ensure_core_runtime
 from verifysignal_spec.workspace.repository import load_document
 from tests.fixtures.managed_runtime import build_managed_runtime_distribution, serve_fake_entitlement_backend, write_fake_core_executable
+from tests.fixtures.workflows.entitlement_preflight_recovery import create_legacy_field_absent_workspace
 from tests.fixtures.workflows.main_skill_run_coverage import create_main_skill_coverage_workspace
 
 
@@ -254,6 +255,7 @@ def test_validate_cli_with_ancestor_sibling_core_reports_cached_entitlement(tmp_
     monkeypatch.delenv("VERIFYSIGNAL_ENTITLEMENT_RECEIPT", raising=False)
     monkeypatch.delenv("VERIFYSIGNAL_ENTITLEMENT_RECEIPT_PATH", raising=False)
     create_main_skill_coverage_workspace(project)
+    create_legacy_field_absent_workspace(project)
 
     with serve_fake_entitlement_backend() as (api_base_url, _state):
         unlocked = ensure_core_runtime(
@@ -338,8 +340,6 @@ def test_init_api_base_url_persists_for_later_validate(tmp_path, monkeypatch) ->
     monkeypatch.delenv("VERIFYSIGNAL_API_BASE_URL", raising=False)
     monkeypatch.delenv("VERIFYSIGNAL_ENTITLEMENT_RECEIPT", raising=False)
     monkeypatch.delenv("VERIFYSIGNAL_ENTITLEMENT_RECEIPT_PATH", raising=False)
-    create_main_skill_coverage_workspace(tmp_path)
-
     with serve_fake_entitlement_backend() as (api_base_url, state):
         init_code, _init_out, init_err = _cli(
             [
@@ -357,6 +357,7 @@ def test_init_api_base_url_persists_for_later_validate(tmp_path, monkeypatch) ->
         assert init_code == 0, init_err
         workspace = load_document(tmp_path / ".verifysignal" / "workspace.yaml")
         assert workspace["entitlementApiBaseUrl"] == api_base_url
+        create_main_skill_coverage_workspace(tmp_path)
 
         receipt = receipt_path()
         receipt.unlink()

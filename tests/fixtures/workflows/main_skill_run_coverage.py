@@ -22,8 +22,9 @@ def create_main_skill_coverage_workspace(
     alias: str = ALIAS,
     helper_first: bool = True,
     legacy_multi_skill_run_request: bool = False,
+    core_cmd: str | None = None,
 ) -> Path:
-    init_workspace(project)
+    init_workspace(project, core_cmd=core_cmd)
     (project / ".verifysignal/run-requests").mkdir(parents=True, exist_ok=True)
     (project / ".verifysignal/skills").mkdir(parents=True, exist_ok=True)
     (project / f".verifysignal/run-requests/{alias}.yaml").write_text(
