@@ -39,3 +39,38 @@ jobs:
           # discover the server from a second clean project.
           VERIFYSIGNAL_RUN_REAL_CLAUDE_TESTS: "1"
           VERIFYSIGNAL_PLAYWRIGHT_MCP_CACHE_DIR: ${{ runner.temp }}/verifysignal-playwright-mcp
+
+  # The Windows leg of the SAME gate. Every other job in every repo runs on ubuntu, which is why
+  # Windows was the one platform that broke: nobody had ever run it. A real user hit
+  # `platform.unsupported` on `verifysignal init` after the landing page began advertising this
+  # installer.
+  #
+  # This proves the CUSTOMER path, not the contributor one: the advertised PowerShell installer, the
+  # CLI it produces, and the Playwright MCP provider setup. It deliberately does NOT run pytest --
+  # the suite's fixtures are shebang scripts, and contributing still requires mac or Linux.
+  #
+  # windows-latest bills at 2x on private repos; this repo is public, so the trade is cheap here.
+  windows-install:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      # `-From` points at THIS checkout, so the code under review is what gets installed. Without it
+      # the job would prove that PyPI works, not that the pull request does.
+      - name: Bootstrap through the advertised Windows installer
+        run: pwsh -File scripts/install.ps1 -From "$env:GITHUB_WORKSPACE"
+
+      # A new process, so this also proves the installer put the CLI somewhere PATH can find.
+      - name: The installed CLI runs
+        run: verifysignal --version
+
+      # First exercise anywhere of the `.cmd` branch in _playwright_mcp_executable and of the
+      # `sys.platform == "win32"` bypass of the os.access(X_OK) check — both were dead code until now.
+      - name: The pinned Playwright MCP provider installs and handshakes on Windows
+        run: verifysignal integration setup-playwright-mcp --json
+        env:
+          VERIFYSIGNAL_PLAYWRIGHT_MCP_CACHE_DIR: ${{ runner.temp }}\verifysignal-playwright-mcp
