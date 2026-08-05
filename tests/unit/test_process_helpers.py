@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from verifysignal_spec.process import join_command, resolve_tool, run_text, split_command
+from verifysignal_spec.process import join_command, launch_argv, resolve_tool, run_text, split_command
 
 SRC = Path(__file__).resolve().parents[2] / "src" / "verifysignal_spec"
 
@@ -79,3 +79,43 @@ def test_resolve_tool_wraps_a_windows_shim_in_cmd(monkeypatch) -> None:
 
     monkeypatch.setattr("verifysignal_spec.process.shutil.which", lambda name: None)
     assert resolve_tool("npm") is None
+
+
+def test_launch_argv_runs_our_windows_shim_through_node_not_cmd(tmp_path: Path) -> None:
+    # The Windows Core package declares bin/verifysignal-core.cmd as its entry point, and
+    # CreateProcess cannot execute a batch file from an argv vector (WinError 193).
+    package = tmp_path / "verifysignal-core"
+    (package / "bin").mkdir(parents=True)
+    (package / "runtime").mkdir()
+    shim = package / "bin" / "verifysignal-core.cmd"
+    shim.write_text("@echo off\n", encoding="utf-8")
+    bundle = package / "runtime" / "verifysignal-core.js"
+    bundle.write_text("// bundle\n", encoding="utf-8")
+
+    argv = launch_argv(str(shim), is_windows=True)
+
+    # node + the bundle is ONE quoting layer. Going through `cmd.exe /c` would add a second one on
+    # top of list2cmdline, which quotes on spaces only -- so an argument containing & ^ or | would be
+    # interpreted by cmd.exe. node is already required: the POSIX launcher is itself `exec node`.
+    assert argv[0].endswith("node") or argv[0] == "node"
+    assert argv[1] == str(bundle)
+    assert "cmd.exe" not in " ".join(argv).lower()
+
+
+def test_launch_argv_falls_back_to_cmd_for_a_shim_we_did_not_write(tmp_path: Path) -> None:
+    foreign = tmp_path / "some-tool.cmd"
+    foreign.write_text("@echo off\n", encoding="utf-8")
+
+    argv = launch_argv(str(foreign), is_windows=True)
+
+    assert argv[:4] == [argv[0], "/d", "/s", "/c"]
+    assert argv[0].lower().endswith("cmd.exe")
+    assert argv[4] == str(foreign)
+
+
+def test_launch_argv_is_a_no_op_on_posix(tmp_path: Path) -> None:
+    executable = tmp_path / "verifysignal-core"
+    executable.write_text("#!/bin/sh\n", encoding="utf-8")
+    assert launch_argv(str(executable), is_windows=False) == [str(executable)]
+    # And a plain executable needs no wrapper even on Windows.
+    assert launch_argv(r"C:\tools\core.exe", is_windows=True) == [r"C:\tools\core.exe"]

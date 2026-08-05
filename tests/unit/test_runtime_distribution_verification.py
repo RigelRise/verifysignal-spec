@@ -5,6 +5,8 @@ import hashlib
 from pathlib import Path
 
 from verifysignal_spec.runtime.distribution import (
+    _force_rmtree,
+    _sweep_stale_swaps,
     install_from_manifest,
     manifest_entries,
     normalize_platform,
@@ -36,7 +38,10 @@ def test_normalize_platform_supports_documented_platforms() -> None:
     assert normalize_platform(system="Darwin", machine="arm64") == "darwin-arm64"
     assert normalize_platform(system="Darwin", machine="x86_64") == "darwin-x64"
     assert normalize_platform(system="Linux", machine="x86_64") == "linux-x64"
-    assert normalize_platform(system="Windows", machine="AMD64") is None
+    assert normalize_platform(system="Windows", machine="AMD64") == "win32-x64"
+    # Keep the negative case honest now that a win32 label exists: Windows on ARM is genuinely not
+    # built, and "win32" could otherwise be read as covering every Windows machine.
+    assert normalize_platform(system="Windows", machine="ARM64") is None
 
 
 def test_manifest_selection_requires_a_real_signature_and_bytes() -> None:
@@ -164,3 +169,46 @@ def test_install_fails_closed_when_the_served_object_drifts_from_the_signed_sha(
 
     assert runtime is None
     assert blocker is not None and blocker.code == "artifact.integrity-failed"
+
+
+def test_force_rmtree_clears_the_read_only_files_windows_leaves_behind(tmp_path: Path) -> None:
+    # shutil.rmtree fails on a read-only FILE on Windows, because os.remove refuses it -- unlike
+    # POSIX, where the containing DIRECTORY's write bit decides. An install that cannot clean up its
+    # own staging directory leaves the cache growing silently.
+    cache = tmp_path / "cache"
+    tree = cache / ".runtime.old-abc"
+    (tree / "bin").mkdir(parents=True)
+    (tree / "bin" / "verifysignal-core").write_text("#!/bin/sh\n", encoding="utf-8")
+    try:
+        (tree / "bin" / "verifysignal-core").chmod(0o444)
+        (tree / "bin").chmod(0o555)
+        tree.chmod(0o555)
+
+        _force_rmtree(tree)
+
+        assert not tree.exists()
+        # Never raises: this only ever cleans up, so a stubborn leftover must not fail the install.
+        _force_rmtree(cache / "does-not-exist")
+    finally:
+        # Restore anything that survived, so a failure here cannot leave an undeletable tmpdir.
+        for node in sorted(cache.rglob("*"), reverse=True) + [cache]:
+            if node.exists():
+                node.chmod(0o755)
+
+
+def test_stale_swap_directories_are_swept_but_real_caches_are_not(tmp_path: Path) -> None:
+    # An install interrupted between rename and promote leaves a staging or retired directory. They
+    # are swept on the next install; anything else in the cache is untouched.
+    cache = tmp_path / "0.6.1"
+    for name in (".darwin-arm64.new-abc", ".darwin-arm64.old-def"):
+        (cache / name).mkdir(parents=True)
+    real = cache / "darwin-arm64"
+    real.mkdir(parents=True)
+    (real / "manifest.json").write_text("{}", encoding="utf-8")
+    unrelated = cache / ".config"
+    unrelated.mkdir()
+
+    _sweep_stale_swaps(cache)
+
+    assert sorted(entry.name for entry in cache.iterdir()) == [".config", "darwin-arm64"]
+    assert (real / "manifest.json").is_file()

@@ -7,6 +7,8 @@ import re
 import platform as host_platform
 import shutil
 import socket
+import stat
+import sys
 import tarfile
 import tempfile
 import urllib.parse
@@ -16,6 +18,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from verifysignal_spec.core.contracts import PUBLIC_CONTRACT_VERSION
 
@@ -42,6 +45,8 @@ def normalize_platform(system: str | None = None, machine: str | None = None) ->
         return "darwin-x64"
     if system == "linux" and machine in {"x86_64", "amd64"}:
         return "linux-x64"
+    if system == "windows" and machine in {"amd64", "x86_64"}:
+        return "win32-x64"
     return None
 
 
@@ -185,6 +190,49 @@ def verify_release_authenticity(entry: dict[str, Any]) -> RuntimeSetupBlocker | 
     return None
 
 
+def _force_rmtree(path: Path) -> None:
+    """Remove ``path``, clearing the read-only attribute Windows sets on some extracted files.
+
+    ``shutil.rmtree`` fails on a read-only file on Windows because ``os.remove`` refuses it, unlike
+    POSIX where the DIRECTORY's write bit decides. Never raises: this only ever cleans up.
+    """
+
+    def _retry(func: Any, target: str, _exc: Any) -> None:
+        try:
+            # Both the entry AND its parent. On POSIX, removing a file needs write on the
+            # containing DIRECTORY, not on the file; on Windows it is the file's read-only attribute
+            # that blocks it. Clearing both covers each host without branching.
+            #
+            # OR the bits in rather than REPLACING the mode: stat.S_IWRITE is 0o200, so assigning it
+            # would strip read and execute and make a directory untraversable -- turning a
+            # recoverable failure into a permanent one.
+            for node in (Path(target).parent, Path(target)):
+                if node.exists():
+                    os.chmod(node, os.stat(node).st_mode | stat.S_IRWXU)
+            func(target)
+        except OSError:
+            pass
+
+    if not path.exists():
+        return
+    # `onexc` is 3.12+; `onerror` is the 3.11 spelling and takes the same three arguments. The
+    # package supports >=3.11, so passing `onexc` there would raise TypeError from a cleanup helper.
+    hook = "onexc" if sys.version_info >= (3, 12) else "onerror"
+    shutil.rmtree(path, **{hook: _retry})
+
+
+def _sweep_stale_swaps(cache_dir: Path) -> None:
+    """Drop staging and retired directories a previous interrupted swap left behind."""
+
+    try:
+        entries = list(cache_dir.iterdir())
+    except OSError:
+        return
+    for entry in entries:
+        if entry.is_dir() and (".new-" in entry.name or ".old-" in entry.name) and entry.name.startswith("."):
+            _force_rmtree(entry)
+
+
 def _resolve_packaged_executable(package_root: Path) -> Path | None:
     """Resolve the runtime executable inside an extracted package.
 
@@ -210,7 +258,16 @@ def _resolve_packaged_executable(package_root: Path) -> Path | None:
     candidate = (package_root / executable_rel).resolve()
     if package_root.resolve() not in candidate.parents:
         return None
-    return candidate if candidate.is_file() else None
+    if candidate.is_file():
+        return candidate
+    # A Spec newer than the installed package: the manifest may declare a launcher this package
+    # predates. Both launchers ship in every Core package, so the sibling with the right suffix for
+    # this host is the correct entry point.
+    for suffix in ((".cmd", ".exe") if os.name == "nt" else ("",)):
+        sibling = candidate.with_name(candidate.stem + suffix)
+        if sibling.is_file() and package_root.resolve() in sibling.parents:
+            return sibling
+    return None
 
 
 def install_from_manifest(
@@ -245,16 +302,30 @@ def install_from_manifest(
             platform,
             api_base_url,
         )
-        if destination.exists():
-            shutil.rmtree(destination)
-        destination.mkdir(parents=True, exist_ok=True)
+        # Stage, validate, THEN swap. Deleting the destination first meant a failed extraction left
+        # no runtime at all where a working one had been. On Windows it is worse than untidy: a
+        # directory holding a file some process has open cannot be deleted, so `core update` while a
+        # Core was alive failed outright -- but the destination can usually still be RENAMED away.
+        _sweep_stale_swaps(destination.parent)
+        staging = destination.parent / f".{destination.name}.new-{uuid4().hex}"
+        _force_rmtree(staging)
+        staging.mkdir(parents=True, exist_ok=True)
         with tarfile.open(artifact_path, "r:gz") as archive:
-            archive.extractall(destination, filter="data")
-        runtime = _resolve_packaged_executable(destination / "verifysignal-core")
+            archive.extractall(staging, filter="data")
+        runtime = _resolve_packaged_executable(staging / "verifysignal-core")
         if runtime is None:
-            shutil.rmtree(destination, ignore_errors=True)
+            _force_rmtree(staging)
             return None, RuntimeSetupBlocker(code="manifest.invalid", message="Managed runtime artifact does not contain a verifysignal-core executable.")
-        runtime.chmod(runtime.stat().st_mode | 0o100)
+        # The x bit is meaningless on Windows, where executability comes from the extension.
+        if os.name != "nt":
+            runtime.chmod(runtime.stat().st_mode | 0o100)
+        retired = destination.parent / f".{destination.name}.old-{uuid4().hex}"
+        if destination.exists():
+            destination.replace(retired)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        staging.replace(destination)
+        _force_rmtree(retired)
+        runtime = destination / runtime.relative_to(staging)
         save_cache_entry(
             core_version=core_version,
             platform=platform,
