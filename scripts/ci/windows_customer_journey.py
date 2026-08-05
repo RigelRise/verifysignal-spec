@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -47,8 +48,21 @@ def _report(gate: str, ok: bool, detail: str = "") -> None:
 
 
 def _cli(args: list[str], *, cwd: Path | None = None) -> tuple[int, str, str]:
+    # The INSTALLED console script, not `python -m verifysignal_spec.cli`. cli.py has no
+    # `if __name__ == "__main__"` block, so `-m` imports the module, never calls main(), and exits 0
+    # with empty output -- which is exactly how this gate first failed. It is also the right choice
+    # on its own terms: a customer runs `verifysignal`, so that is what this journey should run.
+    executable = shutil.which("verifysignal")
+    if not executable:
+        raise GateFailure(
+            "cliOnPath",
+            "shutil.which('verifysignal')",
+            None,
+            "the installed console script on PATH",
+            "the install step did not put verifysignal on PATH",
+        )
     proc = subprocess.run(
-        [sys.executable, "-m", "verifysignal_spec.cli", *args],
+        [executable, *args],
         cwd=str(cwd) if cwd else None,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
