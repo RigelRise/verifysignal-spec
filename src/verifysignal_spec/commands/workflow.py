@@ -117,6 +117,9 @@ def supersede_write_outcome(project: Path, alias: str, payload: dict[str, Any]) 
             "blockers": blockers,
         }
     saved = save_supersede_review(project, alias, review)
+    # Recompute through the same run preflight used by workflow check/direct run
+    # so the single active gate is removed or replaced before this command returns.
+    check_prerequisites(project, "run", alias=alias)
     return {
         "schemaVersion": "verifysignal-spec-supersede-review-result/v1",
         "alias": alias,
@@ -185,7 +188,13 @@ def approve_rerun(project: Path, alias: str, confirm_risk: str | None = None) ->
             "blockers": blockers,
         }
     saved = save_supersede_review(project, alias, review)
-    updated_decision = evaluate_rerun_decision(record, supersede_reviews=load_supersede_reviews(project, alias))
+    current_preflight = check_prerequisites(project, "run", alias=alias)
+    updated_decision = current_preflight.get("rerunDecision")
+    if not isinstance(updated_decision, dict):
+        updated_decision = evaluate_rerun_decision(
+            record,
+            supersede_reviews=load_supersede_reviews(project, alias),
+        )
     return {
         "schemaVersion": "verifysignal-spec-rerun-approval-result/v1",
         "alias": alias,

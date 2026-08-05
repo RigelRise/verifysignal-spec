@@ -537,6 +537,7 @@ class ConfirmationRequirement:
     recommendedAction: str
     blocksExecution: bool = True
     expiresWhen: list[str] = field(default_factory=list)
+    sourceRunId: str | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ConfirmationRequirement":
@@ -549,6 +550,7 @@ class ConfirmationRequirement:
             recommendedAction=str(data.get("recommendedAction", "")),
             blocksExecution=bool(data.get("blocksExecution", True)),
             expiresWhen=[str(item) for item in data.get("expiresWhen", [])],
+            sourceRunId=(str(data["sourceRunId"]) if data.get("sourceRunId") is not None else None),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -1035,6 +1037,51 @@ class RepairSession:
 
 
 @dataclass(slots=True)
+class LastCoreAttempt:
+    """Redacted metadata for a protected Core call that did not produce a run."""
+
+    attemptedAt: str
+    operation: str
+    status: str
+    executionState: Literal["not-started", "unknown"]
+    schema: str | None = None
+    errorCode: str | None = None
+    sideEffectMayExist: bool | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "LastCoreAttempt":
+        execution_state = str(data.get("executionState") or "unknown")
+        if execution_state not in {"not-started", "unknown"}:
+            execution_state = "unknown"
+        return cls(
+            attemptedAt=str(data.get("attemptedAt", "")),
+            operation=str(data.get("operation", "")),
+            schema=(str(data["schema"]) if data.get("schema") is not None else None),
+            status=str(data.get("status", "error")),
+            errorCode=(str(data["errorCode"]) if data.get("errorCode") is not None else None),
+            executionState=execution_state,  # type: ignore[arg-type]
+            sideEffectMayExist=(
+                data.get("sideEffectMayExist")
+                if isinstance(data.get("sideEffectMayExist"), bool)
+                else None
+            ),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        # This allowlist is intentional: a Core attempt marker must never grow
+        # paths, environment values, raw output, or trust material by accident.
+        return {
+            "attemptedAt": self.attemptedAt,
+            "operation": self.operation,
+            "schema": self.schema,
+            "status": self.status,
+            "errorCode": self.errorCode,
+            "executionState": self.executionState,
+            "sideEffectMayExist": self.sideEffectMayExist,
+        }
+
+
+@dataclass(slots=True)
 class UseCaseRecord:
     alias: str
     title: str
@@ -1068,6 +1115,7 @@ class UseCaseRecord:
     authoringQuestions: list[AuthoringQuestion] = field(default_factory=list)
     validation: dict[str, Any] = field(default_factory=lambda: {"status": "unknown"})
     lastRun: dict[str, Any] | None = None
+    lastCoreAttempt: LastCoreAttempt | None = None
     repair: dict[str, Any] | None = None
     workflow: dict[str, Any] | None = None
     schemaVersion: str = "verifysignal-spec-use-case/v1"
@@ -1102,6 +1150,11 @@ class UseCaseRecord:
             authoringQuestions=[AuthoringQuestion.from_dict(item) for item in data.get("authoringQuestions", [])],
             validation=dict(data.get("validation", {"status": "unknown"})),
             lastRun=data.get("lastRun"),
+            lastCoreAttempt=(
+                LastCoreAttempt.from_dict(data["lastCoreAttempt"])
+                if isinstance(data.get("lastCoreAttempt"), dict)
+                else None
+            ),
             repair=data.get("repair"),
             workflow=data.get("workflow"),
         )
@@ -1122,6 +1175,7 @@ class UseCaseRecord:
         data["artifactCapabilities"] = dict(self.artifactCapabilities) if self.artifactCapabilities else None
         data["profiles"] = [item.to_dict() for item in self.profiles]
         data["authoringQuestions"] = [item.to_dict() for item in self.authoringQuestions]
+        data["lastCoreAttempt"] = self.lastCoreAttempt.to_dict() if self.lastCoreAttempt else None
         return _clean(data)
 
 

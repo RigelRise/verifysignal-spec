@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 import hashlib
 import subprocess
 from datetime import UTC, datetime
@@ -18,6 +19,7 @@ from .models import (
     ArtifactReference,
     ConfirmationRequirement,
     CredentialReadinessHint,
+    LastCoreAttempt,
     NamedOutput,
     ReadinessSnapshot,
     RefreshImpactResult,
@@ -31,6 +33,14 @@ from .models import (
 
 def now_iso() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def core_attempt_iso() -> str:
+    """Return a local nanosecond-resolution timestamp for attempt identity."""
+
+    seconds, nanoseconds = divmod(time.time_ns(), 1_000_000_000)
+    prefix = datetime.fromtimestamp(seconds, UTC).strftime("%Y-%m-%dT%H:%M:%S")
+    return f"{prefix}.{nanoseconds:09d}Z"
 
 
 def load_document(path: Path, default: Any | None = None) -> Any:
@@ -327,6 +337,25 @@ def load_use_case(project: Path, alias: str) -> UseCaseRecord:
     return UseCaseRecord.from_dict(data)
 
 
+def save_last_core_attempt(project: Path, alias: str, attempt: LastCoreAttempt) -> UseCaseRecord:
+    """Replace only the redacted non-run attempt projection on a use case."""
+
+    record = load_use_case(project, alias)
+    record.lastCoreAttempt = attempt
+    save_document(layout.use_case_path(project, alias), record.to_dict())
+    return record
+
+
+def clear_last_core_attempt(project: Path, alias: str) -> UseCaseRecord:
+    """Clear a prior Core error marker without rewriting run/registry history."""
+
+    record = load_use_case(project, alias)
+    if record.lastCoreAttempt is not None:
+        record.lastCoreAttempt = None
+        save_document(layout.use_case_path(project, alias), record.to_dict())
+    return record
+
+
 def save_use_case(project: Path, record: UseCaseRecord) -> None:
     layout.ensure_path_safe_alias(record.alias)
     save_document(layout.use_case_path(project, record.alias), record.to_dict())
@@ -467,6 +496,8 @@ def record_run(project: Path, entry: RunHistoryEntry) -> None:
     record.lastRun = {
         "runId": entry.runId,
         "status": entry.status,
+        "startedAt": entry.startedAt,
+        "completedAt": entry.completedAt,
         "coreStatus": entry.coreStatus,
         "coverageStatus": entry.coverageStatus,
         "profile": entry.profile,
@@ -687,7 +718,14 @@ def artifact_fingerprints(project: Path, record: UseCaseRecord) -> dict[str, str
         # Genuine authoring edits (runRequest/skills/runtimeInputs/sideEffects/...) still change
         # this projection and so still trigger an artifact-changed staleness reason.
         projection = record.to_dict()
-        for volatile in ("status", "lastRun", "validation", "repair", "workflow"):
+        for volatile in (
+            "status",
+            "lastRun",
+            "lastCoreAttempt",
+            "validation",
+            "repair",
+            "workflow",
+        ):
             projection.pop(volatile, None)
         normalized = json.dumps(projection, sort_keys=True, default=str).encode("utf-8")
         fingerprints[layout.to_project_relative(project, record_path)] = hashlib.sha256(normalized).hexdigest()
@@ -747,6 +785,35 @@ def save_confirmation_requirement(project: Path, requirement: ConfirmationRequir
 def load_confirmation_requirement(project: Path, alias: str) -> ConfirmationRequirement | None:
     data = load_document(layout.confirmation_requirement_path(project, alias), default=None)
     return ConfirmationRequirement.from_dict(data) if isinstance(data, dict) else None
+
+
+def reconcile_active_confirmation(
+    project: Path,
+    alias: str,
+    requirement: ConfirmationRequirement | dict[str, Any] | None,
+) -> ConfirmationRequirement | None:
+    """Make the single active confirmation file match the current decision.
+
+    Supersede reviews live under a separate append-only directory and are never
+    inspected, modified, or removed here.
+    """
+
+    path = layout.confirmation_requirement_path(project, alias)
+    if requirement is None:
+        if path.exists() and path.is_file() and not path.is_symlink():
+            path.unlink()
+        return None
+    model = (
+        requirement
+        if isinstance(requirement, ConfirmationRequirement)
+        else ConfirmationRequirement.from_dict(requirement)
+    )
+    if model.alias != alias:
+        raise ValueError("Confirmation alias does not match reconciliation target.")
+    current = load_confirmation_requirement(project, alias)
+    if current is None or current.to_dict() != model.to_dict():
+        save_confirmation_requirement(project, model)
+    return model
 
 
 def save_refresh_impact(project: Path, impact: RefreshImpactResult) -> None:
@@ -952,7 +1019,7 @@ def snapshot_invalidation_reasons(project: Path, record: UseCaseRecord, snapshot
         reasons.append({"code": "age-expired", "message": f"Readiness snapshot is older than the {max_age_hours} hour risk threshold."})
     if snapshot.environmentBoundCredentialGroups:
         reasons.append({"code": "environment-bound", "message": "Snapshot depends on credential/environment state and does not guarantee the current process."})
-    if _last_run_has_write_risk(record):
+    if _effective_rerun_write_risk(project, record):
         reasons.append({"code": "write-post-commit-risk", "message": "Previous write run has inferred or unknown post-commit activity."})
     impact = load_refresh_impact(project, record.alias)
     if impact and impact.status in {"affected", "unknown"}:
@@ -975,9 +1042,30 @@ def list_requirements(record: UseCaseRecord) -> dict[str, Any]:
 
 
 def list_risk(project: Path, record: UseCaseRecord) -> dict[str, Any]:
-    confirmation = load_confirmation_requirement(project, record.alias)
+    # Import locally to keep workspace persistence independent from workflow
+    # policy modules at import time.
+    from verifysignal_spec.workflows.run_preflight import build_run_preflight
+
+    preflight = build_run_preflight(
+        {
+            "confirmationRequirements": calculate_run_confirmation_requirements(project, record),
+        },
+        record,
+        load_readiness_snapshot(project, record.alias),
+        {},
+        load_supersede_reviews(project, record.alias),
+    )
+    confirmation = reconcile_active_confirmation(
+        project,
+        record.alias,
+        preflight.get("confirmation"),
+    )
     capability = record.artifactCapabilities if isinstance(record.artifactCapabilities, dict) else {}
     risk_assertions = side_effect_risk_assertions(record)
+    rerun = {
+        **_rerun_policy_summary(record),
+        **preflight["rerunDecision"],
+    }
     return {
         "classes": _risk_classes(record),
         "write": side_effect_class(record) in {"write", "external-notification"},
@@ -987,7 +1075,7 @@ def list_risk(project: Path, record: UseCaseRecord) -> dict[str, Any]:
         "requiresConfirmation": bool(confirmation and confirmation.blocksExecution),
         "confirmationId": confirmation.id if confirmation else None,
         "riskAssertions": risk_assertions,
-        "rerun": _rerun_policy_summary(record),
+        "rerun": rerun,
     }
 
 
@@ -1103,7 +1191,9 @@ def confirmation_requirement(
     )
 
 
-def run_confirmation_requirements(project: Path, record: UseCaseRecord) -> list[ConfirmationRequirement]:
+def calculate_run_confirmation_requirements(project: Path, record: UseCaseRecord) -> list[ConfirmationRequirement]:
+    """Derive non-rerun run confirmations without mutating active gate state."""
+
     requirements: list[ConfirmationRequirement] = []
     side_effect = side_effect_class(record)
     unresolved_risks = side_effect_risk_assertions(record)
@@ -1119,7 +1209,6 @@ def run_confirmation_requirements(project: Path, record: UseCaseRecord) -> list[
                     recommended_action="Review cleanup/idempotency and explicitly confirm the side-effect risk before rerun.",
                 )
             )
-            save_confirmation_requirement(project, requirements[0])
         return requirements
     lifecycle = lifecycle_declaration(record)
     capabilities = _capability_names(record)
@@ -1171,8 +1260,15 @@ def run_confirmation_requirements(project: Path, record: UseCaseRecord) -> list[
                 recommended_action="Validate or refresh understanding before executing, or explicitly confirm the write risk.",
             )
         )
+    return requirements
+
+
+def run_confirmation_requirements(project: Path, record: UseCaseRecord) -> list[ConfirmationRequirement]:
+    """Compatibility wrapper for callers that historically materialized a gate."""
+
+    requirements = calculate_run_confirmation_requirements(project, record)
     if requirements:
-        save_confirmation_requirement(project, requirements[0])
+        reconcile_active_confirmation(project, record.alias, requirements[0])
     return requirements
 
 
@@ -1201,6 +1297,22 @@ def _risk_requires_short_snapshot(record: UseCaseRecord) -> bool:
 
 def _last_run_has_write_risk(record: UseCaseRecord) -> bool:
     return bool(side_effect_risk_assertions(record))
+
+
+def _effective_rerun_write_risk(project: Path, record: UseCaseRecord) -> bool:
+    attempt = record.lastCoreAttempt
+    if attempt is None or attempt.operation != "run":
+        return _last_run_has_write_risk(record)
+    from verifysignal_spec.workflows.write_safety import evaluate_rerun_decision
+
+    decision = evaluate_rerun_decision(
+        record,
+        supersede_reviews=load_supersede_reviews(project, record.alias),
+    )
+    return bool(
+        decision.get("outcomeClass") in {"commit", "unknown-write"}
+        and decision.get("decision") in {"blocked", "requires-confirmation"}
+    )
 
 
 def _normalize_risk_assertion(assertion: dict[str, Any], *, source: str) -> dict[str, Any]:

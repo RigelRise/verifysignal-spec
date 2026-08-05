@@ -20,17 +20,20 @@ The operation table is sourced from Spec's public required-operation contract.
 If later protected operations adopt this normalizer, each must declare its exact
 advertised success schema before use.
 
-An absent schema, malformed envelope, or success schema belonging to another
-operation normalizes to `core.contract-invalid`. Status alone never proves the
-response kind.
+An absent schema, wrong schema version, non-mapping `data`, malformed envelope,
+or success schema belonging to another operation normalizes to
+`core.contract-invalid`. A valid run success also requires a non-empty path-safe
+`data.runId`; traversal, absolute, nested, empty, and overlong IDs are ineligible.
+Status alone never proves the response kind.
 
 ## Error-code precedence
 
 1. If `error.code` is a non-empty string in `verifysignal.error/v1`, use it.
 2. Otherwise, scan legacy `data.findings[]` in order for the first code present in
    `CORE_ENTITLEMENT_ERROR_MAP`.
-3. If neither yields a mapped code, keep the public code if one exists and use a
-   generic safe Core blocker; do not invent a run result.
+3. Preserve the code only when it is advertised for the invoked protected
+   operation (including entitlement codes). Reduce any unadvertised value to
+   `core.error`; do not reflect it or invent a run result.
 
 When both forms exist, top-level `error.code` wins even if the legacy finding
 differs.
@@ -40,6 +43,7 @@ differs.
 ```json
 {
   "schema": "verifysignal.error/v1",
+  "schemaVersion": 1,
   "status": "error",
   "operation": "run",
   "error": {"code": "entitlement.key-unknown"},
@@ -74,6 +78,7 @@ Normalized projection:
 ```json
 {
   "schema": "verifysignal.error/v1",
+  "schemaVersion": 1,
   "status": "error",
   "operation": "run",
   "error": {"code": "entitlement.key-unknown"}
@@ -103,7 +108,7 @@ On any protected Core error, update `UseCaseRecord.lastCoreAttempt`:
 
 ```yaml
 lastCoreAttempt:
-  attemptedAt: "2026-08-05T00:00:00Z"
+  attemptedAt: "2026-08-05T00:00:00.123456789Z"
   operation: run
   schema: verifysignal.error/v1
   status: error
@@ -125,11 +130,16 @@ Derivation rules:
 The marker is not RunHistory, does not contain a run ID, and does not update
 `lastRun`.
 
+The timestamp is generated locally with nanosecond precision. Confirmation
+scope uses a digest over every allowlisted marker field, not an additional
+persisted ID. A changed attempt therefore cannot reuse a current approval merely
+because it occurred in the same wall-clock second.
+
 ## Run persistence eligibility
 
 | Normalized kind | Eligible | Permitted persistence |
 |---|---:|---|
-| Valid `run` success schema, any public run status | Yes | Real run history, coverage, evidence/report references, first-run and repair projections |
+| Valid `run` success schema/version with mapping data and path-safe run ID, any public run status | Yes | Real run history, coverage, evidence/report references, first-run and repair projections |
 | Public Core error | No | `lastCoreAttempt`, protected readiness blocker, and derived active confirmation only |
 | Contract invalid | No | `lastCoreAttempt` with safe contract code and unknown execution, plus blocker |
 | Valid non-run operation response | No | Operation-specific readiness/workflow state only |
@@ -140,7 +150,7 @@ Normalized output and `lastCoreAttempt` may persist only:
 
 - operation, schema, status, public error code, mapped blocker code;
 - attempted timestamp;
-- public execution state/phase and side-effect boolean.
+- public execution state, advertised phase, and side-effect boolean.
 
 They must not persist raw response, stdout/stderr, command path, prepared request
 path, report/evidence path, receipt, signature, verification key, access token,

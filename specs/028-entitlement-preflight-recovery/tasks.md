@@ -126,18 +126,18 @@ legacy error envelopes create no synthetic run or collateral file deletion.
 
 ### Implementation for User Story 3
 
-- [ ] T038 [US3] Add redacted additive `LastCoreAttempt` parsing/serialization to `UseCaseRecord` in `src/verifysignal_spec/workspace/models.py`
-- [ ] T039 [US3] Add safe save/replace/clear helpers for `lastCoreAttempt` and active confirmations in `src/verifysignal_spec/workspace/repository.py`
-- [ ] T040 [US3] Implement the pure shared prerequisite decision in `src/verifysignal_spec/workflows/run_preflight.py`
-- [ ] T041 [US3] Delegate workflow run checks to the shared preflight decision in `src/verifysignal_spec/workflows/prerequisites.py`
-- [ ] T042 [US3] Classify newer non-run attempts and select exactly one rerun-policy branch in `src/verifysignal_spec/workflows/write_safety.py`
-- [ ] T043 [US3] Reconcile create/replace/delete active gates exclusively from the authoritative decision in `src/verifysignal_spec/workspace/repository.py`
-- [ ] T044 [US3] Invoke preflight before runtime/environment/preparation and normalize Core output before persistence in `src/verifysignal_spec/commands/run.py`
-- [ ] T045 [US3] Persist/clear `lastCoreAttempt`, permit RunHistory only for valid `verifysignal.run/v1`, and preserve all prior real state in `src/verifysignal_spec/commands/run.py`
-- [ ] T046 [US3] Return exact prepared-request ownership and delete only a newly created project-owned file on Core error in `src/verifysignal_spec/commands/run_request_preparation.py` and `src/verifysignal_spec/commands/run.py`
-- [ ] T047 [US3] Project the authoritative rerun/confirmation decision in list output without trusting stale files in `src/verifysignal_spec/commands/list.py`
-- [ ] T048 [US3] Run US3 tests to green and retain red/green SHAs using `tests/integration/test_rerun_policy_authority.py`
-- [ ] T049 [US3] Run adjacent CLI run, run-record/replay, write-safety, policy migration, and confirmation contract suites in `tests/contract/test_cli_run_contract.py`, `tests/integration/test_run_record_replay.py`, and `tests/integration/test_write_flow_rerun_guardrails.py`
+- [X] T038 [US3] Add redacted additive `LastCoreAttempt` parsing/serialization to `UseCaseRecord` in `src/verifysignal_spec/workspace/models.py`
+- [X] T039 [US3] Add safe save/replace/clear helpers for `lastCoreAttempt` and active confirmations in `src/verifysignal_spec/workspace/repository.py`
+- [X] T040 [US3] Implement the pure shared prerequisite decision in `src/verifysignal_spec/workflows/run_preflight.py`
+- [X] T041 [US3] Delegate workflow run checks to the shared preflight decision in `src/verifysignal_spec/workflows/prerequisites.py`
+- [X] T042 [US3] Classify newer non-run attempts and select exactly one rerun-policy branch in `src/verifysignal_spec/workflows/write_safety.py`
+- [X] T043 [US3] Reconcile create/replace/delete active gates exclusively from the authoritative decision in `src/verifysignal_spec/workspace/repository.py`
+- [X] T044 [US3] Invoke preflight before runtime/environment/preparation and normalize Core output before persistence in `src/verifysignal_spec/commands/run.py`
+- [X] T045 [US3] Persist/clear `lastCoreAttempt`, permit RunHistory only for valid `verifysignal.run/v1`, and preserve all prior real state in `src/verifysignal_spec/commands/run.py`
+- [X] T046 [US3] Return exact prepared-request ownership and delete only a newly created project-owned file on Core error in `src/verifysignal_spec/commands/run_request_preparation.py` and `src/verifysignal_spec/commands/run.py`
+- [X] T047 [US3] Project the authoritative rerun/confirmation decision in `src/verifysignal_spec/workspace/repository.py` without trusting stale files; retain `src/verifysignal_spec/commands/list.py` as the unchanged consumer
+- [X] T048 [US3] Run US3 tests to green and retain red/green SHAs using `tests/integration/test_rerun_policy_authority.py`
+- [X] T049 [US3] Run adjacent CLI run, run-record/replay, write-safety, policy migration, and confirmation contract suites in `tests/contract/test_cli_run_contract.py`, `tests/integration/test_run_record_replay.py`, and `tests/integration/test_write_flow_rerun_guardrails.py`
 
 **Checkpoint**: Current pre-execution errors are safe no-commit attempts; legacy
 unknown write attempts require the configured `afterUnknown` decision without

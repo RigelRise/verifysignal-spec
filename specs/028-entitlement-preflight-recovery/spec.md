@@ -192,15 +192,20 @@ compare the three persisted projections.
 - **FR-012**: Spec MUST normalize each protected Core response at one shared,
   schema-aware boundary before any command interprets or persists it.
 - **FR-013**: A successful protected response MUST match the exact advertised
-  public schema for the operation that was invoked.
+  public schema and schema version for the operation that was invoked, contain
+  mapping-shaped public data, and, for `run`, contain a non-empty path-safe
+  public run ID before it is eligible for persistence.
 - **FR-014**: `verifysignal.error/v1.error.code` MUST be the primary public Core
   error-code source.
 - **FR-015**: `data.findings[].code` MUST remain supported only as a legacy
   fallback when a top-level public error code is absent.
-- **FR-016**: An unexpected or malformed schema MUST normalize to
-  `core.contract-invalid` and fail closed.
-- **FR-017**: When present, Core `execution.started`, `execution.phase`, and
-  `execution.sideEffectMayExist` MUST be preserved in the normalized outcome.
+- **FR-016**: An unexpected or malformed schema or envelope MUST normalize to
+  `core.contract-invalid`, redact unadvertised schema/error identifiers, direct
+  the user to Core/Spec compatibility recovery, and fail closed.
+- **FR-017**: When present as a complete public execution unit, Core
+  `execution.started`, an advertised execution phase, and
+  `execution.sideEffectMayExist` MUST be preserved in the normalized outcome;
+  an unadvertised phase MUST remain unknown rather than be reflected.
 - **FR-018**: Absence of public execution metadata MUST remain unknown; Spec MUST
   NOT infer browser execution from an error envelope and MUST preserve the
   uncertainty in a redacted non-run attempt marker.
@@ -228,13 +233,20 @@ compare the three persisted projections.
   classification.
 - **FR-026**: Invocation-created prepared artifacts MUST be removed after a Core
   error by deleting only the exact file created by that invocation; user-authored,
-  pre-existing, or merely adjacent prepared artifacts MUST be preserved.
+  pre-existing, or merely adjacent prepared artifacts MUST be preserved. File
+  creation and cleanup MUST remain anchored either to a no-follow project
+  directory descriptor or, on Windows, to locked non-reparse ancestor handles
+  plus the exact created-file handle, so replacing a pathname cannot redirect
+  deletion; a platform without either safe primitive set MUST fail closed.
 - **FR-027**: A Core error MUST preserve all prior run history, evidence,
   repair sessions, and last-run state unchanged. It MUST update only a redacted
   `lastCoreAttempt` marker and reconcile the active confirmation from that marker.
 - **FR-028**: `lastCoreAttempt` MUST contain only attempted time, operation,
   public schema/status/error code, `not-started` or `unknown` execution state,
   and public side-effect uncertainty; it MUST contain no paths or secret values.
+  The local timestamp MUST retain subsecond precision, and attempt-scoped
+  confirmation identity MUST be derived from all of these allowlisted fields
+  without adding another persisted identifier.
 - **FR-029**: A later valid run result MUST clear the superseded non-run attempt;
   a later explicit not-started error MUST replace an earlier unknown attempt.
 
@@ -249,7 +261,8 @@ compare the three persisted projections.
 - **FR-033**: Confirmed or inferred commit evidence MUST select `afterCommit`.
 - **FR-034**: A newer `lastCoreAttempt` with unknown execution for a write or
   external-notification run MUST select `afterUnknown` without becoming run
-  history.
+  history. "Newer" is a strict temporal comparison; an equal or unparseable
+  timestamp cannot override a timestamped real run.
 - **FR-035**: Only a genuinely indeterminate write or external-notification
   outcome MUST select `afterUnknown`.
 - **FR-036**: A class-`none` or authenticated-read use case with explicit false
@@ -258,6 +271,8 @@ compare the three persisted projections.
 - **FR-037**: Active confirmation persistence MUST be reconciled from the current
   authoritative decision: replace a changed gate and delete a gate that is no
   longer required, while preserving supersede reviews as historical audit data.
+  Approval and supersede commands MUST perform this reconciliation before they
+  return.
 
 #### Workflow state authority
 

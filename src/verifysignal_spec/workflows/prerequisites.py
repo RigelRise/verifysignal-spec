@@ -14,17 +14,22 @@ from verifysignal_spec.workspace.product_context import (
     update_understanding_stale_reasons,
 )
 from verifysignal_spec.workspace.repository import (
+    calculate_run_confirmation_requirements,
     confirmation_requirement,
+    load_readiness_snapshot,
     load_refresh_impact,
     load_registry,
     load_use_case,
-    run_confirmation_requirements,
     load_supersede_reviews,
-    save_confirmation_requirement,
+    reconcile_active_confirmation,
     side_effect_class,
+    snapshot_invalidation_reasons,
 )
 from verifysignal_spec.workspace.models import UnderstandingFreshnessState
-from verifysignal_spec.workflows.write_safety import evaluate_rerun_decision
+from verifysignal_spec.workflows.run_preflight import (
+    build_run_preflight,
+    local_run_policy_blockers,
+)
 
 from .first_run import build_understanding_onboarding_preparation
 from .models import (
@@ -75,6 +80,18 @@ def check_prerequisites(
     rule = STAGE_PREREQUISITE_RULES[stage]
     project = project.resolve()
     resolved_alias = _resolve_alias(project, stage, alias, rule)
+    authoritative_run_preflight: dict[str, Any] | None = None
+    if stage == "run" and isinstance(resolved_alias, str):
+        try:
+            authoritative_run_preflight = _loaded_run_preflight(project, resolved_alias)
+        except FileNotFoundError:
+            authoritative_run_preflight = None
+        if authoritative_run_preflight is not None:
+            reconcile_active_confirmation(
+                project,
+                resolved_alias,
+                authoritative_run_preflight.get("confirmation"),
+            )
 
     stale_warnings: list[str] = []
     recorded_decision: dict[str, Any] | None = None
@@ -207,61 +224,42 @@ def check_prerequisites(
         )
 
     if stage == "run" and isinstance(resolved_alias, str):
-        record = load_use_case(project, resolved_alias)
-        rerun_decision = evaluate_rerun_decision(record, supersede_reviews=load_supersede_reviews(project, resolved_alias))
-        if rerun_decision.get("decision") in {"blocked", "requires-confirmation"}:
-            requires_rerun_confirmation = rerun_decision.get("decision") == "requires-confirmation"
-            blocker = {
-                "code": "runtime.rerun-confirmation-required" if requires_rerun_confirmation else "runtime.rerun-policy-blocked",
-                "severity": "blocker",
-                "category": "write-flow-safety",
-                "message": str(rerun_decision.get("reason", "")),
-                "recoveryCommand": str(rerun_decision.get("nextAction") or _native_next(stage, resolved_alias)),
-            }
-            confirmation = (
-                {
-                    "id": rerun_decision.get("confirmationId"),
-                    "scope": rerun_decision.get("confirmationScope"),
-                    "sourceRunId": rerun_decision.get("sourceRunId"),
-                    "reason": rerun_decision.get("reason"),
-                    "blocksExecution": True,
-                }
-                if requires_rerun_confirmation
-                else None
-            )
+        preflight = authoritative_run_preflight or _loaded_run_preflight(project, resolved_alias)
+        confirmation = preflight.get("confirmation")
+        rerun_decision = preflight["rerunDecision"]
+        if not preflight["canProceed"]:
+            blocker = preflight["blockers"][0]
+            code = str(blocker.get("code") or "")
+            requires_rerun_confirmation = code == "runtime.rerun-confirmation-required"
+            if requires_rerun_confirmation:
+                recommended_action = "approve-rerun"
+            elif code == "runtime.rerun-policy-blocked":
+                recommended_action = "review-or-supersede-write-outcome"
+            elif code == "runtime.confirmation-required":
+                recommended_action = "confirm-risk"
+            elif code == "runtime.protected-readiness-required":
+                recommended_action = "run-validate"
+            elif code == "runtime.side-effect-observation-review-required":
+                recommended_action = "review-or-supersede-write-outcome"
+            else:
+                recommended_action = str(
+                    preflight.get("recommendedAction") or "resolve-run-preflight"
+                )
             return _result(
                 stage,
                 resolved_alias,
                 "blocked",
                 can_proceed=False,
-                requires_confirmation=requires_rerun_confirmation,
-                warnings=[str(rerun_decision.get("reason", ""))],
-                recommended_action="review-or-supersede-write-outcome"
-                if not requires_rerun_confirmation
-                else "approve-rerun",
-                next_command=str(rerun_decision.get("nextAction") or _native_next(stage, resolved_alias)),
+                requires_confirmation=bool(preflight["requiresConfirmation"]),
+                warnings=[str(blocker.get("message") or "")],
+                recommended_action=recommended_action,
+                next_command=str(preflight["nextAction"]),
                 confirmation=confirmation,
                 rerunDecision=rerun_decision,
-                blockers=[blocker],
+                blockers=preflight["blockers"],
                 **understanding_payload,
             )
         rerun_decision_for_result = rerun_decision
-        confirmations = run_confirmation_requirements(project, record)
-        if confirmations:
-            confirmation = confirmations[0]
-            return _result(
-                stage,
-                resolved_alias,
-                "ready",
-                can_proceed=True,
-                requires_confirmation=True,
-                warnings=[confirmation.reason],
-                recommended_action="confirm-risk",
-                next_command=_native_next(stage, resolved_alias),
-                confirmation=confirmation.to_dict(),
-                rerunDecision=rerun_decision_for_result,
-                **understanding_payload,
-            )
 
     return _result(
         stage,
@@ -274,6 +272,33 @@ def check_prerequisites(
         recorded_decision=recorded_decision,
         rerunDecision=rerun_decision_for_result,
         **understanding_payload,
+    )
+
+
+def _loaded_run_preflight(project: Path, alias: str) -> dict[str, Any]:
+    record = load_use_case(project, alias)
+    readiness = load_readiness_snapshot(project, alias)
+    reviews = load_supersede_reviews(project, alias)
+    missing = [item["path"] for item in _missing_stage_artifacts(project, "run", alias)]
+    return build_run_preflight(
+        {
+            "targetBlocker": _target_environment_confirmation_blocker(project, "run", alias),
+            "missingArtifacts": missing,
+            "policyBlockers": local_run_policy_blockers(
+                record,
+                supersede_reviews=reviews,
+            ),
+            "confirmationRequirements": calculate_run_confirmation_requirements(project, record),
+            "readinessInvalidationReasons": (
+                snapshot_invalidation_reasons(project, record, readiness)
+                if readiness is not None
+                else []
+            ),
+        },
+        record,
+        readiness,
+        {},
+        reviews,
     )
 
 
@@ -308,7 +333,6 @@ def _alias_scoped_stale_result(
             reason=(impact.reason if impact else "Product understanding is stale and impact on this write-capable use case is unknown."),
             recommended_action="Run validation or refresh understanding before executing, or explicitly confirm the write risk.",
         )
-        save_confirmation_requirement(project, confirmation)
     can_proceed = not (stage == "run" and freshness.policy == "block")
     recommended_action = {
         "confirm": "confirm-risk",
@@ -538,7 +562,7 @@ def _missing_generated_artifacts(project: Path, record: Any) -> list[str]:
         missing.append(f"{layout.WORKSPACE_DIR}/{layout.SKILLS_DIR}/{record.alias}.browser.md")
     elif not _exists(project, record.mainSkill.path):
         missing.append(record.mainSkill.path)
-    for skill in record.skills:
+    for skill in [*record.skills, *record.sourceOnlySkills]:
         if not _exists(project, skill.path):
             missing.append(skill.path)
     return sorted(set(missing))

@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from .contracts import ALLOWED_CORE_STATUSES, REQUIRED_OPERATIONS, core_blocker_code, core_public_error_code
+from .contracts import (
+    ALLOWED_CORE_STATUSES,
+    CORE_ENTITLEMENT_ERROR_MAP,
+    REQUIRED_OPERATIONS,
+    core_blocker_code,
+    core_public_error_code,
+)
 
 
 PROTECTED_SUCCESS_SCHEMAS = {
@@ -11,6 +18,33 @@ PROTECTED_SUCCESS_SCHEMAS = {
     for operation in ("authoring-check", "run")
 }
 CORE_ERROR_SCHEMA = "verifysignal.error/v1"
+KNOWN_PUBLIC_SCHEMAS = {
+    CORE_ERROR_SCHEMA,
+    *(schema for schema, _version in REQUIRED_OPERATIONS.values()),
+}
+KNOWN_EXECUTION_PHASES = {
+    "pre-execution",
+    "execution",
+    "post-execution",
+}
+PUBLIC_RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$")
+PROTECTED_OPERATION_ERROR_CODES = {
+    "authoring-check": {
+        "unsupported-placeholder-namespace",
+        "unresolved-placeholder-reference",
+        "structural-validation-error",
+        "undeclared-credential-reference",
+        "missing-credential-value",
+        "contract-capability-unsupported",
+        "invalid-target-composition",
+    },
+    "run": {
+        "browser-assets-unavailable",
+        "execution-error",
+        "structural-validation-error",
+        "replay-origin-mismatch",
+    },
+}
 
 OutcomeKind = Literal["success", "core-error", "contract-invalid"]
 
@@ -50,23 +84,28 @@ class NormalizedCoreOutcome:
         }
 
 
-def normalize_core_outcome(operation: str, response: dict[str, Any]) -> NormalizedCoreOutcome:
+def normalize_core_outcome(operation: str, response: Any) -> NormalizedCoreOutcome:
     """Normalize one protected response using only the public CLI envelope."""
 
     if not isinstance(response, dict):
         return _contract_invalid(operation, None)
 
     observed_schema = response.get("schema")
-    schema = observed_schema if isinstance(observed_schema, str) and observed_schema else None
+    schema = observed_schema if observed_schema in KNOWN_PUBLIC_SCHEMAS else None
     response_operation = response.get("operation")
     status = response.get("status")
     expected_schema = PROTECTED_SUCCESS_SCHEMAS.get(operation)
+    expected_version = REQUIRED_OPERATIONS.get(operation, (None, None))[1]
+    data = response.get("data")
 
     if (
         expected_schema is not None
         and schema == expected_schema
+        and response.get("schemaVersion") == expected_version
         and response_operation == operation
         and status in ALLOWED_CORE_STATUSES
+        and isinstance(data, dict)
+        and (operation != "run" or _path_safe_run_id(data.get("runId")))
     ):
         execution = _execution_projection(response)
         return NormalizedCoreOutcome(
@@ -84,10 +123,11 @@ def normalize_core_outcome(operation: str, response: dict[str, Any]) -> Normaliz
     if (
         expected_schema is not None
         and schema == CORE_ERROR_SCHEMA
+        and response.get("schemaVersion") == 1
         and response_operation == operation
         and status == "error"
     ):
-        error_code = core_public_error_code(response)
+        error_code = _safe_error_code(operation, core_public_error_code(response))
         execution = _execution_projection(response)
         return NormalizedCoreOutcome(
             operation=operation,
@@ -117,12 +157,25 @@ def _execution_projection(
     side_effect = execution.get("sideEffectMayExist")
     if (
         not isinstance(started, bool)
-        or not isinstance(phase, str)
-        or not phase.strip()
+        or phase not in KNOWN_EXECUTION_PHASES
         or not isinstance(side_effect, bool)
     ):
         return False, None, None, None
     return True, started, phase, side_effect
+
+
+def _path_safe_run_id(value: Any) -> bool:
+    return isinstance(value, str) and bool(PUBLIC_RUN_ID_RE.fullmatch(value))
+
+
+def _safe_error_code(operation: str, value: str | None) -> str | None:
+    if value is None:
+        return None
+    public_codes = {
+        *CORE_ENTITLEMENT_ERROR_MAP,
+        *PROTECTED_OPERATION_ERROR_CODES.get(operation, set()),
+    }
+    return value if value in public_codes else "core.error"
 
 
 def _contract_invalid(operation: str, schema: str | None) -> NormalizedCoreOutcome:

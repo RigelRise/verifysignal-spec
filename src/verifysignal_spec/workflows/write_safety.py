@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 from dataclasses import asdict
 from collections.abc import Callable
@@ -27,6 +28,7 @@ CONFIRMATION_EXPECTED_VALUE_FIELDS = {
     "urlContains",
 }
 RERUN_CONFIRMATION_SCOPE = "rerun-after-commit"
+UNKNOWN_RERUN_CONFIRMATION_SCOPE = "rerun-after-unknown"
 
 
 def normalize_side_effect_policy(policy: dict[str, Any] | None) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -380,33 +382,58 @@ def confirmation_support_findings(
 
 
 def evaluate_rerun_decision(record: Any, *, supersede_reviews: list[Any] | None = None) -> dict[str, Any]:
-    side_effect = record.sideEffects if isinstance(record.sideEffects, dict) else {}
-    if side_effect.get("class") not in {"write", "external-notification"}:
-        return {"decision": "allowed", "reason": "No write rerun guard is required for this side-effect class.", "refreshRuntimeInputs": []}
-    last_run = record.lastRun if isinstance(record.lastRun, dict) else None
-    if not last_run:
-        return {"decision": "allowed", "reason": "No previous run recorded for this write use case.", "refreshRuntimeInputs": []}
+    classification = _classify_previous_run(record)
+    outcome_class = classification["outcomeClass"]
+    policy_branch = classification["policyBranch"]
+    source_run_id = classification.get("sourceRunId")
+    policy = RerunPolicy.from_dict(record.rerunPolicy)
+    if policy_branch == "none":
+        return {
+            "decision": "allowed",
+            "outcomeClass": "none",
+            "policyBranch": "none",
+            "reason": "No previous real run or later run attempt requires rerun policy evaluation.",
+            "refreshRuntimeInputs": [],
+            "nextAction": "Proceed with run.",
+        }
+
+    last_run = record.lastRun if isinstance(record.lastRun, dict) else {}
     interpretation = last_run.get("postCommitInterpretation") if isinstance(last_run.get("postCommitInterpretation"), dict) else {}
-    classification = last_run.get("resultClassification") if isinstance(last_run.get("resultClassification"), dict) else {}
-    core_risk = str(interpretation.get("rerunRisk") or classification.get("rerunRisk") or "")
-    supersede = _matching_supersede_review(last_run, supersede_reviews or [])
+    result_classification = last_run.get("resultClassification") if isinstance(last_run.get("resultClassification"), dict) else {}
+    if policy_branch == "afterCommit":
+        spec_decision = policy.afterCommit
+        core_risk = str(interpretation.get("rerunRisk") or result_classification.get("rerunRisk") or "requires-confirmation")
+    elif policy_branch == "afterUnknown":
+        spec_decision = policy.afterUnknown
+        core_risk = "requires-confirmation"
+    else:
+        spec_decision = policy.afterNoCommit
+        core_risk = "safe"
+
+    supersede = (
+        _matching_supersede_review(last_run, supersede_reviews or [])
+        if source_run_id
+        else _matching_attempt_review(record, supersede_reviews or [])
+        if outcome_class == "unknown-write"
+        else None
+    )
     if supersede is not None:
         resulting = getattr(supersede, "resultingClassification", None)
         if not isinstance(resulting, dict) and isinstance(supersede, dict):
             resulting = supersede.get("resultingClassification")
         if isinstance(resulting, dict) and resulting.get("rerunRisk"):
             core_risk = str(resulting["rerunRisk"])
-    side_effect_may_exist = bool(interpretation.get("sideEffectMayExist"))
-    if not core_risk:
-        core_risk = "requires-confirmation" if side_effect_may_exist else "safe"
-    policy = RerunPolicy.from_dict(record.rerunPolicy)
-    spec_decision = policy.afterCommit if side_effect_may_exist or interpretation.get("postCommit") else policy.afterNoCommit
+            if spec_decision == "requires-confirmation":
+                spec_decision = "allowed"
+
     decision = combine_rerun_decision(core_risk, spec_decision)
     refreshable = {item.name for item in record.runtimeInputs if item.source == "generated" and item.refreshOnRerunAfterCommit}
     refresh_names = [name for name in policy.refreshRuntimeInputs if name in refreshable]
     if decision == "allowed-with-new-inputs" and not refresh_names:
         return {
             "decision": "blocked",
+            "outcomeClass": outcome_class,
+            "policyBranch": policy_branch,
             "coreRisk": core_risk,
             "specDecision": spec_decision,
             "reason": "Rerun requires refreshed generated inputs, but no declared refreshable generated input is available.",
@@ -414,11 +441,24 @@ def evaluate_rerun_decision(record: Any, *, supersede_reviews: list[Any] | None 
             "nextAction": f"Update rerunPolicy.refreshRuntimeInputs for {record.alias} before rerunning.",
         }
     if decision == "blocked":
-        reason = "Rerun is blocked by the previous write outcome and declared rerun policy."
+        reason = f"Rerun is blocked by the {outcome_class} outcome and declared {policy_branch} policy."
         next_action = f"verifysignal workflow supersede-write-outcome --alias {record.alias} --json"
     elif decision == "requires-confirmation":
-        reason = "Rerun requires explicit owner confirmation because the previous write may have crossed the commit boundary."
-        confirmation_id = rerun_confirmation_id(record.alias, str(last_run.get("runId") or "unknown-run"))
+        reason = (
+            "Rerun requires explicit owner confirmation because the latest write attempt has unknown execution state."
+            if outcome_class == "unknown-write"
+            else "Rerun requires explicit owner confirmation because the previous write may have crossed the commit boundary."
+        )
+        confirmation_scope = (
+            UNKNOWN_RERUN_CONFIRMATION_SCOPE
+            if outcome_class == "unknown-write"
+            else RERUN_CONFIRMATION_SCOPE
+        )
+        confirmation_id = (
+            f"confirm.{_path_safe(record.alias)}.{confirmation_scope}.{_path_safe(_attempt_review_source(record))}"
+            if not source_run_id
+            else rerun_confirmation_id(record.alias, str(source_run_id))
+        )
         next_action = f"verifysignal workflow approve-rerun --alias {record.alias} --confirm-risk {confirmation_id} --json"
     elif decision == "allowed-with-new-inputs":
         reason = "Rerun is allowed only with refreshed generated runtime inputs."
@@ -428,6 +468,8 @@ def evaluate_rerun_decision(record: Any, *, supersede_reviews: list[Any] | None 
         next_action = "Proceed with run."
     result = {
         "decision": decision,
+        "outcomeClass": outcome_class,
+        "policyBranch": policy_branch,
         "coreRisk": core_risk,
         "specDecision": spec_decision,
         "reason": reason,
@@ -439,11 +481,203 @@ def evaluate_rerun_decision(record: Any, *, supersede_reviews: list[Any] | None 
         result.update(
             {
                 "confirmationId": confirmation_id,
-                "confirmationScope": RERUN_CONFIRMATION_SCOPE,
-                "sourceRunId": str(last_run.get("runId") or "unknown-run"),
+                "confirmationScope": confirmation_scope,
             }
         )
+        if source_run_id:
+            result["sourceRunId"] = str(source_run_id)
+    elif source_run_id:
+        result["sourceRunId"] = str(source_run_id)
     return result
+
+
+def _classify_previous_run(record: Any) -> dict[str, Any]:
+    """Select one rerun-policy branch from real-run and later-attempt evidence."""
+
+    last_run = record.lastRun if isinstance(record.lastRun, dict) else None
+    attempt_model = getattr(record, "lastCoreAttempt", None)
+    attempt = (
+        attempt_model.to_dict()
+        if hasattr(attempt_model, "to_dict")
+        else attempt_model
+        if isinstance(attempt_model, dict)
+        else None
+    )
+    if isinstance(attempt, dict) and attempt.get("operation") == "run" and _attempt_is_later(attempt, last_run):
+        explicitly_safe = (
+            attempt.get("executionState") == "not-started"
+            or attempt.get("sideEffectMayExist") is False
+        )
+        if explicitly_safe:
+            return {"outcomeClass": "no-commit", "policyBranch": "afterNoCommit"}
+        if _has_write_evidence(record, last_run):
+            return {"outcomeClass": "unknown-write", "policyBranch": "afterUnknown"}
+        return {"outcomeClass": "no-commit", "policyBranch": "afterNoCommit"}
+
+    if not last_run:
+        return {"outcomeClass": "none", "policyBranch": "none"}
+
+    interpretation = last_run.get("postCommitInterpretation") if isinstance(last_run.get("postCommitInterpretation"), dict) else {}
+    result_classification = last_run.get("resultClassification") if isinstance(last_run.get("resultClassification"), dict) else {}
+    evidence = {**result_classification, **interpretation}
+    source = {"sourceRunId": str(last_run.get("runId"))} if last_run.get("runId") else {}
+    explicitly_safe = (
+        evidence.get("postCommit") is False
+        and evidence.get("sideEffectMayExist") is False
+    ) or (
+        evidence.get("sideEffectMayExist") is False
+        and str(evidence.get("sideEffectStatus") or "").lower() in {"not-started", "none", "not-committed"}
+    )
+    if explicitly_safe or not evidence:
+        return {"outcomeClass": "no-commit", "policyBranch": "afterNoCommit", **source}
+    committed_statuses = {"possible", "inferred", "likely-committed", "committed", "committed-confirmed", "violated"}
+    if _has_write_evidence(record, last_run) and (
+        evidence.get("postCommit") is True
+        or evidence.get("sideEffectMayExist") is True
+        or str(evidence.get("sideEffectStatus") or "").lower() in committed_statuses
+    ):
+        return {"outcomeClass": "commit", "policyBranch": "afterCommit", **source}
+    if _has_write_evidence(record, last_run):
+        return {"outcomeClass": "unknown-write", "policyBranch": "afterUnknown", **source}
+    return {"outcomeClass": "no-commit", "policyBranch": "afterNoCommit", **source}
+
+
+def _has_write_evidence(record: Any, last_run: dict[str, Any] | None) -> bool:
+    current = record.sideEffects if isinstance(record.sideEffects, dict) else {}
+    if str(current.get("class") or current.get("sideEffectClass") or "none") in {"write", "external-notification"}:
+        return True
+    if not isinstance(last_run, dict):
+        return False
+    for field in ("sideEffectPolicy", "sideEffects"):
+        value = last_run.get(field)
+        if isinstance(value, dict) and str(value.get("class") or value.get("sideEffectClass") or "") in {"write", "external-notification"}:
+            return True
+    interpretation = (
+        last_run.get("postCommitInterpretation")
+        if isinstance(last_run.get("postCommitInterpretation"), dict)
+        else {}
+    )
+    classification = (
+        last_run.get("resultClassification")
+        if isinstance(last_run.get("resultClassification"), dict)
+        else {}
+    )
+    evidence = {**classification, **interpretation}
+    if evidence.get("postCommit") is True or evidence.get("sideEffectMayExist") is True:
+        return True
+    return str(evidence.get("sideEffectStatus") or "").lower() in {
+        "possible",
+        "inferred",
+        "likely-committed",
+        "committed",
+        "committed-confirmed",
+    }
+
+
+def _attempt_is_later(attempt: dict[str, Any], last_run: dict[str, Any] | None) -> bool:
+    if not last_run:
+        return True
+    attempt_at = _parse_evidence_time(attempt.get("attemptedAt"))
+    run_at = _parse_evidence_time(last_run.get("completedAt") or last_run.get("startedAt"))
+    # The marker is cleared after every valid persisted run, so absent legacy
+    # timestamps still make a present run marker the latest relevant evidence.
+    if run_at is None:
+        return True
+    if attempt_at is None:
+        return False
+    return attempt_at > run_at
+
+
+def _attempt_review_source(record: Any) -> str:
+    attempt_model = getattr(record, "lastCoreAttempt", None)
+    attempt = attempt_model.to_dict() if hasattr(attempt_model, "to_dict") else attempt_model
+    projection = _attempt_identity_projection(attempt)
+    encoded = json.dumps(
+        projection,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    ).encode("utf-8")
+    return f"core-attempt-{hashlib.sha256(encoded).hexdigest()[:24]}"
+
+
+def _legacy_attempt_review_source(record: Any) -> str:
+    attempt_model = getattr(record, "lastCoreAttempt", None)
+    attempt = attempt_model.to_dict() if hasattr(attempt_model, "to_dict") else attempt_model
+    attempted_at = attempt.get("attemptedAt") if isinstance(attempt, dict) else None
+    return f"core-attempt-{_path_safe(str(attempted_at or 'unknown'))}"
+
+
+def _attempt_identity_projection(attempt: Any) -> dict[str, Any]:
+    value = attempt if isinstance(attempt, dict) else {}
+    return {
+        "attemptedAt": str(value.get("attemptedAt") or ""),
+        "operation": str(value.get("operation") or ""),
+        "schema": value.get("schema") if isinstance(value.get("schema"), str) else None,
+        "status": str(value.get("status") or ""),
+        "errorCode": value.get("errorCode") if isinstance(value.get("errorCode"), str) else None,
+        "executionState": str(value.get("executionState") or "unknown"),
+        "sideEffectMayExist": (
+            value.get("sideEffectMayExist")
+            if isinstance(value.get("sideEffectMayExist"), bool)
+            else None
+        ),
+    }
+
+
+def _matching_attempt_review(record: Any, reviews: list[Any]) -> Any | None:
+    expected = _attempt_review_source(record)
+    legacy_expected = _legacy_attempt_review_source(record)
+    for review in reviews:
+        source_run_id = getattr(review, "sourceRunId", None)
+        if source_run_id is None and isinstance(review, dict):
+            source_run_id = review.get("sourceRunId")
+        if str(source_run_id or "") == expected:
+            return review
+        if (
+            str(source_run_id or "") == legacy_expected
+            and _legacy_attempt_review_matches(record, review)
+        ):
+            return review
+    return None
+
+
+def _legacy_attempt_review_matches(record: Any, review: Any) -> bool:
+    """Accept an old timestamp-scoped review only with exact conservative evidence."""
+
+    attempt_model = getattr(record, "lastCoreAttempt", None)
+    attempt = attempt_model.to_dict() if hasattr(attempt_model, "to_dict") else attempt_model
+    if not isinstance(attempt, dict):
+        return False
+    previous = getattr(review, "previousClassification", None)
+    if not isinstance(previous, dict) and isinstance(review, dict):
+        previous = review.get("previousClassification")
+    owner_decision = getattr(review, "ownerDecision", None)
+    created_at = getattr(review, "createdAt", None)
+    if isinstance(review, dict):
+        owner_decision = owner_decision or review.get("ownerDecision")
+        created_at = created_at or review.get("createdAt")
+    if not isinstance(previous, dict) or owner_decision != "approved-rerun-after-write":
+        return False
+    if previous.get("executionState") != str(attempt.get("executionState") or "unknown"):
+        return False
+    if previous.get("sideEffectMayExist") is not attempt.get("sideEffectMayExist"):
+        return False
+    review_time = _parse_evidence_time(created_at)
+    attempt_time = _parse_evidence_time(attempt.get("attemptedAt"))
+    return bool(review_time is not None and attempt_time is not None and review_time > attempt_time)
+
+
+def _parse_evidence_time(value: Any) -> Any | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        from datetime import UTC, datetime
+
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed.astimezone(UTC)
+    except ValueError:
+        return None
 
 
 def rerun_confirmation_id(alias: str, source_run_id: str) -> str:
@@ -458,13 +692,31 @@ def build_rerun_approval_review(
     created_by: str | None = None,
 ) -> SupersedeReview:
     last_run = record.lastRun if isinstance(record.lastRun, dict) else {}
-    source_run_id = str(last_run.get("runId") or rerun_decision.get("sourceRunId") or "unknown-run")
-    previous = _classification_from_last_run(last_run)
+    attempt_model = getattr(record, "lastCoreAttempt", None)
+    attempt = attempt_model.to_dict() if hasattr(attempt_model, "to_dict") else attempt_model
+    latest_is_attempt = bool(
+        rerun_decision.get("outcomeClass") == "unknown-write"
+        and isinstance(attempt, dict)
+        and attempt.get("operation") == "run"
+        and _attempt_is_later(attempt, last_run)
+    )
+    source_run_id = str(
+        _attempt_review_source(record)
+        if latest_is_attempt
+        else last_run.get("runId") or rerun_decision.get("sourceRunId") or _attempt_review_source(record)
+    )
+    previous = _classification_from_last_run(last_run) if not latest_is_attempt else {}
+    if not previous and isinstance(attempt, dict):
+        previous = {
+            "executionState": str(attempt.get("executionState") or "unknown"),
+            "sideEffectMayExist": attempt.get("sideEffectMayExist"),
+            "rerunRisk": "requires-confirmation",
+        }
     resulting = dict(previous)
     resulting["rerunRisk"] = "safe-with-new-inputs" if rerun_decision.get("refreshRuntimeInputs") else "safe"
-    resulting.setdefault("sideEffectStatus", previous.get("sideEffectStatus") or "committed-confirmed")
-    resulting.setdefault("postCommit", previous.get("postCommit", True))
-    resulting.setdefault("sideEffectMayExist", previous.get("sideEffectMayExist", True))
+    resulting.setdefault("sideEffectStatus", previous.get("sideEffectStatus") or "unknown")
+    resulting.setdefault("postCommit", previous.get("postCommit", False))
+    resulting.setdefault("sideEffectMayExist", previous.get("sideEffectMayExist"))
     return SupersedeReview(
         reviewId=f"approve-rerun-{_path_safe(record.alias)}-{_path_safe(source_run_id)}-{_path_safe(created_at)}",
         sourceRunId=source_run_id,

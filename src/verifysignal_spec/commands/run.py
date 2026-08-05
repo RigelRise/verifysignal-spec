@@ -6,13 +6,19 @@ from typing import Any
 
 from verifysignal_spec.commands.runtime_inputs import resolve_runtime_inputs
 from verifysignal_spec.commands.run_request_preparation import (
+    PreparedRunRequestOwnership,
+    cleanup_owned_prepared_run_request,
     confirmation_placeholder_blockers,
+    prepared_output_dir_is_safe,
     prepare_run_request_document,
+    release_prepared_run_request_ownership,
+    write_owned_prepared_run_request,
     write_prepared_run_request,
 )
 from verifysignal_spec.core.adapter import CoreAdapter, core_status
 from verifysignal_spec.core.errors import CoreMissingError
 from verifysignal_spec.core.executable_contract import project_core_contract
+from verifysignal_spec.core.outcomes import normalize_core_outcome
 from verifysignal_spec.runtime.entitlement import api_base_url_for_runtime, valid_receipt_path
 from verifysignal_spec.runtime.env_file import (
     EnvironmentFileError,
@@ -33,28 +39,38 @@ from verifysignal_spec.workflows.readiness import executable_contract_blockers, 
 from verifysignal_spec.workflows.stage_cards import run_result_card
 from verifysignal_spec.workflows.target_confirmation import target_confirmation_blocker
 from verifysignal_spec.workflows.repository import load_artifact_plan
-from verifysignal_spec.workspace.models import ArtifactReference, RerunPolicy, RunHistoryEntry
+from verifysignal_spec.workspace.models import ArtifactReference, LastCoreAttempt, RerunPolicy, RunHistoryEntry
+from verifysignal_spec.workspace import layout
 from verifysignal_spec.workspace.repository import (
+    calculate_run_confirmation_requirements,
+    clear_last_core_attempt,
+    core_attempt_iso,
     load_document,
+    load_readiness_snapshot,
     load_use_case,
     now_iso,
     record_run,
     refresh_collision_findings,
     load_supersede_reviews,
+    reconcile_active_confirmation,
     resolve_artifacts,
     resolve_named_output,
-    run_confirmation_requirements,
+    save_last_core_attempt,
     save_supersede_review,
     side_effect_class,
     side_effect_lifecycle_summary,
+    snapshot_invalidation_reasons,
 )
 from verifysignal_spec.workspace.models import PostCommitInterpretation
-from verifysignal_spec.workspace.validation import validate_side_effect_declaration
 from verifysignal_spec.workflows.write_safety import (
     build_rerun_approval_review,
     canonical_side_effect_policy_snapshot,
     evaluate_rerun_decision as _evaluate_rerun_decision,
 )
+from verifysignal_spec.workflows.run_preflight import build_run_preflight, local_run_policy_blockers
+
+
+_DEFAULT_PREPARED_WRITER = write_prepared_run_request
 
 
 def run(
@@ -75,17 +91,88 @@ def run(
     # (always truthy) use case silently shadowed this flag and made EVERY run pass --record to Core.
     use_case = load_use_case(project, alias)
     target_blocker = target_confirmation_blocker(project, use_case)
-    if target_blocker:
+    profile = next((item for item in use_case.profiles if item.name == profile_name), None)
+    if profile is None:
+        available = ", ".join(item.name for item in use_case.profiles) or "normal"
+        raise ValueError(f"Unknown profile for {alias}: {profile_name}. Available profiles: {available}.")
+    reviews = load_supersede_reviews(project, alias)
+    local_policy_blockers = local_run_policy_blockers(
+        use_case,
+        supersede_reviews=reviews,
+    )
+    readiness_snapshot = load_readiness_snapshot(project, alias)
+    preflight = build_run_preflight(
+        {
+            "targetBlocker": target_blocker,
+            "missingArtifacts": _missing_local_run_artifacts(project, use_case),
+            "policyBlockers": local_policy_blockers,
+            "confirmationRequirements": calculate_run_confirmation_requirements(project, use_case),
+            "confirmedRisks": list(confirmed_risks or []),
+            "readinessInvalidationReasons": (
+                snapshot_invalidation_reasons(project, use_case, readiness_snapshot)
+                if readiness_snapshot is not None
+                else []
+            ),
+        },
+        use_case,
+        readiness_snapshot,
+        {},
+        reviews,
+    )
+    rerun_guard = preflight["rerunDecision"]
+    first_preflight_blocker = preflight["blockers"][0] if preflight.get("blockers") else None
+    if (
+        isinstance(first_preflight_blocker, dict)
+        and first_preflight_blocker.get("code") == "runtime.rerun-confirmation-required"
+        and rerun_guard.get("confirmationId") in set(confirmed_risks or [])
+    ):
+        review = build_rerun_approval_review(
+            use_case,
+            rerun_guard,
+            created_at=now_iso(),
+            created_by="run --confirm-risk",
+        )
+        save_supersede_review(project, alias, review)
+        reviews = load_supersede_reviews(project, alias)
+        preflight = build_run_preflight(
+            {
+                "targetBlocker": target_blocker,
+                "missingArtifacts": _missing_local_run_artifacts(project, use_case),
+                "policyBlockers": local_policy_blockers,
+                "confirmationRequirements": calculate_run_confirmation_requirements(project, use_case),
+                "confirmedRisks": list(confirmed_risks or []),
+                "readinessInvalidationReasons": (
+                    snapshot_invalidation_reasons(project, use_case, readiness_snapshot)
+                    if readiness_snapshot is not None
+                    else []
+                ),
+            },
+            use_case,
+            readiness_snapshot,
+            {},
+            reviews,
+        )
+        rerun_guard = preflight["rerunDecision"]
+    reconcile_active_confirmation(project, alias, preflight.get("confirmation"))
+    if not preflight["canProceed"]:
+        blocker = preflight["blockers"][0]
         return {
             "alias": alias,
             "status": "blocked",
             "coreStatus": "not-run",
             "coverageStatus": "not-run",
-            "requiresConfirmation": True,
-            "blockers": [target_blocker],
-            "reason": target_blocker["message"],
-            "nextAction": target_blocker["recoveryCommand"],
+            "coreBrowserStatus": "blocked",
+            "specCoverageStatus": "not-run",
+            "profile": profile_name,
+            "rerunDecision": rerun_guard,
+            "requiresConfirmation": bool(preflight["requiresConfirmation"]),
+            "confirmation": preflight.get("confirmation"),
+            "blockers": preflight["blockers"],
+            "reason": blocker.get("message"),
+            "recommendedAction": preflight.get("recommendedAction"),
+            "nextAction": preflight["nextAction"],
         }
+
     environment_values: dict[str, str] = {}
     environment_warnings: list[dict[str, str]] = []
     if env_file:
@@ -106,10 +193,6 @@ def run(
                 "reason": exc.message,
                 "valuesIncluded": False,
             }
-    profile = next((item for item in use_case.profiles if item.name == profile_name), None)
-    if profile is None:
-        available = ", ".join(item.name for item in use_case.profiles) or "normal"
-        raise ValueError(f"Unknown profile for {alias}: {profile_name}. Available profiles: {available}.")
     # --record/--replay are optional Core run MODES: require the advertised capability only when the
     # flag is actually passed, so an older Core blocks with a clear code instead of failing inside run.
     run_mode_capability = "run-record" if record else ("run-replay" if replay else None)
@@ -167,119 +250,6 @@ def run(
             "blockers": [blocker.to_dict() for blocker in contract_blockers],
             "reason": contract_blockers[0].message,
             "nextAction": f"verifysignal workflow check run --alias {alias} --json",
-        }
-    pending_confirmations = run_confirmation_requirements(project, use_case)
-    unmatched_confirmations = [
-        item
-        for item in pending_confirmations
-        if item.blocksExecution and item.id not in set(confirmed_risks or [])
-    ]
-    if unmatched_confirmations:
-        confirmation = unmatched_confirmations[0]
-        return {
-            "alias": alias,
-            "status": "blocked",
-            "coreStatus": "blocked",
-            "coverageStatus": "not-run",
-            "coreBrowserStatus": "blocked",
-            "specCoverageStatus": "not-run",
-            "selectedMainSkill": _selected_main_skill(use_case.mainSkill, main_skill),
-            "profile": profile_name,
-            "profileSettings": profile_settings_model.to_dict(),
-            "managedRuntimeReadiness": managed_runtime.to_dict(),
-            "requiresConfirmation": True,
-            "confirmation": confirmation.to_dict(),
-            "blockers": [
-                {
-                    "code": "runtime.confirmation-required",
-                    "severity": "blocker",
-                    "category": "write-flow-safety",
-                    "message": confirmation.reason,
-                    "recoveryCommand": f"verifysignal workflow check run --alias {alias} --json",
-                }
-            ],
-            "reason": confirmation.reason,
-            "nextAction": f"verifysignal run {alias} --confirm-risk {confirmation.id} --json",
-        }
-    side_effect_findings = validate_side_effect_declaration(
-        use_case.sideEffects,
-        use_case.rerunPolicy,
-        use_case.runtimeOutputs,
-        [item.to_dict() for item in use_case.runtimeInputs],
-        core_contract=core_contract,
-        runtime_outcomes=[use_case.lastRun] if isinstance(use_case.lastRun, dict) else [],
-    )
-    if any(item.get("severity") == "blocking" for item in side_effect_findings):
-        blockers = [
-            {
-                "code": f"runtime.{item.get('code')}",
-                "severity": "blocker",
-                "category": "write-flow-safety",
-                "message": item.get("message"),
-                "documentationRef": item.get("path"),
-                "recoveryCommand": f"verifysignal workflow check run --alias {alias} --json",
-            }
-            for item in side_effect_findings
-            if item.get("severity") == "blocking"
-        ]
-        return {
-            "alias": alias,
-            "status": "blocked",
-            "coreStatus": "blocked",
-            "coverageStatus": "not-run",
-            "coreBrowserStatus": "blocked",
-            "specCoverageStatus": "not-run",
-            "selectedMainSkill": _selected_main_skill(use_case.mainSkill, main_skill),
-            "profile": profile_name,
-            "profileSettings": profile_settings_model.to_dict(),
-            "managedRuntimeReadiness": managed_runtime.to_dict(),
-            "blockers": blockers,
-            "reason": blockers[0]["message"],
-            "nextAction": f"verifysignal workflow check run --alias {alias} --json",
-        }
-    rerun_guard = evaluate_rerun_decision(use_case, supersede_reviews=load_supersede_reviews(project, alias))
-    if rerun_guard["decision"] == "requires-confirmation" and rerun_guard.get("confirmationId") in set(confirmed_risks or []):
-        review = build_rerun_approval_review(use_case, rerun_guard, created_at=now_iso(), created_by="run --confirm-risk")
-        save_supersede_review(project, alias, review)
-        rerun_guard = evaluate_rerun_decision(use_case, supersede_reviews=load_supersede_reviews(project, alias))
-    if rerun_guard["decision"] in {"blocked", "requires-confirmation"}:
-        requires_rerun_confirmation = rerun_guard["decision"] == "requires-confirmation"
-        blocker: dict[str, Any] = {
-            "code": "runtime.rerun-policy-blocked" if rerun_guard["decision"] == "blocked" else "runtime.rerun-confirmation-required",
-            "severity": "blocker",
-            "category": "write-flow-safety",
-            "message": rerun_guard["reason"],
-            "recoveryCommand": rerun_guard["nextAction"],
-        }
-        if requires_rerun_confirmation:
-            blocker["confirmationId"] = rerun_guard.get("confirmationId")
-        return {
-            "alias": alias,
-            "status": "blocked",
-            "coreStatus": "blocked",
-            "coverageStatus": "not-run",
-            "coreBrowserStatus": "blocked",
-            "specCoverageStatus": "not-run",
-            "selectedMainSkill": _selected_main_skill(use_case.mainSkill, main_skill),
-            "profile": profile_name,
-            "profileSettings": profile_settings_model.to_dict(),
-            "managedRuntimeReadiness": managed_runtime.to_dict(),
-            "rerunDecision": rerun_guard,
-            "requiresConfirmation": requires_rerun_confirmation,
-            "confirmation": (
-                {
-                    "id": rerun_guard.get("confirmationId"),
-                    "scope": rerun_guard.get("confirmationScope"),
-                    "sourceRunId": rerun_guard.get("sourceRunId"),
-                    "reason": rerun_guard.get("reason"),
-                    "blocksExecution": True,
-                }
-                if requires_rerun_confirmation
-                else None
-            ),
-            "blockers": [blocker],
-            "reason": rerun_guard["reason"],
-            "nextAction": rerun_guard["nextAction"],
         }
     prepared_run_id = f"{alias}-{now_iso().replace(':', '').replace('-', '')}"
     named_output_values, named_output_error = _named_output_runtime_values(project, use_case)
@@ -342,6 +312,8 @@ def run(
             "nextAction": "Adjust generated runtime input template or seed before running again.",
         }
     output_dir = project / ".verifysignal" / "runs" / alias
+    if not prepared_output_dir_is_safe(project, output_dir):
+        return _prepared_request_ownership_blocker(alias, profile_name, rerun_guard)
     prepared_document, confirmation_findings, prepared_changed = prepare_run_request_document(run_request, runtime_values)
     if confirmation_findings:
         blockers = confirmation_placeholder_blockers(confirmation_findings)
@@ -361,27 +333,121 @@ def run(
             "reason": blockers[0]["message"],
             "nextAction": blockers[0].get("nextAction") or f"verifysignal workflow check run --alias {alias} --json",
         }
-    prepared_run_request = (
-        write_prepared_run_request(output_dir, prepared_run_id, prepared_document)
+    writer_override = (
+        write_prepared_run_request
+        if write_prepared_run_request is not _DEFAULT_PREPARED_WRITER
+        else None
+    )
+    prepared_ownership = (
+        write_owned_prepared_run_request(
+            project,
+            output_dir,
+            prepared_run_id,
+            prepared_document,
+            **({"writer": writer_override} if writer_override is not None else {}),
+        )
         if prepared_changed and prepared_document is not None
-        else run_request
+        else PreparedRunRequestOwnership(
+            path=run_request,
+            createdByThisInvocation=False,
+        )
     )
-    result = CoreAdapter(executable=managed_runtime.runtimeCommand, cwd=project).run(
-        prepared_run_request,
-        main_skill,
-        skills,
-        output_dir=output_dir,
-        headed=profile_settings_model.headed,
-        slow_mo_ms=profile_settings_model.slowMoMs,
-        record=record,
-        replay=replay,
-        env={**runtime_values, **environment_values},
-        entitlement_receipt=valid_receipt_path(
-            api_base_url_for_runtime(managed_runtime, api_base_url),
-        ),
-    )
-    data = result.get("data", {})
-    run_id = data.get("runId") or prepared_run_id
+    if prepared_changed and not prepared_ownership.createdByThisInvocation:
+        return _prepared_request_ownership_blocker(alias, profile_name, rerun_guard)
+    prepared_run_request = prepared_ownership.path
+    try:
+        result = CoreAdapter(executable=managed_runtime.runtimeCommand, cwd=project).run(
+            prepared_run_request,
+            main_skill,
+            skills,
+            output_dir=output_dir,
+            headed=profile_settings_model.headed,
+            slow_mo_ms=profile_settings_model.slowMoMs,
+            record=record,
+            replay=replay,
+            env={**runtime_values, **environment_values},
+            entitlement_receipt=valid_receipt_path(
+                api_base_url_for_runtime(managed_runtime, api_base_url),
+            ),
+        )
+        normalized_outcome = normalize_core_outcome("run", result)
+    except BaseException:
+        cleanup_owned_prepared_run_request(project, prepared_ownership)
+        raise
+    if not normalized_outcome.eligibleForRunPersistence:
+        cleanup_owned_prepared_run_request(project, prepared_ownership)
+        explicitly_not_started = bool(
+            normalized_outcome.executionKnown
+            and normalized_outcome.executionStarted is False
+            and normalized_outcome.sideEffectMayExist is False
+        )
+        attempt = LastCoreAttempt(
+            attemptedAt=core_attempt_iso(),
+            operation="run",
+            schema=normalized_outcome.schema,
+            status=normalized_outcome.status,
+            errorCode=normalized_outcome.errorCode,
+            executionState="not-started" if explicitly_not_started else "unknown",
+            sideEffectMayExist=normalized_outcome.sideEffectMayExist,
+        )
+        save_last_core_attempt(project, alias, attempt)
+        updated_use_case = load_use_case(project, alias)
+        updated_readiness = load_readiness_snapshot(project, alias)
+        attempt_preflight = build_run_preflight(
+            {
+                "confirmationRequirements": calculate_run_confirmation_requirements(project, updated_use_case),
+                "confirmedRisks": [],
+                "readinessInvalidationReasons": (
+                    snapshot_invalidation_reasons(project, updated_use_case, updated_readiness)
+                    if updated_readiness is not None
+                    else []
+                ),
+            },
+            updated_use_case,
+            updated_readiness,
+            {},
+            load_supersede_reviews(project, alias),
+        )
+        reconcile_active_confirmation(project, alias, attempt_preflight.get("confirmation"))
+        blocker_code = normalized_outcome.blockerCode or "core.contract-invalid"
+        reason = (
+            "Core trust could not be verified before execution."
+            if blocker_code == "entitlement.unverifiable"
+            else "Core returned a response that is not eligible for run persistence."
+        )
+        next_action = (
+            "verifysignal core update --json"
+            if blocker_code in {"entitlement.unverifiable", "core.contract-invalid", "core.incompatible"}
+            else f"verifysignal workflow check run --alias {alias} --json"
+        )
+        return {
+            "alias": alias,
+            "status": "blocked",
+            "coreStatus": "not-started" if explicitly_not_started else "execution-unknown",
+            "coverageStatus": "not-run",
+            "coreBrowserStatus": "not-run",
+            "specCoverageStatus": "not-run",
+            "profile": profile_name,
+            "managedRuntimeReadiness": managed_runtime.to_dict(),
+            "lastCoreAttempt": attempt.to_dict(),
+            "rerunDecision": attempt_preflight["rerunDecision"],
+            "requiresConfirmation": bool(attempt_preflight["requiresConfirmation"]),
+            "confirmation": attempt_preflight.get("confirmation"),
+            "blockers": [
+                {
+                    "code": blocker_code,
+                    "severity": "blocker",
+                    "category": "core-runtime",
+                    "message": reason,
+                    "recoveryCommand": next_action,
+                }
+            ],
+            "reason": reason,
+            "nextAction": next_action,
+        }
+    release_prepared_run_request_ownership(prepared_ownership)
+    data = result["data"]
+    run_id = str(data["runId"])
     core = core_status(result)
     result_with_report = _result_with_public_report(project, result)
     side_effects = _public_result_field(result_with_report, "sideEffects")
@@ -506,6 +572,25 @@ def run(
         evidenceDir=data.get("evidencePath") or data.get("evidenceDir"),
     )
     record_run(project, entry)
+    clear_last_core_attempt(project, alias)
+    completed_use_case = load_use_case(project, alias)
+    completed_readiness = load_readiness_snapshot(project, alias)
+    completed_preflight = build_run_preflight(
+        {
+            "confirmationRequirements": calculate_run_confirmation_requirements(project, completed_use_case),
+            "confirmedRisks": [],
+            "readinessInvalidationReasons": (
+                snapshot_invalidation_reasons(project, completed_use_case, completed_readiness)
+                if completed_readiness is not None
+                else []
+            ),
+        },
+        completed_use_case,
+        completed_readiness,
+        {},
+        load_supersede_reviews(project, alias),
+    )
+    reconcile_active_confirmation(project, alias, completed_preflight.get("confirmation"))
     send_usage_ping("run", ping_outcome(entry.status), api_base_url=api_base_url)
     return {
         **({"credentialWarnings": environment_warnings} if environment_warnings else {}),
@@ -598,6 +683,29 @@ def _first_run_payload(
 
 def evaluate_rerun_decision(record: Any, *, supersede_reviews: list[Any] | None = None) -> dict[str, Any]:
     return _evaluate_rerun_decision(record, supersede_reviews=supersede_reviews)
+
+
+def _missing_local_run_artifacts(project: Path, record: Any) -> list[str]:
+    missing: list[str] = []
+    references = [
+        record.runRequest,
+        record.mainSkill,
+        *record.skills,
+        *record.sourceOnlySkills,
+    ]
+    for reference in references:
+        if reference is None or not getattr(reference, "path", None):
+            label = "run request" if reference is record.runRequest else "main/supporting skill"
+            missing.append(label)
+            continue
+        try:
+            path = layout.project_relative_path(project, str(reference.path))
+        except ValueError:
+            missing.append(str(reference.path))
+            continue
+        if not path.exists() or not path.is_file():
+            missing.append(str(reference.path))
+    return sorted(set(missing))
 
 
 def _generated_binding_collision_findings(project: Path, record: Any, runtime_values: dict[str, str]) -> list[dict[str, Any]]:
@@ -739,6 +847,42 @@ def _prepared_run_request_path(run_request: Path, output_dir: Path, run_id: str,
     if not changed or document is None:
         return run_request
     return write_prepared_run_request(output_dir, run_id, document)
+
+
+def _prepared_request_ownership_blocker(
+    alias: str,
+    profile_name: str,
+    rerun_decision: dict[str, Any],
+) -> dict[str, Any]:
+    reason = (
+        "The prepared run request could not be created as an invocation-owned "
+        "regular file inside the project runs directory."
+    )
+    next_action = (
+        "Restore .verifysignal/runs as a project-owned directory and retry the run."
+    )
+    return {
+        "alias": alias,
+        "status": "blocked",
+        "coreStatus": "not-run",
+        "coverageStatus": "not-run",
+        "coreBrowserStatus": "blocked",
+        "specCoverageStatus": "not-run",
+        "profile": profile_name,
+        "rerunDecision": rerun_decision,
+        "requiresConfirmation": False,
+        "blockers": [
+            {
+                "code": "runtime.prepared-request-ownership-refused",
+                "severity": "blocker",
+                "category": "prepared-run-request",
+                "message": reason,
+                "recoveryCommand": next_action,
+            }
+        ],
+        "reason": reason,
+        "nextAction": next_action,
+    }
 
 
 def _runtime_input_source(record: Any, name: str) -> str:

@@ -49,19 +49,21 @@ copy of the raw response and is not a new Core wire schema.
 |---|---|---|
 | `operation` | string | Operation requested by Spec; never trusted solely from response data |
 | `kind` | `success \| core-error \| contract-invalid` | Determined by schema identity and operation contract |
-| `schema` | string or null | Public schema observed in the response |
+| `schema` | string or null | Advertised public schema observed in the response; unrecognized values redact to null |
 | `status` | `passed \| failed \| blocked \| error` | Normalized public status |
-| `errorCode` | string or null | Top-level public code first, legacy finding fallback second |
+| `errorCode` | string or null | Top-level advertised public code first, legacy finding fallback second; unadvertised values reduce to `core.error` |
 | `blockerCode` | string or null | Spec-safe mapped code such as `entitlement.unverifiable` or `core.contract-invalid` |
 | `executionKnown` | boolean | True only when the public execution object is structurally valid |
 | `executionStarted` | boolean or null | Null when unknown |
-| `executionPhase` | string or null | Preserved public phase, including `pre-execution` |
+| `executionPhase` | string or null | Preserved only for an advertised public phase, including `pre-execution` |
 | `sideEffectMayExist` | boolean or null | Null when unknown |
 | `eligibleForRunPersistence` | boolean | True only for valid `verifysignal.run/v1` |
 
 ### Validation rules
 
 - Expected success schema is selected by invoked operation.
+- Schema version must match the advertised operation version and `data` must be
+  a mapping. A run additionally requires a non-empty path-safe `data.runId`.
 - `verifysignal.error/v1` is accepted as an error for a protected operation.
 - A malformed response, operation/schema mismatch, or unexpected schema yields
   `kind: contract-invalid`, `blockerCode: core.contract-invalid`.
@@ -92,7 +94,7 @@ Core error without asserting that a browser run exists.
 
 | Field | Type | Rules |
 |---|---|---|
-| `attemptedAt` | UTC timestamp | Time Spec invoked the protected Core operation |
+| `attemptedAt` | UTC timestamp | Local time Spec invoked the protected Core operation, retained at nanosecond precision |
 | `operation` | string | Public operation name, primarily `run` or `authoring-check` |
 | `schema` | string or null | Public response schema only |
 | `status` | string | Normalized Core status |
@@ -106,6 +108,13 @@ Core response. A valid later `verifysignal.run/v1` clears it. A later safe
 not-started error replaces an earlier unknown marker and allows active unknown
 risk to be reconciled away.
 
+Attempt-scoped confirmation identity is a one-way digest of every allowlisted
+marker field. It is not stored on the marker. This prevents a same-second later
+attempt with different public evidence from reusing an approval while keeping
+the persistence allowlist unchanged. Legacy timestamp-scoped reviews are
+accepted only when their recorded prior classification exactly matches the
+current marker and the review is strictly later.
+
 ## PreviousRunClassification
 
 An in-memory classification derived from a prior real `verifysignal.run/v1`
@@ -118,12 +127,15 @@ history entry and any later `lastCoreAttempt` for operation `run`.
 | `commit` | Confirmed/inferred commit or explicit side-effect-may-exist evidence | `afterCommit` |
 | `unknown-write` | Write/external-notification execution occurred but commit/side effect cannot be determined | `afterUnknown` |
 
-Historical explicit write evidence overrides a later metadata-only change to a
-non-write class. A non-write class with explicit false evidence is `no-commit`,
-not `unknown-write`. If `lastCoreAttempt.attemptedAt` is newer than the last real
-run, `not-started` selects `no-commit`; `unknown` selects `unknown-write` only for
-write/external-notification classes. Non-run operations do not override the
-previous run classification.
+Historical explicit write evidence, including legacy `postCommit` or
+`sideEffectMayExist` truth and committed-status interpretation even when policy
+snapshots are absent, overrides a later metadata-only change to a non-write
+class. A non-write class with explicit false evidence is `no-commit`, not
+`unknown-write`. If `lastCoreAttempt.attemptedAt` is strictly newer than the last
+real run, `not-started` selects `no-commit`; `unknown` selects `unknown-write`
+only for write/external-notification classes. Equal, missing, or invalid attempt
+timestamps do not override a timestamped real run. Non-run operations do not
+override the previous run classification.
 
 ## EffectiveRerunDecision
 

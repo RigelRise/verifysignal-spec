@@ -55,8 +55,10 @@ Direct run stops on the same first blocking decision as workflow check. If
 
 ## Rerun classification table
 
-The evaluator compares a real `lastRun` with a newer `lastCoreAttempt`, when
-present. Only `lastCoreAttempt.operation == run` participates.
+The evaluator compares a real `lastRun` with a strictly newer
+`lastCoreAttempt`, when present. Equal or unparseable attempt timestamps do not
+override a timestamped real run. Only `lastCoreAttempt.operation == run`
+participates.
 
 | Latest relevant evidence | Side-effect class | Outcome class | Policy branch |
 |---|---|---|---|
@@ -70,7 +72,9 @@ present. Only `lastCoreAttempt.operation == run` participates.
 | Unknown attempt | none/authenticated-read with no historical write evidence | `no-commit` | `afterNoCommit` |
 
 Historical explicit write evidence cannot be erased by changing the current
-declared class to `none`.
+declared class to `none`. Legacy truth in `postCommit`, `sideEffectMayExist`, or
+a committed-status interpretation remains write evidence even when the old run
+does not contain `sideEffectPolicy` or `sideEffects` snapshots.
 
 The returned `rerunDecision` always includes `decision`, `outcomeClass`,
 `policyBranch`, `reason`, `refreshRuntimeInputs`, and `nextAction`; it includes
@@ -104,10 +108,16 @@ Only after preflight is ready may direct run:
 4. prepare a run request;
 5. invoke Core.
 
-Preparation must return both the exact prepared-request path and
-`createdByThisInvocation: boolean`. On a Core error, cleanup deletes that exact
-path only when the boolean is true and the path still resolves to the expected
-project-owned prepared-request location. It never deletes:
+Preparation must return the exact prepared-request path,
+`createdByThisInvocation: boolean`, the created file identity, and a held
+cleanup anchor. On POSIX, creation is exclusive and relative to a held no-follow
+directory descriptor; cleanup verifies the same device/inode and unlinks
+relative to that descriptor. On Windows, every non-reparse ancestor is held
+without delete sharing, the file is created with `CREATE_NEW` without write or
+delete sharing, and cleanup marks the exact retained file handle for deletion.
+In both cases, replacing or renaming a pathname cannot redirect cleanup.
+Platforms without either safe primitive set refuse prepared creation and block
+before Core. Cleanup never deletes:
 
 - a file that existed before the invocation;
 - a user-authored canonical run request;

@@ -28,6 +28,7 @@ WORKFLOW_GLOBAL_UNDERSTANDING = "understanding.md"
 
 ALIAS_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,79}$")
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,199}$")
+RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$")
 
 
 def resolve_project_path(project_path: str | None = None, here: bool = False) -> Path:
@@ -89,7 +90,12 @@ def supersede_review_path(project: Path, alias: str, review_id: str) -> Path:
 
 
 def run_history_path(project: Path, alias: str, run_id: str) -> Path:
-    return workspace_root(project) / RUNS_DIR / alias / f"{run_id}.yaml"
+    return (
+        workspace_root(project)
+        / RUNS_DIR
+        / ensure_path_safe_alias(alias)
+        / f"{ensure_path_safe_run_id(run_id)}.yaml"
+    )
 
 
 def readiness_snapshot_path(project: Path, alias: str) -> Path:
@@ -186,6 +192,14 @@ def ensure_path_safe_id(value: str) -> str:
     # may legitimately exceed the 80-char alias bound. NOT for user-facing aliases.
     if not ID_RE.match(value):
         raise ValueError("Generated id must be lowercase path-safe text (letters, numbers, '.', '_', '-'), up to 200 characters.")
+    return value
+
+
+def ensure_path_safe_run_id(value: str) -> str:
+    if not isinstance(value, str) or not RUN_ID_RE.fullmatch(value):
+        raise ValueError(
+            "Run id must be path-safe text using letters, numbers, '.', '_' or '-' and at most 200 characters."
+        )
     return value
 
 
