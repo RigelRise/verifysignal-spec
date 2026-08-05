@@ -83,11 +83,11 @@ the exact layered readiness and normalized outcome defined by the contracts.
 
 ### Red tests for User Story 2
 
-- [ ] T019 [P] [US2] Add failing operation/schema, top-level-code precedence, legacy fallback, and execution-metadata unit cases in `tests/unit/test_core_outcome_normalization.py`
-- [ ] T020 [P] [US2] Add failing layered readiness and legacy snapshot decoding cases in `tests/integration/test_protected_readiness_scope.py`
-- [ ] T021 [P] [US2] Add failing public schema, additive field, and `core.contract-invalid` assertions in `tests/contract/test_entitlement_preflight_recovery_contract.py`
-- [ ] T022 [P] [US2] Add failing normalized-output and readiness secret-canary cases in `tests/integration/test_runtime_secret_safety.py`
-- [ ] T023 [US2] Run the US2 focused tests, confirm the diagnosed red failures, and commit them before editing production files in `tests/unit/test_core_outcome_normalization.py`
+- [X] T019 [P] [US2] Add failing operation/schema, top-level-code precedence, legacy fallback, and execution-metadata unit cases in `tests/unit/test_core_outcome_normalization.py`
+- [X] T020 [P] [US2] Add failing layered readiness and legacy snapshot decoding cases in `tests/integration/test_protected_readiness_scope.py`
+- [X] T021 [P] [US2] Add failing public schema, additive field, and `core.contract-invalid` assertions in `tests/contract/test_entitlement_preflight_recovery_contract.py`
+- [X] T022 [P] [US2] Add failing normalized-output and readiness secret-canary cases in `tests/integration/test_runtime_secret_safety.py`
+- [X] T023 [US2] Run the US2 focused tests, confirm the diagnosed red failures, and commit them before editing production files in `tests/unit/test_core_outcome_normalization.py`
 
 ### Implementation for User Story 2
 
