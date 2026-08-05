@@ -183,7 +183,9 @@ def register_agent_user_mcp(
                         "inspect its user MCP configuration."
                     ),
                     "nextAction": (
-                        f"Run `{executable_name} mcp list`, resolve the "
+                        # Name the command that ACTUALLY failed. Sending someone to `mcp list` when
+                        # `mcp get playwright` is what broke makes them debug the wrong thing.
+                        f"Run `{executable_name} mcp get {PLAYWRIGHT_MCP_SERVER_NAME}`, resolve the "
                         "reported agent configuration error, and rerun the "
                         "same command."
                     ),
@@ -359,16 +361,21 @@ def _inspect_agent_user_mcp(
         cwd=cwd,
         timeout_seconds=timeout_seconds,
     )
+    # `error` means the agent DID NOT ANSWER; `missing` means it answered and the server was not
+    # there. Only the first case is a genuine dead end.
+    #
+    # This used to hinge on finding "no mcp server named" or "not found" in the output, and treated
+    # everything else as `error` — a hard block built on English prose from another tool. Any
+    # rewording, any localization, any newer agent version, and a first-time user got
+    # `agent-mcp.inspect-failed` telling them to go fix a configuration that was fine.
+    #
+    # A non-zero exit now means `missing`, and we try to register. If the agent really is broken the
+    # ADD fails too, and `agent-mcp.registration-failed` says so — a more accurate blocker than the
+    # one this guessed at. Degrading into a better error beats guessing at prose.
     if completed is None:
         return {"state": "error"}
     if completed.returncode != 0:
-        combined = f"{completed.stdout}\n{completed.stderr}".lower()
-        if (
-            "no mcp server named" in combined
-            or "not found" in combined
-        ):
-            return {"state": "missing"}
-        return {"state": "error"}
+        return {"state": "missing"}
     if integration_key == "codex":
         return {
             "state": (
@@ -812,7 +819,7 @@ def run_playwright_mcp(
 
         def forward(signum: int, _frame: Any) -> None:
             if process.poll() is None:
-                process.send_signal(signum)
+                _stop_child(process, signum)
 
         for signum in (signal.SIGINT, signal.SIGTERM):
             try:
@@ -825,7 +832,7 @@ def run_playwright_mcp(
             return_code = process.wait()
         except KeyboardInterrupt:
             if process.poll() is None:
-                process.send_signal(signal.SIGINT)
+                _stop_child(process, signal.SIGINT)
             process.wait()
             return_code = 130
         finally:
@@ -834,9 +841,47 @@ def run_playwright_mcp(
             if process.poll() is None:
                 process.terminate()
                 process.wait()
-        if return_code < 0:
-            return 128 + abs(return_code)
-        return return_code
+        return _exit_code_for(return_code)
+
+
+#: NTSTATUS values a console child exits with, mapped to the POSIX convention the CLI reports.
+#: STATUS_CONTROL_C_EXIT is what Ctrl-C produces on Windows; the other two are the terminate paths.
+_WINDOWS_EXIT_CODES = {
+    0xC000013A: 130,  # STATUS_CONTROL_C_EXIT
+    0xC0000005: 139,  # STATUS_ACCESS_VIOLATION
+    0xC00000FD: 140,  # STATUS_STACK_OVERFLOW
+}
+
+
+def _stop_child(process: subprocess.Popen[Any], signum: int) -> None:
+    """Stop the MCP child the way THIS host can.
+
+    On Windows ``Popen.send_signal`` accepts only SIGTERM, CTRL_C_EVENT and CTRL_BREAK_EVENT.
+    ``send_signal(SIGINT)`` raises ``ValueError: Unsupported signal: 2`` unless the child was created
+    in its own process group — so Ctrl-C in the launcher crashed instead of forwarding. ``terminate``
+    maps to TerminateProcess and works.
+    """
+
+    if os.name == "nt":
+        process.terminate()
+        return
+    process.send_signal(signum)
+
+
+def _exit_code_for(return_code: int) -> int:
+    """Translate a child's return code into the 0-255 range a CLI may exit with.
+
+    POSIX reports a signalled child as a NEGATIVE return code, which the 128+n convention covers.
+    Windows never does: a return code there is an unsigned DWORD, so that branch was dead and an
+    abnormal termination leaked a raw NTSTATUS (Ctrl-C is 3221225786) straight out as the CLI's exit
+    code — where the shell would truncate it to a meaningless low byte.
+    """
+
+    if return_code < 0:
+        return 128 + abs(return_code)
+    if return_code in _WINDOWS_EXIT_CODES:
+        return _WINDOWS_EXIT_CODES[return_code]
+    return return_code if 0 <= return_code <= 255 else 1
 
 
 def merge_mcp_servers(project: Path, servers: dict[str, Any]) -> dict[str, Any]:
