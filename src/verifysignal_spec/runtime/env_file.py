@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import re
-import stat
 import subprocess
 from pathlib import Path
 from typing import Iterable
 
+from verifysignal_spec.security.file_protection import is_owner_only
 from verifysignal_spec.workspace.repository import (
     credential_runtime_requirements,
     load_document,
@@ -159,10 +159,13 @@ def load_environment_file(
             "credentials.env-file-missing",
             "The explicitly selected test environment file does not exist.",
         )
-    if stat.S_IMODE(path.stat().st_mode) & 0o077:
+    # is_owner_only, not a raw mode test: on Windows Python synthesizes 0o666 for every regular
+    # file, so `& 0o077` was ALWAYS truthy and every explicitly selected --env-file was rejected as
+    # insecure. The check now asks the host the question in the host's own terms.
+    if not is_owner_only(path):
         raise EnvironmentFileError(
             "credentials.env-file-insecure-permissions",
-            "The test environment file must be readable and writable only by its owner (0600).",
+            "The test environment file must be readable and writable only by its owner.",
         )
     return parse_environment_text(
         path.read_text(encoding="utf-8"),
