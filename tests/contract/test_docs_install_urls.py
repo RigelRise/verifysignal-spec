@@ -24,6 +24,8 @@ REPOSITORY_SURFACE_PATHS = [
     ROOT / "CODE_OF_CONDUCT.md",
     ROOT / "ROADMAP.md",
     ROOT / ".github" / "ISSUE_TEMPLATE" / "config.yml",
+    ROOT / "scripts" / "install.sh",
+    ROOT / "scripts" / "install.ps1",
 ]
 
 
