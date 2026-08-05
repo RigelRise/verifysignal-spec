@@ -1,21 +1,28 @@
 from __future__ import annotations
 
 from pathlib import Path
+import time
+
+import pytest
 
 from tests.fixtures.workflows.guardrails import stage_payload
 from verifysignal_spec.workspace.models import AuthoringQuestion
 from verifysignal_spec.workspace.repository import (
     create_default_use_case,
     init_workspace,
+    load_document,
     load_use_case,
     now_iso,
+    save_document,
     save_use_case,
 )
 from verifysignal_spec.workflows.models import WorkflowRun
+from verifysignal_spec.workflows import repository as workflow_repository
 from verifysignal_spec.workflows.repository import (
     create_stage_states,
     link_workflow_reference,
     list_workflow_runs,
+    load_active_workflow_run,
     load_workflow_run,
     load_workflow_state,
     save_workflow_run,
@@ -23,9 +30,9 @@ from verifysignal_spec.workflows.repository import (
     state_document,
     workflow_dir_rel,
 )
-from verifysignal_spec.workflows.stage_documents import write_specification
 from verifysignal_spec.workflows.stage_persistence import persist_stage
 from verifysignal_spec.workflows.stages import initialize_understanding
+from verifysignal_spec.workflows.transitions import transition_workflow
 
 
 ALIAS = "login"
@@ -73,7 +80,9 @@ def test_lazy_workflow_migration_is_idempotent_across_repeated_writes(
     first_run_id = load_use_case(tmp_path, ALIAS).workflow.get("lastWorkflowRunId")
     second = _persist_legacy_specification(tmp_path)
 
-    assert first["status"] == second["status"] == "persisted"
+    assert first["status"] == "persisted"
+    assert second["status"] == "invalid"
+    assert second["blockers"][0]["code"] == "payload.invalid"
     assert len(list_workflow_runs(tmp_path)) == 1, (
         "repeated writes must reuse one migration run"
     )
@@ -161,6 +170,250 @@ def test_next_mutating_transition_heals_interrupted_projections_from_workflow_ru
     _assert_projections_match_run(tmp_path, healed)
 
 
+def test_next_transition_recovers_unreferenced_matching_workflow_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    init_workspace(tmp_path)
+    save_use_case(
+        tmp_path,
+        create_default_use_case(tmp_path, ALIAS, "Validate login."),
+    )
+    monkeypatch.setattr(
+        workflow_repository,
+        "now_iso",
+        lambda: "2026-08-05T00:00:00Z",
+    )
+    authoritative = _authoritative_run_at_tasks(
+        tmp_path,
+        run_id="wf-unreferenced-login",
+    )
+    monkeypatch.setattr(
+        workflow_repository,
+        "now_iso",
+        lambda: "2026-08-05T00:01:00Z",
+    )
+    save_workflow_run(
+        tmp_path,
+        WorkflowRun(
+            runId="wf-newer-other-alias",
+            useCaseAlias="other-alias",
+            status="paused",
+            currentStage="repair",
+            stageStates=create_stage_states(tmp_path, "other-alias"),
+        ),
+    )
+
+    result = _persist_tasks(tmp_path)
+
+    assert result["status"] == "persisted"
+    matching_runs = [
+        run for run in list_workflow_runs(tmp_path) if run.useCaseAlias == ALIAS
+    ]
+    assert [run.runId for run in matching_runs] == [authoritative.runId]
+    recovered = load_workflow_run(tmp_path, authoritative.runId)
+    assert recovered.currentStage == "implement"
+    assert recovered.targetEnvironmentConfirmation == (
+        authoritative.targetEnvironmentConfirmation
+    )
+    _assert_projections_match_run(tmp_path, recovered)
+
+
+def test_next_transition_prefers_newer_matching_run_over_stale_reference(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    init_workspace(tmp_path)
+    save_use_case(
+        tmp_path,
+        create_default_use_case(tmp_path, ALIAS, "Validate login."),
+    )
+    monkeypatch.setattr(
+        workflow_repository,
+        "now_iso",
+        lambda: "2026-08-05T00:00:00Z",
+    )
+    older = _authoritative_run_at_tasks(tmp_path, run_id="wf-older-login")
+    link_workflow_reference(tmp_path, ALIAS, older, older.status)
+    save_workflow_state(
+        tmp_path,
+        ALIAS,
+        state_document(tmp_path, ALIAS, older),
+    )
+    monkeypatch.setattr(
+        workflow_repository,
+        "now_iso",
+        lambda: "2026-08-05T00:01:00Z",
+    )
+    newer = _authoritative_run_at_tasks(tmp_path, run_id="wf-newer-login")
+
+    result = _persist_tasks(tmp_path)
+
+    assert result["status"] == "persisted"
+    assert load_workflow_run(tmp_path, older.runId).currentStage == "tasks"
+    recovered = load_workflow_run(tmp_path, newer.runId)
+    assert recovered.currentStage == "implement"
+    assert recovered.targetEnvironmentConfirmation == newer.targetEnvironmentConfirmation
+    _assert_projections_match_run(tmp_path, recovered)
+
+
+def test_out_of_order_transition_fails_without_mutating_workflow_documents(
+    tmp_path: Path,
+) -> None:
+    init_workspace(tmp_path)
+    save_use_case(
+        tmp_path,
+        create_default_use_case(tmp_path, ALIAS, "Validate login."),
+    )
+    run = _authoritative_run_at_tasks(tmp_path)
+    link_workflow_reference(tmp_path, ALIAS, run, run.status)
+    save_workflow_state(tmp_path, ALIAS, state_document(tmp_path, ALIAS, run))
+    paths = _authoritative_document_paths(tmp_path, run)
+    before = {name: path.read_bytes() for name, path in paths.items()}
+
+    with pytest.raises(ValueError, match="current stage"):
+        transition_workflow(
+            tmp_path,
+            ALIAS,
+            stage="implement",
+            outcome="completed",
+        )
+
+    assert {name: path.read_bytes() for name, path in paths.items()} == before
+
+
+def test_public_out_of_order_persistence_leaves_project_bytes_unchanged(
+    tmp_path: Path,
+) -> None:
+    init_workspace(tmp_path)
+    save_use_case(
+        tmp_path,
+        create_default_use_case(tmp_path, ALIAS, "Validate login."),
+    )
+    run = _authoritative_run_at_tasks(tmp_path)
+    link_workflow_reference(tmp_path, ALIAS, run, run.status)
+    save_workflow_state(tmp_path, ALIAS, state_document(tmp_path, ALIAS, run))
+    before = _project_file_bytes(tmp_path)
+
+    result = persist_stage(
+        tmp_path,
+        "specify",
+        alias=ALIAS,
+        payload=stage_payload(
+            "specify",
+            payload={
+                "alias": ALIAS,
+                "surface": "/login",
+                "behavior": "Validate login.",
+                "expectedOutcome": "Dashboard is visible.",
+                "customSourceReason": "Out-of-order fixture.",
+            },
+        ),
+    )
+
+    assert result["status"] == "invalid"
+    assert "current stage" in result["blockers"][0]["message"]
+    assert _project_file_bytes(tmp_path) == before
+
+
+def test_workflow_run_writes_use_strict_high_resolution_ordering(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    init_workspace(tmp_path)
+    monkeypatch.setattr(
+        workflow_repository,
+        "now_iso",
+        lambda: "2026-08-05T00:00:00Z",
+    )
+    nanoseconds = iter(
+        [
+            1_754_352_000_000_000_001,
+            1_754_352_000_000_000_002,
+        ]
+    )
+    monkeypatch.setattr(time, "time_ns", lambda: next(nanoseconds))
+    first = WorkflowRun(runId="wf-high-resolution-a", useCaseAlias=ALIAS)
+    second = WorkflowRun(runId="wf-high-resolution-b", useCaseAlias=ALIAS)
+
+    save_workflow_run(tmp_path, first)
+    save_workflow_run(tmp_path, second)
+
+    assert first.updatedAt is not None
+    assert second.updatedAt is not None
+    assert first.updatedAt < second.updatedAt
+
+
+def test_equal_timestamp_without_reference_is_rejected_as_ambiguous(
+    tmp_path: Path,
+) -> None:
+    init_workspace(tmp_path)
+    save_use_case(
+        tmp_path,
+        create_default_use_case(tmp_path, ALIAS, "Validate login."),
+    )
+    save_workflow_run(
+        tmp_path,
+        WorkflowRun(runId="wf-equal-a", useCaseAlias=ALIAS),
+    )
+    save_workflow_run(
+        tmp_path,
+        WorkflowRun(runId="wf-equal-z", useCaseAlias=ALIAS),
+    )
+    for run_id in ["wf-equal-a", "wf-equal-z"]:
+        path = (
+            tmp_path
+            / ".verifysignal"
+            / "workflows"
+            / "runs"
+            / f"{run_id}.yaml"
+        )
+        data = load_document(path)
+        data["updatedAt"] = "2026-08-05T00:00:00Z"
+        save_document(path, data)
+
+    with pytest.raises(ValueError, match="ambiguous"):
+        load_active_workflow_run(tmp_path, ALIAS)
+
+
+def test_blocked_current_stage_can_be_retried_successfully(tmp_path: Path) -> None:
+    init_workspace(tmp_path)
+    save_use_case(
+        tmp_path,
+        create_default_use_case(tmp_path, ALIAS, "Validate login."),
+    )
+    run = _authoritative_run_at_tasks(tmp_path)
+    current_index = next(
+        index
+        for index, state in enumerate(run.stageStates)
+        if state.stage == "clarify"
+    )
+    for index, state in enumerate(run.stageStates):
+        state.status = "completed" if index < current_index else "pending"
+        state.completedAt = "2026-08-05T00:00:00Z" if index < current_index else None
+        state.blockers = []
+    clarify = next(state for state in run.stageStates if state.stage == "clarify")
+    clarify.status = "blocked"
+    clarify.blockers = [{"code": "clarification.unresolved-blocking"}]
+    run.currentStage = "clarify"
+    run.nextCommand = f"/verifysignal-clarify {ALIAS}"
+    save_workflow_run(tmp_path, run)
+    link_workflow_reference(tmp_path, ALIAS, run, run.status)
+    save_workflow_state(tmp_path, ALIAS, state_document(tmp_path, ALIAS, run))
+
+    result = transition_workflow(
+        tmp_path,
+        ALIAS,
+        stage="clarify",
+        outcome="completed",
+    )
+
+    assert result.run.currentStage == "plan"
+    assert next(
+        state for state in result.run.stageStates if state.stage == "clarify"
+    ).blockers == []
+
+
 def _create_legacy_use_case_without_run(project: Path) -> None:
     init_workspace(project)
     record = create_default_use_case(project, ALIAS, "Validate login.")
@@ -192,7 +445,6 @@ def _create_legacy_use_case_without_run(project: Path) -> None:
     }
     save_use_case(project, record)
     initialize_understanding(project, alias=ALIAS, goal="Validate login.")
-    write_specification(project, ALIAS, "Validate login.")
 
 
 def _persist_legacy_specification(project: Path) -> dict:
@@ -213,9 +465,36 @@ def _persist_legacy_specification(project: Path) -> dict:
     )
 
 
-def _authoritative_run_at_tasks(project: Path) -> WorkflowRun:
+def _persist_tasks(project: Path) -> dict:
+    return persist_stage(
+        project,
+        "tasks",
+        alias=ALIAS,
+        payload=stage_payload(
+            "tasks",
+            payload={
+                "alias": ALIAS,
+                "tasks": [
+                    {
+                        "id": "T001",
+                        "description": "Persist the login artifacts.",
+                        "artifact": "run-request",
+                    }
+                ],
+                "dependencies": [],
+                "parallelizableGroups": [],
+            },
+        ),
+    )
+
+
+def _authoritative_run_at_tasks(
+    project: Path,
+    *,
+    run_id: str = "wf-interrupted-login",
+) -> WorkflowRun:
     run = WorkflowRun(
-        runId="wf-interrupted-login",
+        runId=run_id,
         useCaseAlias=ALIAS,
         status="paused",
         currentStage="tasks",
@@ -236,6 +515,38 @@ def _authoritative_run_at_tasks(project: Path) -> WorkflowRun:
             stage.completedAt = "2026-08-05T00:00:00Z"
     save_workflow_run(project, run)
     return run
+
+
+def _authoritative_document_paths(
+    project: Path,
+    run: WorkflowRun,
+) -> dict[str, Path]:
+    return {
+        "run": (
+            project
+            / ".verifysignal"
+            / "workflows"
+            / "runs"
+            / f"{run.runId}.yaml"
+        ),
+        "useCase": project / ".verifysignal" / "use-cases" / f"{ALIAS}.yaml",
+        "state": (
+            project
+            / ".verifysignal"
+            / "workflows"
+            / "use-cases"
+            / ALIAS
+            / "state.yaml"
+        ),
+    }
+
+
+def _project_file_bytes(project: Path) -> dict[str, bytes]:
+    return {
+        path.relative_to(project).as_posix(): path.read_bytes()
+        for path in sorted(project.rglob("*"))
+        if path.is_file()
+    }
 
 
 def _stage_status(run: WorkflowRun, name: str) -> str:

@@ -7,6 +7,7 @@ from verifysignal_spec.workflows.engine import create_workflow_run
 from verifysignal_spec.workflows.repository import load_workflow_run
 from verifysignal_spec.workflows.prerequisites import check_prerequisites
 from verifysignal_spec.workflows.stage_persistence import persist_stage
+from verifysignal_spec.workflows.transitions import transition_workflow
 from verifysignal_spec.commands import probe as probe_command
 from verifysignal_spec.commands import run as run_command
 from verifysignal_spec.workspace.models import ArtifactReference
@@ -75,6 +76,12 @@ def test_plan_cannot_self_confirm_an_inferred_target(tmp_path) -> None:
         "specify",
         alias="create-project",
         payload=_specification("http://127.0.0.1:4100"),
+    )
+    transition_workflow(
+        tmp_path,
+        "create-project",
+        stage="clarify",
+        outcome="completed",
     )
 
     result = persist_stage(

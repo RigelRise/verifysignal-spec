@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from verifysignal_spec.workflows.stage_persistence import persist_stage, unresolved_blocking_questions
+from verifysignal_spec.workflows.engine import create_workflow_run
 from verifysignal_spec.workspace.repository import init_workspace
 
 
@@ -8,6 +9,12 @@ def test_environment_dependent_clarification_remains_blocking_until_answered(tmp
     project = tmp_path / "repo"
     project.mkdir()
     init_workspace(project)
+    create_workflow_run(
+        project,
+        "Validate login.",
+        alias="login",
+        integration="codex",
+    )
     persist_stage(
         project,
         "specify",

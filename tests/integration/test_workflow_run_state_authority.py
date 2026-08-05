@@ -15,8 +15,16 @@ from tests.fixtures.workflows.prerequisites import (
 from tests.helpers import FAKE_CORE
 from verifysignal_spec.commands import run as run_command
 from verifysignal_spec.commands import validate as validate_command
-from verifysignal_spec.workspace.repository import load_use_case, now_iso
-from verifysignal_spec.workflows.engine import create_workflow_run
+from verifysignal_spec.workspace.repository import (
+    load_use_case,
+    now_iso,
+    save_use_case,
+)
+from verifysignal_spec.workflows.engine import (
+    create_workflow_run,
+    workflow_show,
+    workflow_status_for_alias,
+)
 from verifysignal_spec.workflows.models import WORKFLOW_STAGES, WorkflowRun
 from verifysignal_spec.workflows.repository import (
     link_workflow_reference,
@@ -63,7 +71,7 @@ def test_authored_stage_transition_updates_run_and_both_projections(
     assert updated.status == "paused"
     assert _stage(updated, "understand").status == "completed"
     assert _stage(updated, "specify").status == "completed"
-    assert _stage(updated, "specify").documentPath.endswith("/specification.md")
+    assert _stage(updated, "specify").documentPath.endswith("/spec.md")
     assert _stage(updated, "clarify").status == "pending"
 
 
@@ -201,6 +209,59 @@ def test_core_error_keeps_run_blocked_without_claiming_execution(
     assert {blocker["code"] for blocker in run_stage.blockers} == {
         "entitlement.unverifiable"
     }
+
+
+def test_read_only_status_and_show_render_from_run_without_healing_disk(
+    tmp_path: Path,
+) -> None:
+    run = _create_executable_workflow(tmp_path, current_stage="tasks")
+    record = load_use_case(tmp_path, ALIAS)
+    record.workflow["currentStage"] = "specify"
+    record.workflow["workflowStatus"] = "failed"
+    save_use_case(tmp_path, record)
+    save_workflow_state(
+        tmp_path,
+        ALIAS,
+        state_document(
+            tmp_path,
+            ALIAS,
+            current_stage="understand",
+            status="failed",
+        ),
+    )
+    use_case_path = tmp_path / ".verifysignal" / "use-cases" / f"{ALIAS}.yaml"
+    state_path = (
+        tmp_path
+        / ".verifysignal"
+        / "workflows"
+        / "use-cases"
+        / ALIAS
+        / "state.yaml"
+    )
+    before = {
+        "useCase": use_case_path.read_bytes(),
+        "state": state_path.read_bytes(),
+    }
+
+    status = workflow_status_for_alias(tmp_path, ALIAS)
+    shown = workflow_show(tmp_path, ALIAS)
+
+    assert status["currentStage"] == run.currentStage
+    assert status["status"] == run.status
+    assert status["state"]["currentStage"] == run.currentStage
+    assert status["state"]["stageStates"] == [
+        item.to_dict() for item in run.stageStates
+    ]
+    assert shown["currentStage"] == run.currentStage
+    assert shown["status"] == run.status
+    assert shown["useCase"]["workflow"]["lastWorkflowRunId"] == run.runId
+    assert shown["useCase"]["workflow"]["currentStage"] == run.currentStage
+    assert shown["useCase"]["workflow"]["workflowStatus"] == run.status
+    assert shown["workflowState"]["stageStates"] == [
+        item.to_dict() for item in run.stageStates
+    ]
+    assert use_case_path.read_bytes() == before["useCase"]
+    assert state_path.read_bytes() == before["state"]
 
 
 def _create_executable_workflow(

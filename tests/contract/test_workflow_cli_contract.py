@@ -103,13 +103,15 @@ class WorkflowCliContractTests(CliTestCase):
         self.assertEqual(code, 0, err)
         payload = json.loads(out)
         self.assertEqual(payload["schemaVersion"], "verifysignal-spec-workflow-run/v1")
-        self.assertEqual(payload["nextCommand"], "$verifysignal-understand login")
+        self.assertEqual(payload["currentStage"], "specify")
+        self.assertEqual(payload["nextCommand"], "$verifysignal-specify login")
 
         code, out, err = self.cli(["workflow", "status", payload["runId"], "--project", str(self.project), "--json"])
         self.assertEqual(code, 0, err)
         status = json.loads(out)
         self.assertEqual(status["runId"], payload["runId"])
-        self.assertEqual(status["nextCommand"], "$verifysignal-understand login")
+        self.assertEqual(status["currentStage"], "specify")
+        self.assertEqual(status["nextCommand"], "$verifysignal-specify login")
 
     def test_codex_status_normalizes_legacy_slash_command_without_rewriting_history(self) -> None:
         self.cli(["init", str(self.project), "--integration", "codex", "--json"])
@@ -129,7 +131,7 @@ class WorkflowCliContractTests(CliTestCase):
         run_id = json.loads(out)["runId"]
         run_path = self.project / ".verifysignal" / "workflows" / "runs" / f"{run_id}.yaml"
         legacy = run_path.read_text(encoding="utf-8").replace(
-            "$verifysignal-understand", "/verifysignal-understand"
+            "$verifysignal-specify", "/verifysignal-specify"
         )
         run_path.write_text(legacy, encoding="utf-8")
 
@@ -139,8 +141,8 @@ class WorkflowCliContractTests(CliTestCase):
 
         self.assertEqual(code, 0, err)
         status = json.loads(out)
-        self.assertEqual(status["nextCommand"], "$verifysignal-understand legacy-login")
-        self.assertIn("/verifysignal-understand", run_path.read_text(encoding="utf-8"))
+        self.assertEqual(status["nextCommand"], "$verifysignal-specify legacy-login")
+        self.assertIn("/verifysignal-specify", run_path.read_text(encoding="utf-8"))
 
     def test_workflow_validate_contract_uses_existing_core_adapter(self) -> None:
         self.cli(["init", str(self.project), "--integration", "codex", "--json"])

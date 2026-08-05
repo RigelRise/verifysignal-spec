@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from verifysignal_spec.workflows.engine import create_workflow_run
 from verifysignal_spec.workflows.stage_persistence import persist_stage
+from verifysignal_spec.workflows.transitions import transition_workflow
 from verifysignal_spec.workspace.repository import init_workspace, load_document
 
 
@@ -20,6 +22,36 @@ def _confirm_target(project, alias: str, url: str = "https://app.example.test") 
         },
     )
     assert result["status"] == "persisted"
+
+
+def _start_workflow(project, alias: str) -> None:
+    create_workflow_run(
+        project,
+        f"Validate {alias}.",
+        alias=alias,
+        integration="codex",
+    )
+
+
+def _advance_from_clarify_to_implement(project, alias: str) -> None:
+    transition_workflow(
+        project,
+        alias,
+        stage="clarify",
+        outcome="completed",
+    )
+    transition_workflow(
+        project,
+        alias,
+        stage="plan",
+        outcome="completed",
+    )
+    transition_workflow(
+        project,
+        alias,
+        stage="tasks",
+        outcome="completed",
+    )
 
 
 def test_persistence_rejects_secret_looking_payload_values(tmp_path) -> None:
@@ -81,6 +113,7 @@ def test_specify_accepts_real_agent_payload_synonyms(tmp_path) -> None:
     project = tmp_path / "repo"
     project.mkdir()
     init_workspace(project)
+    _start_workflow(project, "search-people")
     result = persist_stage(
         project,
         "specify",
@@ -102,6 +135,7 @@ def test_plan_accepts_skills_alias_for_reusable_skills(tmp_path) -> None:
     project = tmp_path / "repo"
     project.mkdir()
     init_workspace(project)
+    _start_workflow(project, "search-people")
     persist_stage(
         project,
         "specify",
@@ -133,6 +167,7 @@ def test_plan_accepts_supporting_skills_alias_from_real_agent_payload(tmp_path) 
     project = tmp_path / "repo"
     project.mkdir()
     init_workspace(project)
+    _start_workflow(project, "search-people")
     persist_stage(
         project,
         "specify",
@@ -171,6 +206,7 @@ def test_plan_required_gate_intent_change_requires_recorded_reason(tmp_path) -> 
     project = tmp_path / "repo"
     project.mkdir()
     init_workspace(project)
+    _start_workflow(project, "search-people")
     persist_stage(
         project,
         "specify",
@@ -193,6 +229,14 @@ def test_plan_required_gate_intent_change_requires_recorded_reason(tmp_path) -> 
     }
     assert persist_stage(project, "plan", alias="search-people", payload=base_plan)["status"] == "persisted"
 
+    _start_workflow(project, "search-people")
+    transition_workflow(
+        project,
+        "search-people",
+        stage="specify",
+        outcome="completed",
+    )
+    _confirm_target(project, "search-people")
     changed_plan = {**base_plan, "validationGates": [{"id": "people-results", "description": "People results render.", "required": False, "condition": "Results exist"}]}
     blocked = persist_stage(project, "plan", alias="search-people", payload=changed_plan)
 
@@ -215,6 +259,7 @@ def test_implement_accepts_artifacts_list_and_writes_core_envelopes(tmp_path) ->
     project = tmp_path / "repo"
     project.mkdir()
     init_workspace(project)
+    _start_workflow(project, "search-people")
     persist_stage(
         project,
         "specify",
@@ -227,6 +272,7 @@ def test_implement_accepts_artifacts_list_and_writes_core_envelopes(tmp_path) ->
             "customSourceReason": "Fixture.",
         },
     )
+    _confirm_target(project, "search-people")
     persist_stage(
         project,
         "plan",
@@ -237,6 +283,12 @@ def test_implement_accepts_artifacts_list_and_writes_core_envelopes(tmp_path) ->
             "runtimeInputs": [{"name": "baseUrl", "value": "https://app.example.test"}],
             "unresolvedBlockingClarifications": [],
         },
+    )
+    transition_workflow(
+        project,
+        "search-people",
+        stage="tasks",
+        outcome="completed",
     )
     result = persist_stage(
         project,
@@ -269,6 +321,7 @@ def test_implement_rejects_detailed_skill_intent_without_executable_browser_step
     project = tmp_path / "repo"
     project.mkdir()
     init_workspace(project)
+    _start_workflow(project, "search-people")
     persist_stage(
         project,
         "specify",
@@ -281,6 +334,7 @@ def test_implement_rejects_detailed_skill_intent_without_executable_browser_step
             "customSourceReason": "Fixture.",
         },
     )
+    _advance_from_clarify_to_implement(project, "search-people")
     result = persist_stage(
         project,
         "implement",
@@ -312,6 +366,7 @@ def test_implement_preserves_executable_intent_and_runtime_input_values(tmp_path
     project = tmp_path / "repo"
     project.mkdir()
     init_workspace(project)
+    _start_workflow(project, "search-people")
     persist_stage(
         project,
         "specify",
@@ -324,6 +379,7 @@ def test_implement_preserves_executable_intent_and_runtime_input_values(tmp_path
             "customSourceReason": "Fixture.",
         },
     )
+    _advance_from_clarify_to_implement(project, "search-people")
     result = persist_stage(
         project,
         "implement",
@@ -377,6 +433,7 @@ def test_implement_persists_credential_refs_without_runtime_credential_parameter
     project = tmp_path / "repo"
     project.mkdir()
     init_workspace(project)
+    _start_workflow(project, "add-project")
     persist_stage(
         project,
         "specify",
@@ -389,6 +446,7 @@ def test_implement_persists_credential_refs_without_runtime_credential_parameter
             "customSourceReason": "Authenticated fixture.",
         },
     )
+    _advance_from_clarify_to_implement(project, "add-project")
     result = persist_stage(
         project,
         "implement",
@@ -434,6 +492,7 @@ def test_clarify_accepts_answer_only_payload_for_existing_questions(tmp_path) ->
     project = tmp_path / "repo"
     project.mkdir()
     init_workspace(project)
+    _start_workflow(project, "search-people")
     persist_stage(
         project,
         "specify",
@@ -554,6 +613,7 @@ def _persist_browser_skill(tmp_path, browser: dict) -> dict:
     project = tmp_path / "repo"
     project.mkdir()
     init_workspace(project)
+    _start_workflow(project, "search-people")
     persist_stage(
         project,
         "specify",
@@ -566,6 +626,7 @@ def _persist_browser_skill(tmp_path, browser: dict) -> dict:
             "customSourceReason": "Fixture.",
         },
     )
+    _advance_from_clarify_to_implement(project, "search-people")
     return persist_stage(
         project,
         "implement",
@@ -594,6 +655,7 @@ def test_implement_pairs_reordered_skill_content_with_its_own_path(tmp_path) -> 
     project = tmp_path / "repo"
     project.mkdir()
     init_workspace(project)
+    _start_workflow(project, "search-people")
     helper_path = ".verifysignal/skills/navigate-to-search.browser.md"
     main_path = ".verifysignal/skills/validate-search-people-flow.browser.md"
     persist_stage(
@@ -608,6 +670,7 @@ def test_implement_pairs_reordered_skill_content_with_its_own_path(tmp_path) -> 
             "customSourceReason": "Fixture.",
         },
     )
+    _confirm_target(project, "search-people")
     persist_stage(
         project,
         "plan",
@@ -619,6 +682,12 @@ def test_implement_pairs_reordered_skill_content_with_its_own_path(tmp_path) -> 
             "runtimeInputs": [{"name": "baseUrl", "value": "https://app.example.test"}],
             "unresolvedBlockingClarifications": [],
         },
+    )
+    transition_workflow(
+        project,
+        "search-people",
+        stage="tasks",
+        outcome="completed",
     )
     # Helper listed FIRST, planned main SECOND -> forces the main-first reorder.
     result = persist_stage(

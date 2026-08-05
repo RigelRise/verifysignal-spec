@@ -5,6 +5,7 @@ from verifysignal_spec.workflows.engine import create_workflow_run, generate_tas
 from verifysignal_spec.workflows.models import ArtifactPlan
 from verifysignal_spec.workflows.repository import save_artifact_plan
 from verifysignal_spec.workflows.stage_persistence import persist_stage
+from verifysignal_spec.workflows.transitions import transition_workflow
 from tests.fixtures.workflows.main_skill_run_coverage import create_main_skill_coverage_workspace
 
 
@@ -48,6 +49,7 @@ def test_write_implementation_persists_resource_identity(tmp_path) -> None:
     init_workspace(tmp_path)
     create_workflow_run(tmp_path, "Create resource.", alias="create-resource", integration="codex")
     _save_create_resource_plan(tmp_path)
+    _advance_to_implement(tmp_path, "create-resource")
 
     result = persist_stage(tmp_path, "implement", alias="create-resource", payload=_write_implement_payload(include_identity=True))
 
@@ -61,6 +63,7 @@ def test_write_implementation_infers_high_confidence_generated_identity(tmp_path
     init_workspace(tmp_path)
     create_workflow_run(tmp_path, "Create resource.", alias="create-resource", integration="codex")
     _save_create_resource_plan(tmp_path)
+    _advance_to_implement(tmp_path, "create-resource")
 
     result = persist_stage(tmp_path, "implement", alias="create-resource", payload=_write_implement_payload(include_identity=False))
 
@@ -89,6 +92,7 @@ def test_repersist_implement_preserves_parameter_values(tmp_path) -> None:
             validationGates=[{"id": "page-visible", "required": True}],
         ),
     )
+    _advance_to_implement(tmp_path, "labelled-page")
 
     def _payload(with_value: bool) -> dict:
         label_input = {"name": "label", "source": "prompt", "required": True}
@@ -121,6 +125,13 @@ def test_repersist_implement_preserves_parameter_values(tmp_path) -> None:
     run_request_path = tmp_path / ".verifysignal" / "run-requests" / "labelled-page.yaml"
     assert "Hello Label" in run_request_path.read_text()
 
+    create_workflow_run(
+        tmp_path,
+        "Validate labelled page.",
+        alias="labelled-page",
+        integration="codex",
+    )
+    _advance_to_implement(tmp_path, "labelled-page")
     second = persist_stage(tmp_path, "implement", alias="labelled-page", payload=_payload(with_value=False))
     assert second["status"] == "persisted", second
     assert "Hello Label" in run_request_path.read_text()
@@ -140,6 +151,16 @@ def _save_create_resource_plan(tmp_path) -> None:
             validationGates=[{"id": "created-page-visible", "required": True}],
         ),
     )
+
+
+def _advance_to_implement(project, alias: str) -> None:
+    for stage in ["specify", "clarify", "plan", "tasks"]:
+        transition_workflow(
+            project,
+            alias,
+            stage=stage,
+            outcome="completed",
+        )
 
 
 def _write_implement_payload(*, include_identity: bool, generated_identity: bool = True) -> dict:
