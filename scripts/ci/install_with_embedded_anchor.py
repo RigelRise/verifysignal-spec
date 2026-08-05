@@ -42,9 +42,14 @@ FORBIDDEN_TRUST_ENV = (
 
 
 def current_platform() -> str:
-    if sys.platform == "darwin":
-        return "darwin-arm64" if platform_module.machine() == "arm64" else "darwin-x64"
-    return "linux-x64"
+    # The CLI's own platform map, not a local guess. The previous local copy returned "linux-x64"
+    # for EVERY non-darwin host, so on Windows it silently asked for the Linux package.
+    from verifysignal_spec.runtime.distribution import normalize_platform
+
+    resolved = normalize_platform()
+    if not resolved:
+        raise SystemExit(f"unsupported host platform: {sys.platform}-{platform_module.machine()}")
+    return resolved
 
 
 def guard_environment(environ: dict[str, str] | os._Environ[str] = os.environ) -> str | None:
