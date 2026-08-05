@@ -8,10 +8,9 @@ from pathlib import Path
 # named proofsignal-spec — so the documented Quickstart install 404'd for every new user, and no test
 # noticed because docs are not type-checked or executed.
 #
-# This guard pins the canonical repository path across every doc that advertises it, so a future
-# rename/rebrand cannot silently split the docs from the real remote again. It does NOT (and cannot)
-# prove the remote exists: creating/renaming the GitHub repo and cutting a release tag is an ops
-# action. What it does prove is that the docs all point at ONE agreed URL.
+# This guard pins the live pre-rename repository path across every doc that advertises it during the
+# first canonical PyPI release. The repository changes in a separate post-rename patch, only after
+# the canonical artifact is proven. It does NOT (and cannot) prove the remote exists.
 
 CANONICAL_REPO = "github.com/RigelRise/verifysignal-spec"
 STALE_REPO_PATTERN = re.compile(r"github\.com/[\w.-]+/proofsignal[\w.-]*")
@@ -35,9 +34,7 @@ def test_docs_have_no_stale_proofsignal_repo_urls() -> None:
 
 
 def test_every_advertised_github_repo_url_is_the_canonical_one() -> None:
-    # Any GitHub repo URL in the docs must be the canonical VerifySignal Spec repo. This is what makes
-    # a half-finished rename (docs moved, remote didn't — or vice versa) fail loudly instead of 404ing
-    # only for users.
+    # Any GitHub repo URL in 0.26.0 docs must still identify the live pre-rename repository.
     offenders = [
         f"{path.relative_to(ROOT)}: {match.group(0)}"
         for path, text in _docs_with_text()
@@ -51,4 +48,5 @@ def test_install_docs_still_advertise_an_installable_command() -> None:
     # Guards the other direction: the URL fix must not quietly delete the documented install path.
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     assert f"git+https://{CANONICAL_REPO}.git" in readme
-    assert "uv tool install verifysignal-spec" in readme
+    assert re.search(r"\buv tool install verifysignal(?:\s|$)", readme)
+    assert not re.search(r"\buv tool install verifysignal-spec\b", readme)

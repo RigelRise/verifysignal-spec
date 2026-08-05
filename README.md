@@ -8,18 +8,18 @@
 
 <p align="center">
   <a href="https://github.com/RigelRise/verifysignal-spec/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/RigelRise/verifysignal-spec/ci.yml?branch=main&label=CI" alt="CI status"></a>
-  <a href="https://pypi.org/project/verifysignal-spec/"><img src="https://img.shields.io/pypi/v/verifysignal-spec?color=37E5C4" alt="PyPI version"></a>
-  <img src="https://img.shields.io/pypi/pyversions/verifysignal-spec" alt="Supported Python versions">
+  <a href="https://pypi.org/project/verifysignal/"><img src="https://img.shields.io/pypi/v/verifysignal?color=37E5C4" alt="PyPI version"></a>
+  <img src="https://img.shields.io/pypi/pyversions/verifysignal" alt="Supported Python versions">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue" alt="License: Apache-2.0"></a>
 </p>
 
 ---
 
-> **Distribution name migration:** 0.25.x is the final release line published
-> as `verifysignal-spec`. The project is moving to the canonical PyPI name
-> `verifysignal` while preserving existing commands, imports, workspaces, and
-> schemas. See [Distribution name migration](docs/distribution-migration.md)
-> before changing an existing installation.
+> **Distribution name migration:** install new releases from the canonical PyPI
+> project `verifysignal`. The final `verifysignal-spec` 0.25.x line remains
+> installable for existing environments, while commands, imports, workspaces,
+> and schemas stay compatible. See
+> [Distribution name migration](docs/distribution-migration.md).
 
 AI multiplied your features. Validating each one is still manual. VerifySignal
 turns a product flow (login, checkout, onboarding) into an automatic, repeatable
@@ -32,8 +32,8 @@ leaves a report you can audit. No model decides pass/fail. Same input, same
 verdict, every time.
 
 This repo is the open half (Apache-2.0): the `verifysignal` CLI, the
-`.verifysignal/` workspace, and the agent skills. The runtime (VerifySignal Core)
-is a signed download, unlocked with a free email. No account.
+`.verifysignal/` workspace, and the agent skills. VerifySignal Runtime is a
+signed download, unlocked with a free email. No account.
 
 ## Quickstart
 
@@ -53,8 +53,8 @@ Windows (PowerShell):
 powershell -ExecutionPolicy Bypass -c "irm https://verifysignal.io/install.ps1 | iex"
 ```
 
-Already have uv or pipx? `uv tool install verifysignal-spec` (or
-`pipx install verifysignal-spec`) does the same thing. Prefer to read the script
+Already have uv or pipx? `uv tool install verifysignal` (or
+`pipx install verifysignal`) does the same thing. Prefer to read the script
 first? See [Installation](docs/installation.md).
 
 Set up your project and check readiness:
@@ -97,7 +97,7 @@ storage state, form values, or URL query values. See
 <summary>Install from source</summary>
 
 ```sh
-uv tool install verifysignal-spec --from git+https://github.com/RigelRise/verifysignal-spec.git
+uv tool install verifysignal --from git+https://github.com/RigelRise/verifysignal-spec.git
 ```
 
 </details>
@@ -112,14 +112,14 @@ uv tool install verifysignal-spec --from git+https://github.com/RigelRise/verify
 ## How it works
 
 ```text
-  repo / engagement   verifysignal CLI          VerifySignal Core         evidence
+  repo / engagement   verifysignal CLI          VerifySignal Runtime      evidence
   .verifysignal/  ->  open · Apache-2.0      ->  signed runtime       ->  report.md
   use cases           authoring · gates          deterministic run        report.json
   skills · state      workflow · repair          no model at runtime      screenshots
                                                                            network log
 ```
 
-The CLI owns authoring, gates, workflow state, and repair. Core owns execution.
+The CLI owns authoring, gates, workflow state, and repair. The Runtime owns execution.
 They meet at one versioned JSON contract, nothing else. Every command speaks
 `--json`, and exit codes are stable (`0` ok, `2` validation, `3` core,
 `4` approval, `5` input).
@@ -140,7 +140,7 @@ flow.
 
 ## Open-core
 
-| Open (this repo, Apache-2.0) | Managed (VerifySignal Core) |
+| Open (this repo, Apache-2.0) | Managed (VerifySignal Runtime) |
 | --- | --- |
 | CLI, `.verifysignal/` workspace, agent skills, the public contract | deterministic execution, evidence capture, redaction |
 | fork it, read it, test all of it against the bundled fake Core | a signed download, free to unlock, no account |

@@ -42,7 +42,9 @@ class Identity:
 
 SIBLING_IDENTITY: dict[Role, Identity] = {
     "core": Identity(("verifysignal", "verifysignal-core"), "package.json", "VERIFYSIGNAL_CORE_DIR"),
-    "spec": Identity(("verifysignal-spec",), "pyproject.toml", "VERIFYSIGNAL_SPEC_DIR"),
+    "spec": Identity(
+        ("verifysignal", "verifysignal-spec"), "pyproject.toml", "VERIFYSIGNAL_SPEC_DIR"
+    ),
     "backend": Identity(
         ("verifysignal-be", "verifysignal-website"), "package.json", "VERIFYSIGNAL_BACKEND_DIR"
     ),

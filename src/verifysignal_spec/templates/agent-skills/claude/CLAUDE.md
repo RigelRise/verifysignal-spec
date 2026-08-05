@@ -1,4 +1,4 @@
-# VerifySignal Spec Agent Guidance
+# VerifySignal Agent Guidance
 
 Use `verifysignal-spec` from the target repository root. Keep generated project
 artifacts and guidance in English, write run requests under

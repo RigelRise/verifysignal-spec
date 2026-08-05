@@ -8,7 +8,7 @@ List use cases and workflow status.
 - Continue only when the result includes `requiredCapability: workflow.guardrails/v1` and `supported: true`.
 - If `workflow check` is unavailable, unsupported, or exits with an invalid subcommand error, stop immediately and tell the developer to upgrade `verifysignal` and regenerate the agent integration.
 - Use deterministic CLI commands such as `verifysignal list` and `verifysignal workflow list`.
-- Do not write managed `.verifysignal/` artifacts directly. Persist managed artifacts through VerifySignal Spec CLI operations only.
+- Do not write managed `.verifysignal/` artifacts directly. Persist managed artifacts through VerifySignal CLI operations only.
 - Summarize aliases with `lastRun` separate from `current` readiness. A historical passed run is not current readiness.
 - Treat `current.status` as local metadata only, from a persisted readiness snapshot. Values: `ready`, `ready-credential-bound` (passed credentialed read — a trusted ceiling), `needs-rerun-confirmation` (passed committed write — confirm before the next run), `rerun-confirmed` (committed write the owner has superseded/approved), `needs-validate`, `stale`, `blocked`, `not-checked`.
 - Render `current.presentation`, not the raw status, as the badge. `ceiling: true` is a use case that PASSED and sits at an inherent safety floor — render it as a calm lock (🔒, or 🔓 when `rerun-confirmed`) and NEVER as amber/yellow. Amber (`severity: attention`) is reserved for states a command can move; red (`severity: failed`) for `blocked`.

@@ -91,7 +91,7 @@ After the user selects one journey:
 - probe must stop at the pre-commit boundary and must not commit the write;
 - probe success never authorizes a normal committing run.
 
-VerifySignal Spec never imports private Core code. `workflow info`, `core
+VerifySignal never imports private Runtime code. `workflow info`, `core
 version`, `discover`, `probe`, and `run` public JSON contracts remain the
 integration boundary.
 

@@ -87,8 +87,41 @@ def test_installers_bootstrap_uv_from_the_vendor_and_install_this_package(script
     # Bootstrapping uv is the whole point: without it the script is just a slower way to type the
     # command that already failed for the user.
     assert installer_url in text, f"{script.name} must bootstrap uv from Astral's own installer"
-    assert "verifysignal-spec" in text, f"{script.name} must install the published package name"
+    canonical_assignment = (
+        'PACKAGE="verifysignal"'
+        if script == INSTALL_SH
+        else "$Package = 'verifysignal'"
+    )
+    assert canonical_assignment in text, f"{script.name} must install the canonical package name"
     assert "tool" in text and "install" in text
+
+
+@pytest.mark.parametrize(
+    ("script", "legacy_assignment", "uninstall", "install"),
+    [
+        (
+            INSTALL_SH,
+            'LEGACY_PACKAGE="verifysignal-spec"',
+            'tool uninstall "$LEGACY_PACKAGE"',
+            'tool install --force --python "$PYTHON_VERSION"',
+        ),
+        (
+            INSTALL_PS1,
+            "$LegacyPackage = 'verifysignal-spec'",
+            "tool uninstall $LegacyPackage",
+            "@('tool', 'install', '--force'",
+        ),
+    ],
+)
+def test_installers_remove_the_legacy_uv_tool_before_installing_the_canonical_one(
+    script, legacy_assignment, uninstall, install
+):
+    text = script.read_text(encoding="utf-8")
+
+    assert legacy_assignment in text
+    assert uninstall in text
+    assert install in text
+    assert text.index(uninstall) < text.index(install)
 
 
 @pytest.mark.parametrize("script", [INSTALL_SH, INSTALL_PS1])
@@ -146,8 +179,9 @@ def test_install_docs_still_offer_the_direct_package_install():
     # The bootstrap must not become the ONLY documented path: readers who already have uv or pipx,
     # and every CI job, need the plain package install.
     doc = INSTALL_DOC.read_text(encoding="utf-8")
-    assert "uv tool install verifysignal-spec" in doc
-    assert "pipx install verifysignal-spec" in doc
+    assert "uv tool install verifysignal" in doc
+    assert "pipx install verifysignal" in doc
+    assert "uv tool install verifysignal-spec" not in doc
 
 
 def test_install_docs_show_how_to_read_the_script_before_running_it():
@@ -158,11 +192,10 @@ def test_install_docs_show_how_to_read_the_script_before_running_it():
 
 
 def test_the_uninstall_command_names_the_tool_that_was_installed():
-    # `uv tool uninstall verifysignal` names the COMMAND; uv registers tools under the PACKAGE name,
-    # so the old line could never uninstall anything this project installs.
+    # uv registers tools under the PACKAGE name. The canonical package and command now share a name.
     doc = INSTALL_DOC.read_text(encoding="utf-8")
-    assert "uv tool uninstall verifysignal-spec" in doc
-    assert "uv tool uninstall verifysignal\n" not in doc
+    assert "uv tool uninstall verifysignal\n" in doc
+    assert "uv tool uninstall verifysignal-spec" not in doc
 
 
 def test_the_posix_installer_prints_usage_without_reading_itself_from_disk():

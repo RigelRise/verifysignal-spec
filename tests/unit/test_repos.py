@@ -53,9 +53,12 @@ def test_finds_a_sibling_under_every_name_that_repo_has_published(tmp_path: Path
     assert resolve_sibling_repo("backend", own) == backend
 
 
-def test_reads_a_python_sibling_identity_from_pyproject(tmp_path: Path) -> None:
+@pytest.mark.parametrize("published_name", ("verifysignal", "verifysignal-spec"))
+def test_reads_a_python_sibling_identity_from_pyproject(
+    tmp_path: Path, published_name: str
+) -> None:
     own = _repo(tmp_path, "core-checkout", "verifysignal")
-    spec = _repo(tmp_path, "renamed-spec", "verifysignal-spec", manifest="pyproject.toml")
+    spec = _repo(tmp_path, "renamed-spec", published_name, manifest="pyproject.toml")
     assert resolve_sibling_repo("spec", own) == spec
 
 

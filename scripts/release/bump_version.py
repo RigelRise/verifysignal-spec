@@ -22,7 +22,7 @@ _VERSION_SHAPE = re.compile(r"^\d+\.\d+\.\d+$")
 
 def _stamp_changelog(path, to_version, today):
     header = f"## {to_version} - {today.isoformat()}"
-    bullet = f"- Bumped VerifySignal Spec to `{to_version}`."
+    bullet = f"- Bumped VerifySignal to `{to_version}`."
     text = path.read_text(encoding="utf-8")
     if "\n## Unreleased\n" in text:
         promoted = text.replace("\n## Unreleased\n", f"\n{header}\n", 1)
@@ -87,7 +87,7 @@ def main() -> int:
         return 2
     to_version = args[args.index("--to") + 1]
     previous = bump_surfaces(Path.cwd(), to_version)
-    print(f"bumped verifysignal-spec {previous} -> {to_version}")
+    print(f"bumped verifysignal {previous} -> {to_version}")
     return 0
 
 

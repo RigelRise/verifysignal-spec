@@ -69,7 +69,7 @@ WORKFLOW_COMMANDS = [
     WorkflowCommandSpec("plan", "Plan one run request and reusable skills", "<alias>"),
     WorkflowCommandSpec("tasks", "Generate ordered authoring tasks", "<alias>"),
     WorkflowCommandSpec("implement", "Create or update planned artifacts", "<alias>"),
-    WorkflowCommandSpec("validate", "Validate draft artifacts through VerifySignal Spec/Core", "<alias>"),
+    WorkflowCommandSpec("validate", "Validate draft artifacts through VerifySignal and its Runtime", "<alias>"),
     WorkflowCommandSpec("list", "List registered use cases and workflow state", ""),
     WorkflowCommandSpec("run", "Run a selected validated use case", "<alias>"),
     WorkflowCommandSpec("repair", "Repair invalid or failed use cases", "<alias> [report path]"),

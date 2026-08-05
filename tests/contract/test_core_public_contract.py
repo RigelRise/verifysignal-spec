@@ -93,4 +93,4 @@ def test_core_contract_incompatibility_reports_schema_mismatch_details() -> None
     assert result.incompatibleOperations[0]["operationName"] == "run"
     assert result.incompatibleOperations[0]["expectedSchema"] == "verifysignal.run/v1"
     assert result.incompatibleOperations[0]["actualSchema"] == "verifysignal.run/v2"
-    assert data["recoveryAction"] == "Upgrade VerifySignal Core or VerifySignal Spec to compatible public CLI JSON schemas."
+    assert data["recoveryAction"] == "Upgrade VerifySignal Runtime or VerifySignal CLI to compatible public CLI JSON schemas."

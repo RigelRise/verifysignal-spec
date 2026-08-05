@@ -94,7 +94,7 @@ jobs:
             exit 0
           fi
           git add pyproject.toml src/verifysignal_spec/__init__.py CHANGELOG.md
-          git commit -m "chore(release): bump verifysignal-spec to ${NEXT}"
+          git commit -m "chore(release): bump verifysignal to ${NEXT}"
           git tag "v${NEXT}"
           git push "$REMOTE" HEAD:main
           git push "$REMOTE" "refs/tags/v${NEXT}"

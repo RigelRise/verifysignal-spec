@@ -1,6 +1,6 @@
 # verifysignal.validate
 
-Validate draft artifacts through VerifySignal Spec and the managed VerifySignal runtime.
+Validate draft artifacts through VerifySignal and the managed VerifySignal Runtime.
 
 - Start by running `verifysignal workflow check validate --alias <alias> --json`.
 - Prefer the public `verifysignal` CLI for user-facing commands. Do not use `npx` or package-runner wrappers.
@@ -48,7 +48,7 @@ Validate draft artifacts through VerifySignal Spec and the managed VerifySignal 
 - Distinguish coherent planned validation from a narrow technical pass. A page-view validation requires mapped rendered-result UI evidence and declared backend checks, not only navigation or HTTP 200.
 - Preserve Core verdicts exactly and do not reinterpret passed, failed, blocked, or error outcomes.
 - Record redacted validation summaries in workflow state and stage documents.
-- Do not write managed `.verifysignal/` artifacts directly. Persist managed artifacts through VerifySignal Spec CLI operations only.
+- Do not write managed `.verifysignal/` artifacts directly. Persist managed artifacts through VerifySignal CLI operations only.
 - Do not use `verifysignal author`, nonexistent schema/scaffold commands, or manual file edits to repair workflow-managed artifacts. Route schema fixes through `/verifysignal-repair` or `verifysignal workflow persist implement`.
 - Do not parse raw report internals or import private VerifySignal Core packages.
 - Suggest `/verifysignal-run` when readiness passes or `/verifysignal-repair` only when actionable artifact/runtime findings exist.

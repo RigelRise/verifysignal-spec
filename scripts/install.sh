@@ -19,7 +19,7 @@
 #
 # Usage:
 #   curl -LsSf https://verifysignal.io/install.sh | sh
-#   curl -LsSf https://verifysignal.io/install.sh | sh -s -- --version 0.22.0
+#   curl -LsSf https://verifysignal.io/install.sh | sh -s -- --version 0.26.0
 #
 # Options:
 #   --version <X.Y.Z>       Install an exact release from PyPI instead of the latest.
@@ -32,7 +32,8 @@
 # VERIFYSIGNAL_NO_MODIFY_PATH, VERIFYSIGNAL_SKIP_PLAYWRIGHT_MCP.
 set -eu
 
-PACKAGE="verifysignal-spec"
+PACKAGE="verifysignal"
+LEGACY_PACKAGE="verifysignal-spec"
 # The interpreter the CLI runs on. Pinned rather than left to the system Python so that the install
 # is identical on a machine with Python 3.9, a machine with 3.13, and a machine with none at all.
 PYTHON_VERSION="3.12"
@@ -86,7 +87,7 @@ a managed Python 3.11+, so no pre-existing Python is required.
 
 Usage:
   curl -LsSf https://verifysignal.io/install.sh | sh
-  curl -LsSf https://verifysignal.io/install.sh | sh -s -- --version 0.22.0
+  curl -LsSf https://verifysignal.io/install.sh | sh -s -- --version 0.26.0
 
 Options:
   --version <X.Y.Z>       Install an exact release from PyPI instead of the latest.
@@ -103,7 +104,7 @@ USAGE
 while [ $# -gt 0 ]; do
   case "$1" in
     --version)
-      [ $# -ge 2 ] || die "--version needs a value (e.g. --version 0.22.0)"
+      [ $# -ge 2 ] || die "--version needs a value (e.g. --version 0.26.0)"
       version="$2"
       shift 2
       ;;
@@ -214,6 +215,15 @@ else
 fi
 
 # --- install the CLI ---------------------------------------------------------------------------
+# uv registers tools by distribution name. The legacy and canonical distributions expose the same
+# executables and import package, so installing them side by side can leave overlapping files or a
+# stale `verifysignal` command. Remove the legacy tool first, but only when uv reports it installed.
+if "$uv_bin" tool list 2>/dev/null | grep -Eq "^${LEGACY_PACKAGE}([[:space:]]|$)"; then
+  step "Replacing legacy $LEGACY_PACKAGE installation"
+  "$uv_bin" tool uninstall "$LEGACY_PACKAGE" >&2 ||
+    die "could not remove the legacy $LEGACY_PACKAGE tool. Remove it manually, then re-run."
+fi
+
 # --force makes re-running the one-liner an upgrade rather than a no-op, which is what a user who
 # pastes the install command a second time actually means.
 set -- tool install --force --python "$PYTHON_VERSION"

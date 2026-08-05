@@ -33,14 +33,14 @@ def _fixture_repo(tmp_path: Path, changelog: str) -> Path:
     (tmp_path / "src/verifysignal_spec").mkdir(parents=True)
     (tmp_path / "pyproject.toml").write_text(
         "[project]\n"
-        'name = "verifysignal-spec"\n'
+        'name = "verifysignal"\n'
         'version = "0.21.6"\n'
         "\n"
         "[project.scripts]\n" + SCRIPT_LINES[0] + "\n" + SCRIPT_LINES[1] + "\n",
         encoding="utf-8",
     )
     (tmp_path / "src/verifysignal_spec/__init__.py").write_text(
-        '"""VerifySignal Spec CLI package."""\n\n__version__ = "0.21.6"\n',
+        '"""VerifySignal CLI package."""\n\n__version__ = "0.21.6"\n',
         encoding="utf-8",
     )
     (tmp_path / "CHANGELOG.md").write_text(changelog, encoding="utf-8")
@@ -82,7 +82,7 @@ def test_bump_moves_both_declarations_and_promotes_the_changelog(tmp_path):
     assert "## 0.22.0 - 2026-07-30" in changelog
     promoted = changelog.split("## 0.22.0 - 2026-07-30", 1)[1].split("\n## ", 1)[0]
     assert "- Added a clean-machine acceptance leg." in promoted
-    assert "- Bumped VerifySignal Spec to `0.22.0`." in promoted
+    assert "- Bumped VerifySignal to `0.22.0`." in promoted
     assert "## 0.21.6 - 2026-07-30" in changelog
 
 
@@ -92,7 +92,7 @@ def test_bump_inserts_a_minimal_section_when_unreleased_is_absent(tmp_path):
     bump_version.bump_surfaces(root, "0.21.7", today=date(2026, 7, 31))
     changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
     section = changelog.split("## 0.21.7 - 2026-07-31", 1)[1].split("\n## ", 1)[0]
-    assert "- Bumped VerifySignal Spec to `0.21.7`." in section
+    assert "- Bumped VerifySignal to `0.21.7`." in section
 
 
 def test_bump_refuses_when_a_declaration_is_not_found_exactly_once(tmp_path):

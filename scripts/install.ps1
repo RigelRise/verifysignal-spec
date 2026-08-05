@@ -38,7 +38,7 @@
     powershell -ExecutionPolicy Bypass -c "irm https://verifysignal.io/install.ps1 | iex"
 
 .EXAMPLE
-    .\install.ps1 -Version 0.22.0
+    .\install.ps1 -Version 0.26.0
 #>
 [CmdletBinding()]
 param(
@@ -50,7 +50,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$Package = 'verifysignal-spec'
+$Package = 'verifysignal'
+$LegacyPackage = 'verifysignal-spec'
 # The interpreter the CLI runs on. Pinned rather than left to whatever Python the machine has, so
 # that the install is identical on a machine with 3.9, a machine with 3.13, and a machine with none.
 $PythonVersion = '3.12'
@@ -136,6 +137,18 @@ if (-not $uv) {
 }
 
 # --- install the CLI ----------------------------------------------------------------------------
+# uv registers tools by distribution name. The legacy and canonical distributions expose the same
+# executables and import package, so replace the legacy tool before installing the canonical one.
+$installedTools = (& $uv tool list 2>$null | Out-String)
+$legacyPattern = "(?m)^$([regex]::Escape($LegacyPackage))(?:\s|$)"
+if ($installedTools -match $legacyPattern) {
+    Write-Step "Replacing legacy $LegacyPackage installation"
+    & $uv tool uninstall $LegacyPackage
+    if ($LASTEXITCODE -ne 0) {
+        Stop-WithError "Could not remove the legacy $LegacyPackage tool. Remove it manually, then re-run."
+    }
+}
+
 # --force makes re-running the one-liner an upgrade rather than a no-op, which is what a user who
 # pastes the install command a second time actually means.
 $uvArgs = @('tool', 'install', '--force', '--python', $PythonVersion)

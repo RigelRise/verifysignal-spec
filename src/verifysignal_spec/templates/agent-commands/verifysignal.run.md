@@ -26,7 +26,7 @@ Run a validated use case by alias through the managed VerifySignal runtime.
 - For write and external-notification use cases, stop before Core execution when side-effect policy, local envelope, runtime output declarations, Core `sideEffectGuardrails`, or `rerunPolicy` are missing/unsupported.
 - For legacy write/external-notification artifacts missing lifecycle or safety-capability metadata, require structured confirmation and show migration guidance. Missing Core side-effect envelope is never proof of no side effect.
 - Never persist credential values.
-- Do not write managed `.verifysignal/` artifacts directly. Persist managed artifacts through VerifySignal Spec CLI operations only.
+- Do not write managed `.verifysignal/` artifacts directly. Persist managed artifacts through VerifySignal CLI operations only.
 - Delegate execution through `verifysignal run <alias> --profile normal` unless the user requests another profile. Use-case-specific profile names are allowed when declared by that use case; unknown profiles must block and list available profiles.
 - For human-observable browser debugging, use `--profile debug`; the default debug pacing is `--slow-mo 900` unless the user explicitly overrides it.
 - Report Core/browser status separately from Spec coverage status using `coreBrowserStatus` and `specCoverageStatus`. A Core `passed` result can still be `specCoverageStatus: incomplete` when planned gates are missing, network-only, screenshot-only, or unmapped.
