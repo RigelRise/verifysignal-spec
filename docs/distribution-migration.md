@@ -1,6 +1,6 @@
 # Distribution Name Migration
 
-VerifySignal 0.22.x is the final release line under the `verifysignal-spec` distribution name.
+VerifySignal 0.25.x is the final release line under the `verifysignal-spec` distribution name.
 The open-source project is moving to the simpler PyPI name
 `verifysignal`; after the canonical release is published and verified, new
 installations should use:
@@ -18,7 +18,7 @@ than receiving future feature releases.
 
 The old and canonical distributions contain the same Python import package and
 console scripts, so they must not be installed side by side in the same tool or
-Python environment. After `verifysignal` 0.23.0 or newer is visible on PyPI,
+Python environment. After `verifysignal` 0.26.0 or newer is visible on PyPI,
 replace an existing `uv` tool installation in this order:
 
 ```sh
@@ -40,7 +40,7 @@ python -m pip install verifysignal
 
 Do not install the canonical distribution and then uninstall the old one: their
 files overlap, so that reverse order can remove files belonging to the new
-installation. If you are not ready to switch, keep using the final 0.22.x
+installation. If you are not ready to switch, keep using the final 0.25.x
 release instead of installing both distributions together.
 
 The distribution rename does not rename VerifySignal's technical and persisted
@@ -57,5 +57,5 @@ compatibility contracts. The canonical package continues to preserve:
 PyPI distributions are immutable identities, so the old and canonical names are
 separate projects rather than a registry rename. Release notes will identify
 the first verified canonical version. Until that version is available, the
-installation commands elsewhere in this 0.22.x documentation intentionally
+installation commands elsewhere in this 0.25.x documentation intentionally
 continue to install `verifysignal-spec`.
