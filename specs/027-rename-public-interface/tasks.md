@@ -25,7 +25,7 @@
 - [X] T008 [US3] Run the notice contract red and commit tests only
 - [X] T009 [US3] Add the migration notice and ordered old-to-canonical replacement guidance to `README.md`, `docs/installation.md`, and `docs/distribution-migration.md`
 - [X] T010 [US3] Run focused and full tests green, build/check the old-name artifact, and commit implementation
-- [X] T011 [US3] Push and open the old-name patch PR with expected 0.22.2 release evidence
+- [X] T011 [US3] Push and open the old-name patch PR with expected 0.25.1 release evidence
 
 ## Phase 4: User Story 1 - Canonical distribution (P1)
 
@@ -40,25 +40,25 @@
 - [X] T016 [P] [US1] Add the canonical interface manifest alias in `src/verifysignal_spec/repos.py`
 - [X] T017 [US1] Run focused tests green and commit the minimal canonical implementation
 - [X] T018 [US1] Run full pytest, build, twine check, isolated dual-command/import smoke, and Docker regression
-- [X] T019 [US1] Push and open the canonical feature PR with expected 0.23.0 release evidence
+- [X] T019 [US1] Push and open the canonical feature PR with expected 0.26.0 release evidence
 
 ## Phase 5: User Story 3b - Manual canonical publication gate (P2)
 
 - [ ] T020 [US3] Create the pending PyPI trusted publisher for project `verifysignal` and repository `verifysignal-spec` immediately before merge
-- [ ] T021 [US3] Merge the canonical PR only after the publisher gate and verify released 0.23.0 from an isolated environment
+- [ ] T021 [US3] Merge the canonical PR only after the publisher gate and verify released 0.26.0 from an isolated environment
 - [ ] T022 [US3] Rename GitHub to `RigelRise/verifysignal`, preserve the old redirect, and create the new exact trusted publisher binding
 
 ## Phase 6: User Story 3c - Post-rename canonical patch (P2)
 
 **Goal**: Prove release automation and source metadata under the renamed GitHub identity.
 
-**Independent Test**: Canonical source URLs and workflow environment metadata are green and 0.23.1 publishes using the new binding.
+**Independent Test**: Canonical source URLs and workflow environment metadata are green and 0.26.1 publishes using the new binding.
 
 - [ ] T023 [US3] Add failing canonical repository metadata assertions in `tests/contract/test_docs_install_urls.py` and `tests/contract/test_release_migration_contract.py`
 - [ ] T024 [US3] Run focused tests red and commit tests only on `fix/canonical-verifysignal-repository`
 - [ ] T025 [US3] Update project URLs, public docs, issue links, release workflow URL/comment, and GitHub templates to `RigelRise/verifysignal`
 - [ ] T026 [US3] Run focused/full tests, build/check, isolated install, and Docker regression green; commit implementation
-- [ ] T027 [US3] Push/open the post-rename patch PR, verify automated 0.23.1, then retire the old trusted-publisher binding
+- [ ] T027 [US3] Push/open the post-rename patch PR, verify automated 0.26.1, then retire the old trusted-publisher binding
 
 ## Phase 7: Polish & Cross-Cutting Concerns
 
@@ -68,11 +68,11 @@
 
 ## Dependencies
 
-- Phase 3 completes and 0.22.2 is verified before Phase 4 merges. Version 0.22.1 was published independently from #24 while this stack was open.
+- Phase 3 completes and 0.25.1 is verified before Phase 4 merges. Version 0.25.0 was published while this stack was open.
 - T020 blocks canonical merge and first publication.
-- Canonical 0.23.0 verification blocks GitHub rename.
+- Canonical 0.26.0 verification blocks GitHub rename.
 - Repository rename and new publisher binding block the post-rename patch.
-- Core and backend dependent PRs remain draft until 0.23.1 succeeds.
+- Core and backend dependent PRs remain draft until 0.26.1 succeeds.
 
 ## Parallel Example
 

@@ -5,11 +5,11 @@
 
 ## Summary
 
-Execute a three-release identity cutover: announce migration in final `verifysignal-spec` patch 0.22.2 (0.22.1 was published independently while this stack was open); publish the same compatible interface as canonical distribution `verifysignal` 0.23.0 before repository rename; then canonicalize GitHub metadata and trusted publishing in 0.23.1 after rename. Preserve the import package, both console scripts, all schemas, workspace state, environment variables, roles, commands, skill aliases, Runtime contracts, and secret behavior.
+Execute a three-release identity cutover: announce migration in final `verifysignal-spec` patch 0.25.1 (0.25.0 was published while this stack was open); publish the same compatible interface as canonical distribution `verifysignal` 0.26.0 before repository rename; then canonicalize GitHub metadata and trusted publishing in 0.26.1 after rename. Keep the per-OS installers as the stable acquisition facade, make them replace an existing legacy uv tool safely, and preserve the import package, both console scripts, all schemas, workspace state, environment variables, roles, commands, skill aliases, Runtime contracts, and secret behavior.
 
 ## Technical Context
 
-**Language/Version**: Python 3.11+; GitHub Actions YAML
+**Language/Version**: Python 3.11+; POSIX shell; PowerShell 5.1+; GitHub Actions YAML
 **Primary Dependencies**: Typer, Rich, Pydantic 2, PyYAML, cryptography, setuptools
 **Storage**: Project-local `.verifysignal/` files remain schema-compatible; no migration
 **Testing**: pytest 8, `build`, `twine`, isolated `uv`/venv installation, Docker regression
@@ -75,11 +75,11 @@ tests/
 
 ## Release and Branch Sequence
 
-1. `fix/announce-verifysignal-distribution` from current main: red migration-notice and safe-replacement contracts, green notice, focused/full tests, PR title `fix: announce the verifysignal distribution migration`; merge and verify automated 0.22.2. Version 0.22.1 was already published from #24 and cannot be reused.
+1. `fix/announce-verifysignal-distribution` from current main: red migration-notice and safe-replacement contracts, green notice, focused/full tests, PR title `fix: announce the verifysignal distribution migration`; merge and verify automated 0.25.1. Version 0.25.0 was published while this stack was open and cannot be reused.
 2. Manual gate: create pending PyPI trusted publisher for project `verifysignal`, owner `RigelRise`, repository `verifysignal-spec`, workflow `release.yml`, environment `pypi`.
-3. `027-rename-public-interface`: include the notice commit, red packaging/compatibility tests, green canonical distribution and public wording, build/isolated/full regression; PR title `feat: publish the canonical verifysignal distribution`; merge and verify automated 0.23.0.
+3. `027-rename-public-interface`: include the notice commit, red packaging/compatibility/installer tests, green canonical distribution, safe installer replacement, and public wording, then build/isolated/full regression; PR title `feat: publish the canonical verifysignal distribution`; merge and verify automated 0.26.0.
 4. Manual gate: rename GitHub repository to `RigelRise/verifysignal`, retain old redirect, and add the exact new trusted publisher binding.
-5. `fix/canonical-verifysignal-repository`: red repository/workflow metadata tests, green canonical URLs/publisher instructions, full regression; PR title `fix: canonicalize renamed repository publishing`; merge and verify automated 0.23.1 before removing the old binding.
+5. `fix/canonical-verifysignal-repository`: red repository/workflow metadata tests, green canonical URLs/publisher instructions, full regression; PR title `fix: canonicalize renamed repository publishing`; merge and verify automated 0.26.1 before removing the old binding.
 
 ## Compatibility Freeze List
 

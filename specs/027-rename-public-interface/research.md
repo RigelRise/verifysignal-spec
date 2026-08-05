@@ -18,11 +18,17 @@
 - **Rationale**: Existing workflow updates `pyproject.toml`, `__init__.py`, changelog, tag, and release together.
 - **Alternatives considered**: Manual version changes. Rejected because they compete with existing automation and can drift artifacts.
 
-## Decision 4: Publish 0.23.0 with pre-rename repository metadata, then patch URLs
+## Decision 4: Publish 0.26.0 with pre-rename repository metadata, then patch URLs
 
 - **Decision**: The canonical distribution switch can merge while source URLs still identify the live `verifysignal-spec` repository; the post-rename patch changes URLs to `RigelRise/verifysignal`.
 - **Rationale**: Metadata must not advertise a repository that does not yet exist, while the canonical package must be proven before the repository rename.
-- **Alternatives considered**: Point 0.23.0 at a future URL. Rejected as another broken onboarding window.
+- **Alternatives considered**: Point 0.26.0 at a future URL. Rejected as another broken onboarding window.
+
+## Decision 6: Keep the website installer URLs as the acquisition facade
+
+- **Decision**: Continue advertising the per-OS `verifysignal.io` installers, change their internal package target to `verifysignal`, and remove an existing legacy uv tool before canonical installation.
+- **Rationale**: The stable first-touch URL hides registry mechanics from marketing while still fixing the public PyPI, lockfile, error, and repository identities. Ordered replacement prevents the two distributions from owning overlapping commands.
+- **Alternatives considered**: Keep publishing only `verifysignal-spec` behind the installer. Rejected because the old name would remain visible in PyPI, dependency metadata, diagnostics, direct-install paths, and source links.
 
 ## Decision 5: Freeze, do not delete, the old PyPI project
 

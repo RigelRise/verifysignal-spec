@@ -4,7 +4,7 @@
 
 - Branch: `fix/announce-verifysignal-distribution`
 - PR title: `fix: announce the verifysignal distribution migration`
-- Expected automated version: 0.22.2 (0.22.1 was independently published from #24).
+- Expected automated version: 0.25.1 (0.25.0 was published while this stack was open).
 - Required evidence: migration-notice and ordered replacement contracts, full pytest, artifact build/check, isolated old-name CLI smoke.
 - Exit condition: release visible on old PyPI project and migration notice rendered.
 
@@ -13,7 +13,7 @@
 - Manual prerequisite: pending trusted publisher for PyPI `verifysignal`, repository `verifysignal-spec`, workflow `release.yml`, environment `pypi`.
 - Branch: `027-rename-public-interface`
 - PR title: `feat: publish the canonical verifysignal distribution`
-- Expected automated version: 0.23.0
+- Expected automated version: 0.26.0
 - Required evidence: canonical wheel metadata; both console scripts; stable import/schema/workspace/env/role/skill inventory; full pytest/Docker; isolated canonical CLI and managed-Runtime smoke.
 - Exit condition: canonical release is installable and verified before any GitHub rename.
 
@@ -28,7 +28,7 @@
 
 - Branch: `fix/canonical-verifysignal-repository`
 - PR title: `fix: canonicalize renamed repository publishing`
-- Expected automated version: 0.23.1
+- Expected automated version: 0.26.1
 - Required evidence: canonical repository metadata, release workflow environment URL, full regression, build/check, isolated install, successful OIDC publish under new binding.
 - Exit condition: only after success may the old repository trusted-publisher binding be removed.
 

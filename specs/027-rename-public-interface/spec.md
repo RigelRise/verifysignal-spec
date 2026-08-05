@@ -25,9 +25,10 @@ A new user can install `verifysignal` from PyPI, run `verifysignal`, and receive
 
 **Acceptance Scenarios**:
 
-1. **Given** the canonical distribution is published, **When** a new user runs `uv tool install verifysignal`, **Then** the `verifysignal` executable is installed and operational.
+1. **Given** the canonical distribution is published, **When** a new user runs the stable installer from `verifysignal.io`, **Then** the `verifysignal` distribution and executable are installed and operational.
 2. **Given** the canonical wheel, **When** metadata is inspected, **Then** its project name is `verifysignal` and its public product wording is VerifySignal.
 3. **Given** the canonical interface invokes a managed private executable, **When** public guidance describes that component, **Then** it calls it “VerifySignal Runtime”.
+4. **Given** an existing uv tool named `verifysignal-spec`, **When** either platform installer runs, **Then** it removes that tool before installing `verifysignal` so overlapping entry points are not left side by side.
 
 ---
 
@@ -59,8 +60,8 @@ A maintainer can publish one final old-name release, establish the canonical PyP
 **Acceptance Scenarios**:
 
 1. **Given** the old project is still canonical, **When** the final `verifysignal-spec` patch is published, **Then** it announces the move and the old project remains installable but receives no later feature releases.
-2. **Given** a pending trusted publisher for PyPI project `verifysignal` tied to repository `verifysignal-spec`, **When** canonical 0.23.0 publishes, **Then** it uses the existing repository slug and is smoke-tested before rename.
-3. **Given** canonical 0.23.0 is verified, **When** GitHub is renamed to `RigelRise/verifysignal`, **Then** a new exact trusted-publisher binding is created before publishing the post-rename patch.
+2. **Given** a pending trusted publisher for PyPI project `verifysignal` tied to repository `verifysignal-spec`, **When** canonical 0.26.0 publishes, **Then** it uses the existing repository slug and is smoke-tested before rename.
+3. **Given** canonical 0.26.0 is verified, **When** GitHub is renamed to `RigelRise/verifysignal`, **Then** a new exact trusted-publisher binding is created before publishing the post-rename patch.
 4. **Given** post-rename publishing succeeds, **When** public metadata is inspected, **Then** source URLs use `RigelRise/verifysignal` and the old PyPI project remains present and not yanked.
 
 ### Edge Cases
@@ -86,11 +87,11 @@ A maintainer can publish one final old-name release, establish the canonical PyP
 - **FR-006**: `.verifysignal/` workspace paths and interpretation MUST remain unchanged.
 - **FR-007**: Existing `VERIFYSIGNAL_SPEC_*` environment variables MUST remain accepted.
 - **FR-008**: Existing workflow role `spec`, `/verifysignal-specify`, `verifysignal-spec`, and legacy `verifysignal-spec-*` skill aliases MUST remain accepted where currently public.
-- **FR-009**: Canonical onboarding MUST use `uv tool install verifysignal`.
+- **FR-009**: Canonical onboarding MUST advertise the stable `verifysignal.io/install.sh` and `install.ps1` entry points, while direct-install guidance MUST use `verifysignal`.
 - **FR-010**: Public product wording MUST use VerifySignal and MUST describe the private executable as VerifySignal Runtime; narrowly technical implementation documents MAY use Core.
 - **FR-011**: The old `verifysignal-spec` PyPI project MUST receive one final patch release announcing migration, then remain available, frozen, and not yanked.
-- **FR-012**: Canonical 0.23.0 MUST publish before the GitHub repository is renamed.
-- **FR-013**: GitHub MUST be renamed from `RigelRise/verifysignal-spec` to `RigelRise/verifysignal` only after canonical 0.23.0 passes isolated installation and runtime smoke tests.
+- **FR-012**: Canonical 0.26.0 MUST publish before the GitHub repository is renamed.
+- **FR-013**: GitHub MUST be renamed from `RigelRise/verifysignal-spec` to `RigelRise/verifysignal` only after canonical 0.26.0 passes isolated installation and runtime smoke tests.
 - **FR-014**: A new exact PyPI trusted-publisher binding for repository `verifysignal` MUST be active before the first post-rename publish.
 - **FR-015**: A post-rename patch MUST update repository metadata and prove publishing under the renamed slug before the old publisher binding is removed.
 - **FR-016**: Release versions MUST continue to be derived by release automation from merged PR titles; implementation PRs MUST NOT hand-edit the version field.
@@ -99,6 +100,7 @@ A maintainer can publish one final old-name release, establish the canonical PyP
 - **FR-019**: Existing CLI, Runtime resolution, entitlement, browser, secret-safety, and agent-neutral regression suites MUST remain green.
 - **FR-020**: Canonical distribution and repository changes MUST be independently reversible until each publication stage is verified.
 - **FR-021**: Migration guidance MUST replace `verifysignal-spec` before installing `verifysignal` in the same `uv tool` or `pip` environment and MUST state that project-local `.verifysignal/` workspaces are retained.
+- **FR-022**: Both platform installers MUST detect and remove an existing `verifysignal-spec` uv tool before installing the canonical distribution.
 
 ### Key Entities
 
@@ -129,5 +131,5 @@ A maintainer can publish one final old-name release, establish the canonical PyP
 - Public availability checks do not prove authenticated ownership; manual authenticated confirmation remains required.
 - PyPI project names cannot be renamed, so old and canonical distributions are separate projects.
 - GitHub repository redirects are retained by never reusing the old slug.
-- Version 0.22.2 is the intended final old-name patch because 0.22.1 was independently published from #24 while this stack was open; 0.23.0 remains the first canonical release and 0.23.1 the first post-rename patch, subject to existing automated release calculation.
+- Version 0.25.1 is the intended final old-name patch because 0.25.0 was published while this stack was open; 0.26.0 remains the first canonical release and 0.26.1 the first post-rename patch, subject to existing automated release calculation.
 - Cross-repository Core and backend PRs merge only after the canonical package and repository gates they reference are live.
