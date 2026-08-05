@@ -151,18 +151,27 @@ def gate_packaged_identity(command: str) -> dict:
 
 
 def _blockers(payload: object) -> list[str]:
-    """Every blocker code anywhere in a CLI payload, in the order found.
+    """Every blocker anywhere in a CLI payload, as `code: message`, in the order found.
 
-    The CLI nests its blocker differently per command (`runtime.blocker.code`,
-    `blockers[].code`, one per stage), so a walk is more honest than guessing at a shape --
-    and a gate that cannot name the blocker is a gate that sends someone to the run log.
+    The CLI nests its blocker differently per command (`runtime.blocker.code`, `blockers[].code`,
+    one per stage), so a walk is more honest than guessing at a shape.
+
+    The MESSAGE matters as much as the code, and leaving it out cost a full CI cycle: Core carries
+    the underlying cause there (a spawn failure, a network failure and a version mismatch all share
+    the code `browser-assets-unavailable`), so a ledger printing only the code cannot tell those
+    apart -- and a rerun after a fix produced a byte-identical line, indistinguishable from the fix
+    never having shipped.
     """
 
     found: list[str] = []
     if isinstance(payload, dict):
         code = payload.get("code")
-        if isinstance(code, str) and "." in code:
-            found.append(code)
+        # Dotted (entitlement.unlock-required) or hyphenated (browser-assets-unavailable):
+        # the CLI uses both shapes, and a dotted-only rule silently skipped the second.
+        if isinstance(code, str) and ("." in code or "-" in code):
+            message = payload.get("message")
+            detail = str(message).strip() if isinstance(message, str) and message.strip() else ""
+            found.append(f"{code}: {detail}" if detail else str(code))
         for value in payload.values():
             found.extend(_blockers(value))
     elif isinstance(payload, list):
@@ -255,12 +264,13 @@ def gate_browser_ready(project: Path, command: str) -> dict:
         ["discover", "--url", "https://example.com", "--skill", str(skill), "--project", str(project), "--core-cmd", command, "--json"]
     )
     payload = _json_or_fail("browserReady", "verifysignal discover", out or err, "the browser adapter in the Core repo")
-    blockers = json.dumps(payload)
-    if "browser-assets-unavailable" in blockers:
+    reported = _blockers(payload)
+    unavailable = next((item for item in reported if item.startswith("browser-assets-unavailable")), None)
+    if unavailable:
         raise GateFailure(
             "browserReady",
             "verifysignal discover --json",
-            "browser-assets-unavailable",
+            unavailable,
             "a browser the packaged runtime can drive",
             "packages/adapter-browser-playwright/src/browser-readiness.ts::ensureBrowserAssetsReady "
             "-- its `prepare` mkdirs but never downloads, and the manifest already advertises "
