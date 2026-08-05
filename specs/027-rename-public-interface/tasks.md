@@ -54,17 +54,30 @@
 
 **Independent Test**: Canonical source URLs and workflow environment metadata are green and 0.26.1 publishes using the new binding.
 
-- [ ] T023 [US3] Add failing canonical repository metadata assertions in `tests/contract/test_docs_install_urls.py` and `tests/contract/test_release_migration_contract.py`
-- [ ] T024 [US3] Run focused tests red and commit tests only on `fix/canonical-verifysignal-repository`
-- [ ] T025 [US3] Update project URLs, public docs, issue links, release workflow URL/comment, and GitHub templates to `RigelRise/verifysignal`
-- [ ] T026 [US3] Run focused/full tests, build/check, isolated install, and Docker regression green; commit implementation
+- [X] T023 [US3] Add failing canonical repository metadata assertions in `tests/contract/test_docs_install_urls.py` and `tests/contract/test_release_migration_contract.py`
+- [X] T024 [US3] Run focused tests red and commit tests only on `fix/canonical-verifysignal-repository`
+- [X] T025 [US3] Update project URLs, public docs, issue links, release workflow URL/comment, and GitHub templates to `RigelRise/verifysignal`
+- [X] T026 [US3] Run focused/full tests, build/check, isolated install, and Docker regression green; commit implementation
 - [ ] T027 [US3] Push/open the post-rename patch PR, verify automated 0.26.1, then retire the old trusted-publisher binding
 
 ## Phase 7: Polish & Cross-Cutting Concerns
 
 - [ ] T028 Confirm the old PyPI project remains installable, unyanked, and frozen
-- [ ] T029 Confirm all 47 distinct versioned schema IDs and all frozen compatibility identifiers are unchanged
-- [ ] T030 Update completion and release evidence in `specs/027-rename-public-interface/tasks.md`
+- [X] T029 Confirm all 47 distinct versioned schema IDs and all frozen compatibility identifiers are unchanged
+- [X] T030 Update completion and release evidence in `specs/027-rename-public-interface/tasks.md`
+
+## Post-Rename Patch Evidence (2026-08-04)
+
+- RED (`b0249f6`): 5 expected failures across active repository URLs, project metadata, and Trusted Publisher guidance.
+- GREEN (`1bde2c9`): 11/11 focused repository/distribution/release assertions green.
+- Rebased regression: 32 focused distribution, compatibility, release, freshness, prerequisite, and browser-first tests passed; full clean-runner GitHub `spec` CI passed without deselection. The rebase inherits #24's fixture-freshness ratchet instead of duplicating its concurrent fix.
+- Cross-repository dogfood passed after restoring the Core worktree's native macOS dependencies.
+- Artifact: `uv build` produced the current pre-release-automation canonical 0.25.0 wheel and sdist; both passed `twine check`.
+- Isolated install: distribution metadata is `verifysignal`; `verifysignal` and `verifysignal-spec` both run; `verifysignal_spec.runtime.release_signature` imports.
+- Docker: 11/11 post-rename contracts passed under the declared Playwright/Python toolchain.
+- Compatibility inventory: all four frozen-inventory assertions passed, including the exact 47 schema IDs.
+- T027 is partially prepared in draft PR #25: branch/PR publication is complete, but 0.26.1 verification and old-publisher retirement remain manual post-merge gates.
+- PyPI currently reports `verifysignal-spec` 0.25.0 as latest and no published `verifysignal` distribution. T028 remains manual: publish/verify final old-name 0.25.1, then re-check and freeze the project without deleting or yanking artifacts.
 
 ## Dependencies
 

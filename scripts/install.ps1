@@ -57,7 +57,7 @@ $LegacyPackage = 'verifysignal-spec'
 $PythonVersion = '3.12'
 $UvInstallerUrl = 'https://astral.sh/uv/install.ps1'
 $PlaywrightMcpSetup = 'verifysignal integration setup-playwright-mcp'
-$DocsUrl = 'https://github.com/RigelRise/verifysignal-spec/blob/main/docs/installation.md'
+$DocsUrl = 'https://github.com/RigelRise/verifysignal/blob/main/docs/installation.md'
 
 # Windows PowerShell 5.1 still negotiates SSLv3/TLS1.0 by default on older builds, and both
 # astral.sh and PyPI refuse those. Without this the download fails with an opaque "could not create

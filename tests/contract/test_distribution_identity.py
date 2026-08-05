@@ -24,12 +24,13 @@ def test_canonical_distribution_preserves_both_cli_entrypoints_and_import_packag
     assert (ROOT / "src" / "verifysignal_spec" / "__init__.py").is_file()
 
 
-def test_first_canonical_release_keeps_the_live_pre_rename_repository_urls() -> None:
+def test_post_rename_distribution_uses_canonical_repository_urls() -> None:
     urls = _project()["urls"]
 
     assert isinstance(urls, dict)
     assert urls
-    assert all("github.com/RigelRise/verifysignal-spec" in value for value in urls.values())
+    assert all("github.com/RigelRise/verifysignal" in value for value in urls.values())
+    assert all("github.com/RigelRise/verifysignal-spec" not in value for value in urls.values())
 
 
 def test_primary_install_guidance_and_badges_use_the_canonical_distribution() -> None:

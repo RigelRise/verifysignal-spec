@@ -54,11 +54,11 @@ dev = ["pytest>=8"]
 publish = ["build>=1", "twine>=5"]
 
 [project.urls]
-Homepage = "https://github.com/RigelRise/verifysignal-spec"
-Repository = "https://github.com/RigelRise/verifysignal-spec"
-Documentation = "https://github.com/RigelRise/verifysignal-spec/tree/main/docs"
-Issues = "https://github.com/RigelRise/verifysignal-spec/issues"
-Changelog = "https://github.com/RigelRise/verifysignal-spec/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/RigelRise/verifysignal"
+Repository = "https://github.com/RigelRise/verifysignal"
+Documentation = "https://github.com/RigelRise/verifysignal/tree/main/docs"
+Issues = "https://github.com/RigelRise/verifysignal/issues"
+Changelog = "https://github.com/RigelRise/verifysignal/blob/main/CHANGELOG.md"
 
 [project.scripts]
 verifysignal = "verifysignal_spec.cli:main"

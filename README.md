@@ -7,7 +7,7 @@
 <p align="center"><b>AI writes the validation. A deterministic runtime proves it.</b></p>
 
 <p align="center">
-  <a href="https://github.com/RigelRise/verifysignal-spec/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/RigelRise/verifysignal-spec/ci.yml?branch=main&label=CI" alt="CI status"></a>
+  <a href="https://github.com/RigelRise/verifysignal/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/RigelRise/verifysignal/ci.yml?branch=main&label=CI" alt="CI status"></a>
   <a href="https://pypi.org/project/verifysignal/"><img src="https://img.shields.io/pypi/v/verifysignal?color=37E5C4" alt="PyPI version"></a>
   <img src="https://img.shields.io/pypi/pyversions/verifysignal" alt="Supported Python versions">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue" alt="License: Apache-2.0"></a>
@@ -97,7 +97,7 @@ storage state, form values, or URL query values. See
 <summary>Install from source</summary>
 
 ```sh
-uv tool install verifysignal --from git+https://github.com/RigelRise/verifysignal-spec.git
+uv tool install verifysignal --from git+https://github.com/RigelRise/verifysignal.git
 ```
 
 </details>
@@ -182,10 +182,10 @@ means the same thing for everyone. See [GOVERNANCE.md](GOVERNANCE.md).
   [Golden Path](docs/golden-path.md), and
   [Browser-first understanding](docs/browser-first-understanding.md)
 - [Contributing](CONTRIBUTING.md), [Governance](GOVERNANCE.md), [Roadmap](ROADMAP.md)
-- [Issues](https://github.com/RigelRise/verifysignal-spec/issues),
-  [Discussions](https://github.com/RigelRise/verifysignal-spec/discussions)
+- [Issues](https://github.com/RigelRise/verifysignal/issues),
+  [Discussions](https://github.com/RigelRise/verifysignal/discussions)
 - Security: please use
-  [private reporting](https://github.com/RigelRise/verifysignal-spec/security/advisories/new)
+  [private reporting](https://github.com/RigelRise/verifysignal/security/advisories/new)
   ([SECURITY.md](SECURITY.md))
 
 ## Development

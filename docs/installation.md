@@ -110,13 +110,13 @@ Install a tagged release (replace `vX.Y.Z` with a real tag; the `@vX.Y.Z` forms 
 once a release has been tagged on the repository; until then use the default-branch form):
 
 ```sh
-uv tool install verifysignal --from git+https://github.com/RigelRise/verifysignal-spec.git@vX.Y.Z
+uv tool install verifysignal --from git+https://github.com/RigelRise/verifysignal.git@vX.Y.Z
 ```
 
 Install the latest commit from the default branch:
 
 ```sh
-uv tool install verifysignal --from git+https://github.com/RigelRise/verifysignal-spec.git
+uv tool install verifysignal --from git+https://github.com/RigelRise/verifysignal.git
 ```
 
 Verify:
@@ -129,7 +129,7 @@ verifysignal --help
 Upgrade:
 
 ```sh
-uv tool install verifysignal --force --from git+https://github.com/RigelRise/verifysignal-spec.git@vX.Y.Z
+uv tool install verifysignal --force --from git+https://github.com/RigelRise/verifysignal.git@vX.Y.Z
 ```
 
 Uninstall (the tool is registered under its package name, not the command name):
@@ -143,7 +143,7 @@ uv tool uninstall verifysignal
 Run without installing permanently:
 
 ```sh
-uvx --from git+https://github.com/RigelRise/verifysignal-spec.git@vX.Y.Z verifysignal init --here --integration codex
+uvx --from git+https://github.com/RigelRise/verifysignal.git@vX.Y.Z verifysignal init --here --integration codex
 ```
 
 ## Initialize A Real Project
