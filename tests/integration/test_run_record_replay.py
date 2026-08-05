@@ -21,7 +21,12 @@ def _workspace(tmp_path: Path, monkeypatch) -> str:
     monkeypatch.setenv("VERIFYSIGNAL_CORE_CMD", str(FAKE_CORE))
     monkeypatch.setenv("FAKE_VERIFYSIGNAL_ADVERTISE_RUN_MODES", "1")
     monkeypatch.setenv("VERIFYSIGNAL_RUNTIME_CACHE_DIR", str(tmp_path / "runtime-cache"))
-    create_main_skill_coverage_workspace(tmp_path, helper_first=True)
+    create_main_skill_coverage_workspace(
+        tmp_path,
+        helper_first=True,
+        core_cmd=str(FAKE_CORE),
+        protected_ready=True,
+    )
     return str(FAKE_CORE)
 
 

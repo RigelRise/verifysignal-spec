@@ -7,6 +7,7 @@ from verifysignal_spec.workspace.models import ArtifactReference, UseCaseRecord
 from verifysignal_spec.workspace.repository import init_workspace, save_use_case
 from verifysignal_spec.workflows.models import ArtifactPlan
 from verifysignal_spec.workflows.repository import save_artifact_plan
+from tests.fixtures.workflows.entitlement_preflight_recovery import save_protected_ready_snapshot
 
 
 ALIAS = "profile-view-unauth"
@@ -23,6 +24,7 @@ def create_main_skill_coverage_workspace(
     helper_first: bool = True,
     legacy_multi_skill_run_request: bool = False,
     core_cmd: str | None = None,
+    protected_ready: bool = False,
 ) -> Path:
     init_workspace(project, core_cmd=core_cmd)
     (project / ".verifysignal/run-requests").mkdir(parents=True, exist_ok=True)
@@ -70,6 +72,8 @@ def create_main_skill_coverage_workspace(
             ],
         ),
     )
+    if protected_ready:
+        save_protected_ready_snapshot(project, alias)
     return project
 
 

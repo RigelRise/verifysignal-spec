@@ -44,7 +44,7 @@ def test_validate_blocks_runtime_unsupported_confirmation_signal(tmp_path, monke
 
 def test_workflow_check_run_surfaces_same_blocked_rerun_decision_as_run_preflight(tmp_path) -> None:
     create_current_understanding_workspace(tmp_path)
-    record = create_write_policy_workspace(tmp_path, last_run=blocked_write_last_run())
+    record = create_write_policy_workspace(tmp_path, last_run=blocked_write_last_run(), protected_ready=True)
     record.status = "ready"
     save_use_case(tmp_path, record)
     _write_minimal_stage_artifacts(tmp_path, "add-collaboration-project")
@@ -59,7 +59,7 @@ def test_workflow_check_run_surfaces_same_blocked_rerun_decision_as_run_prefligh
 
 def test_workflow_check_run_blocks_confirmable_write_rerun_with_guided_approval(tmp_path) -> None:
     create_current_understanding_workspace(tmp_path)
-    record = create_write_policy_workspace(tmp_path, last_run=confirmable_write_last_run())
+    record = create_write_policy_workspace(tmp_path, last_run=confirmable_write_last_run(), protected_ready=True)
     record.status = "ready"
     save_use_case(tmp_path, record)
     _write_minimal_stage_artifacts(tmp_path, "add-collaboration-project")

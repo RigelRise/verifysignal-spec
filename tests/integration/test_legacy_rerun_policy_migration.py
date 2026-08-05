@@ -14,6 +14,7 @@ def test_legacy_rerun_risk_safe_with_new_inputs_runs_with_refreshed_input(tmp_pa
         tmp_path,
         rerun_policy={"rerunRisk": "safe-with-new-inputs", "refreshRuntimeInputs": ["projectTitle"]},
         last_run=committed_last_run(),
+        protected_ready=True,
     )
 
     result = run_command.run(tmp_path, "add-collaboration-project", interactive=False, core_cmd=str(FAKE_CORE))

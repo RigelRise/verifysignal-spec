@@ -6,6 +6,7 @@ from typing import Any
 
 from verifysignal_spec.workspace.models import ArtifactReference, RuntimeInputRequirement, UseCaseRecord
 from verifysignal_spec.workspace.repository import init_workspace, save_use_case
+from tests.fixtures.workflows.entitlement_preflight_recovery import save_protected_ready_snapshot
 
 from .write_rerun_identity import write_minimal_artifacts
 
@@ -140,7 +141,13 @@ def supersede_review_payload(source_run_id: str = "violated-run") -> dict[str, A
     }
 
 
-def create_write_policy_workspace(project: Path, *, side_effects: dict[str, Any] | None = None, last_run: dict[str, Any] | None = None) -> UseCaseRecord:
+def create_write_policy_workspace(
+    project: Path,
+    *,
+    side_effects: dict[str, Any] | None = None,
+    last_run: dict[str, Any] | None = None,
+    protected_ready: bool = False,
+) -> UseCaseRecord:
     init_workspace(project, core_cmd=os.environ.get("VERIFYSIGNAL_CORE_CMD", "verifysignal-core"))
     write_minimal_artifacts(project, "add-collaboration-project", parameters={"baseUrl": "https://example.test"})
     record = UseCaseRecord(
@@ -191,8 +198,20 @@ def create_write_policy_workspace(project: Path, *, side_effects: dict[str, Any]
             "targetScope": "https://example.test",
             "confidence": "confirmed",
         },
-        artifactCapabilities={"capabilities": ["side-effect-lifecycle", "resource-identity", "generated-runtime-inputs"]},
+        artifactCapabilities={
+            "capabilities": [
+                "explicit-confirmation",
+                "side-effect-lifecycle",
+                "resource-identity",
+                "generated-runtime-inputs",
+                "write-activity-interpretation",
+            ]
+        },
         lastRun=last_run,
     )
     save_use_case(project, record)
+    if protected_ready:
+        record.status = "ready"
+        save_use_case(project, record)
+        save_protected_ready_snapshot(project, record.alias, side_effect_class="write")
     return record

@@ -13,7 +13,7 @@ from tests.helpers import CliTestCase
 class WorkflowApproveRerunContractTest(CliTestCase):
     def test_workflow_approve_rerun_cli_persists_review(self) -> None:
         create_current_understanding_workspace(self.project)
-        record = create_write_policy_workspace(self.project, last_run=confirmable_write_last_run())
+        record = create_write_policy_workspace(self.project, last_run=confirmable_write_last_run(), protected_ready=True)
         record.status = "ready"
         save_use_case(self.project, record)
         _write_minimal_stage_artifacts(self.project, "add-collaboration-project")
@@ -47,7 +47,11 @@ class WorkflowApproveRerunContractTest(CliTestCase):
         # "Alias must be lowercase..." error even though the id is charset-clean.
         create_current_understanding_workspace(self.project)
         long_run_id = "add-collaboration-project-20260622T185251Z"
-        record = create_write_policy_workspace(self.project, last_run=confirmable_write_last_run(run_id=long_run_id))
+        record = create_write_policy_workspace(
+            self.project,
+            last_run=confirmable_write_last_run(run_id=long_run_id),
+            protected_ready=True,
+        )
         record.status = "ready"
         save_use_case(self.project, record)
         _write_minimal_stage_artifacts(self.project, "add-collaboration-project")

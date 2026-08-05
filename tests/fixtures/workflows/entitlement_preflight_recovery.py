@@ -5,7 +5,15 @@ from typing import Any, Literal
 
 from verifysignal_spec import __version__ as SPEC_VERSION
 from verifysignal_spec.workspace import layout
-from verifysignal_spec.workspace.repository import init_workspace, load_document, save_document
+from verifysignal_spec.workspace.repository import (
+    artifact_fingerprints,
+    init_workspace,
+    load_document,
+    load_use_case,
+    now_iso,
+    save_document,
+    save_use_case,
+)
 
 
 CommandCompatibilityStatus = Literal["not-checked", "passed", "blocked"]
@@ -64,6 +72,26 @@ def build_protected_readiness_snapshot(
         "protectedOperationStatus": protected_status,
         "readinessScope": readiness_scope,
     }
+
+
+def save_protected_ready_snapshot(
+    project: Path,
+    alias: str,
+    *,
+    side_effect_class: SideEffectClass = "none",
+) -> None:
+    """Make an intentionally runnable fixture explicit about protected readiness."""
+
+    record = load_use_case(project, alias)
+    record.status = "ready"
+    save_use_case(project, record)
+    snapshot = build_protected_readiness_snapshot(
+        alias,
+        side_effect_class=side_effect_class,
+    )
+    snapshot["checkedAt"] = now_iso()
+    snapshot["artifactFingerprints"] = artifact_fingerprints(project, record)
+    save_document(layout.readiness_snapshot_path(project, alias), snapshot)
 
 
 def build_side_effect_policy(

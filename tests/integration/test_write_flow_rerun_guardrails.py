@@ -7,6 +7,7 @@ from verifysignal_spec.workspace.repository import init_workspace, load_supersed
 from tests.fixtures.workflows.prerequisites import create_current_understanding_workspace
 from tests.integration.test_workflow_run import _current_write_capabilities, _manual_cleanup_lifecycle, _write_minimal_artifacts
 from verifysignal_spec.workflows.prerequisites import check_prerequisites
+from tests.fixtures.workflows.entitlement_preflight_recovery import save_protected_ready_snapshot
 
 
 def test_rerun_after_post_commit_write_blocks_when_policy_blocks(tmp_path, monkeypatch) -> None:
@@ -16,7 +17,7 @@ def test_rerun_after_post_commit_write_blocks_when_policy_blocks(tmp_path, monke
     init_workspace(tmp_path, core_cmd=str(FAKE_CORE))
     create_current_understanding_workspace(tmp_path)
     _write_minimal_artifacts(tmp_path, "create-resource", parameters={"baseUrl": "https://example.test"})
-    save_use_case(tmp_path, _write_record(after_commit="blocked"))
+    _save_runnable_record(tmp_path, _write_record(after_commit="blocked"))
 
     result = run_command.run(tmp_path, "create-resource", interactive=False, core_cmd=str(FAKE_CORE))
 
@@ -30,7 +31,7 @@ def test_rerun_after_post_commit_write_refreshes_declared_generated_inputs(tmp_p
     monkeypatch.setenv("VERIFYSIGNAL_CORE_CMD", str(FAKE_CORE))
     init_workspace(tmp_path, core_cmd=str(FAKE_CORE))
     _write_minimal_artifacts(tmp_path, "create-resource", parameters={"baseUrl": "https://example.test"})
-    save_use_case(tmp_path, _write_record(after_commit="allowed-with-new-inputs", refresh_inputs=["resourceName"], core_risk="safe-with-new-inputs"))
+    _save_runnable_record(tmp_path, _write_record(after_commit="allowed-with-new-inputs", refresh_inputs=["resourceName"], core_risk="safe-with-new-inputs"))
 
     result = run_command.run(tmp_path, "create-resource", interactive=False, core_cmd=str(FAKE_CORE))
 
@@ -50,7 +51,7 @@ def test_confirm_risk_approves_confirmable_write_rerun_and_continues(tmp_path, m
     _write_minimal_artifacts(tmp_path, "create-resource", parameters={"baseUrl": "https://example.test"})
     record = _write_record(after_commit="allowed-with-new-inputs", refresh_inputs=["resourceName"], core_risk="requires-confirmation")
     record.status = "ready"
-    save_use_case(tmp_path, record)
+    _save_runnable_record(tmp_path, record)
     _write_minimal_stage_artifacts(tmp_path, "create-resource")
     confirmation_id = check_prerequisites(tmp_path, "run", alias="create-resource")["rerunDecision"]["confirmationId"]
 
@@ -75,7 +76,7 @@ def test_confirm_risk_with_wrong_id_keeps_confirmable_rerun_blocked(tmp_path, mo
     monkeypatch.setenv("VERIFYSIGNAL_CORE_CMD", str(FAKE_CORE))
     init_workspace(tmp_path, core_cmd=str(FAKE_CORE))
     _write_minimal_artifacts(tmp_path, "create-resource", parameters={"baseUrl": "https://example.test"})
-    save_use_case(tmp_path, _write_record(after_commit="allowed-with-new-inputs", refresh_inputs=["resourceName"], core_risk="requires-confirmation"))
+    _save_runnable_record(tmp_path, _write_record(after_commit="allowed-with-new-inputs", refresh_inputs=["resourceName"], core_risk="requires-confirmation"))
 
     result = run_command.run(
         tmp_path,
@@ -125,6 +126,12 @@ def _write_record(*, after_commit: str, refresh_inputs: list[str] | None = None,
             },
         },
     )
+
+
+def _save_runnable_record(project, record: UseCaseRecord) -> None:
+    record.status = "ready"
+    save_use_case(project, record)
+    save_protected_ready_snapshot(project, record.alias, side_effect_class="write")
 
 
 def _write_minimal_stage_artifacts(project, alias: str) -> None:

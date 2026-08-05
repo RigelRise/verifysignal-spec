@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -11,7 +12,8 @@ from tests.fixtures.workflows.prerequisites import create_current_understanding_
 from tests.fixtures.workflows.side_effect_contract_alignment import create_write_policy_workspace
 from tests.helpers import FAKE_CORE
 from verifysignal_spec.commands import run as run_command
-from verifysignal_spec.workspace import layout
+from verifysignal_spec.workspace import layout, repository as workspace_repository
+from verifysignal_spec.workspace.models import LastCoreAttempt, RunHistoryEntry
 from verifysignal_spec.workspace.repository import load_document, now_iso, save_document, save_use_case
 
 
@@ -34,6 +36,10 @@ def test_current_preexecution_core_error_records_a_safe_non_run_attempt(
     assert attempt["executionState"] == "not-started"
     assert attempt["sideEffectMayExist"] is False
     assert attempt["attemptedAt"]
+    assert re.fullmatch(
+        r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{9}Z",
+        attempt["attemptedAt"],
+    )
     assert _forbidden_attempt_fields(attempt) == set()
     assert list(_history_dir(tmp_path, alias).glob("*.yaml")) == []
     assert document.get("lastRun") is None
@@ -99,6 +105,72 @@ def test_legacy_core_error_preserves_every_prior_real_run_projection(
     assert attempt["executionState"] == "unknown"
     assert attempt.get("sideEffectMayExist") is None
     assert _forbidden_attempt_fields(attempt) == set()
+
+
+def test_confirm_risk_releases_the_exact_unknown_attempt_without_a_synthetic_run_id(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    alias = _prepare_error_workspace(tmp_path, monkeypatch, mode="legacy-entitlement-error")
+
+    blocked = run_command.run(tmp_path, alias, interactive=False, core_cmd=str(FAKE_CORE))
+    confirmation_id = blocked["rerunDecision"]["confirmationId"]
+    monkeypatch.setenv("FAKE_VERIFYSIGNAL_MODE", "ok")
+
+    resumed = run_command.run(
+        tmp_path,
+        alias,
+        interactive=False,
+        core_cmd=str(FAKE_CORE),
+        confirmed_risks=[confirmation_id],
+    )
+
+    assert resumed["status"] != "blocked"
+    updated = load_document(layout.use_case_path(tmp_path, alias))
+    assert updated.get("lastCoreAttempt") is None
+    assert len(list(_history_dir(tmp_path, alias).glob("*.yaml"))) == 1
+
+
+def test_attempt_marker_is_not_cleared_when_valid_run_persistence_fails_late(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    alias = _prepare_error_workspace(tmp_path, monkeypatch, mode="current-entitlement-error")
+    record = workspace_repository.load_use_case(tmp_path, alias)
+    record.lastCoreAttempt = LastCoreAttempt(
+        attemptedAt="2026-08-05T01:00:00.000000001Z",
+        operation="run",
+        schema="verifysignal.error/v1",
+        status="error",
+        errorCode="entitlement.key-unknown",
+        executionState="not-started",
+        sideEffectMayExist=False,
+    )
+    save_use_case(tmp_path, record)
+
+    def fail_output_projection(*_args, **_kwargs):
+        raise RuntimeError("simulated late persistence failure")
+
+    monkeypatch.setattr(
+        workspace_repository,
+        "_publish_outputs_from_run",
+        fail_output_projection,
+    )
+    entry = RunHistoryEntry(
+        runId="valid-run-before-late-failure",
+        useCaseAlias=alias,
+        profile="normal",
+        status="passed",
+        startedAt="2026-08-05T02:00:00Z",
+        completedAt="2026-08-05T02:01:00Z",
+    )
+
+    with pytest.raises(RuntimeError, match="late persistence failure"):
+        workspace_repository.record_run(tmp_path, entry)
+
+    persisted = workspace_repository.load_use_case(tmp_path, alias)
+    assert persisted.lastCoreAttempt is not None
+    assert persisted.lastCoreAttempt.attemptedAt == "2026-08-05T01:00:00.000000001Z"
 
 
 def _prepare_error_workspace(

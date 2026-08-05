@@ -80,6 +80,27 @@ def test_current_public_error_normalizes_to_the_additive_redacted_shape() -> Non
     assert outcome["eligibleForRunPersistence"] is False
 
 
+def test_advertised_non_entitlement_error_code_is_preserved_without_raw_message() -> None:
+    outcome = _normalize(
+        "run",
+        {
+            "schema": "verifysignal.error/v1",
+            "schemaVersion": 1,
+            "operation": "run",
+            "status": "error",
+            "error": {
+                "code": "browser-assets-unavailable",
+                "message": "private installation detail",
+            },
+        },
+    )
+
+    assert outcome["kind"] == "core-error"
+    assert outcome["errorCode"] == "browser-assets-unavailable"
+    assert outcome["blockerCode"] == "core.error"
+    assert "private installation detail" not in str(outcome)
+
+
 def test_readiness_snapshot_v1_keeps_its_schema_and_emits_additive_layers() -> None:
     snapshot = ReadinessSnapshot(
         alias="localized-home",
