@@ -25,6 +25,19 @@ def test_final_legacy_release_announces_the_canonical_distribution() -> None:
     assert "will not be deleted or yanked" in migration
 
 
+def test_migration_versions_follow_the_current_release_line() -> None:
+    readme = README.read_text(encoding="utf-8")
+    installation = INSTALLATION.read_text(encoding="utf-8")
+    migration = MIGRATION.read_text(encoding="utf-8")
+
+    for text in (readme, installation, migration):
+        assert "0.25.x" in text
+        assert "0.22.x" not in text
+
+    assert "`verifysignal` 0.26.0 or newer" in migration
+    assert "0.23.0" not in migration
+
+
 def test_migration_notice_freezes_technical_compatibility_identifiers() -> None:
     migration = MIGRATION.read_text(encoding="utf-8")
 
