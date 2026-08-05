@@ -117,12 +117,12 @@ legacy error envelopes create no synthetic run or collateral file deletion.
 
 ### Red tests for User Story 3
 
-- [ ] T032 [P] [US3] Add failing direct-run/workflow-check decision parity and zero-Core-invocation cases in `tests/unit/test_run_preflight.py`
-- [ ] T033 [P] [US3] Add failing current/legacy Core error, `lastCoreAttempt`, zero-RunHistory, and prior-state preservation cases in `tests/integration/test_preexecution_run_lifecycle.py`
-- [ ] T034 [P] [US3] Add failing no-run, no-commit, commit, unknown-write, non-write, and historical-write matrix cases in `tests/integration/test_rerun_policy_authority.py`
-- [ ] T035 [P] [US3] Add failing stale-create/replace/delete active confirmation cases in `tests/integration/test_confirmation_reconciliation.py`
-- [ ] T036 [P] [US3] Add failing exact-new-file cleanup, neighbor preservation, outside-workspace refusal, and secret-canary cases in `tests/integration/test_prepared_request_error_cleanup.py`
-- [ ] T037 [US3] Run the US3 focused tests, confirm each diagnosed red failure, and commit them before production edits in `tests/integration/test_preexecution_run_lifecycle.py`
+- [X] T032 [P] [US3] Add failing direct-run/workflow-check decision parity and zero-Core-invocation cases in `tests/unit/test_run_preflight.py`
+- [X] T033 [P] [US3] Add failing current/legacy Core error, `lastCoreAttempt`, zero-RunHistory, and prior-state preservation cases in `tests/integration/test_preexecution_run_lifecycle.py`
+- [X] T034 [P] [US3] Add failing no-run, no-commit, commit, unknown-write, non-write, and historical-write matrix cases in `tests/integration/test_rerun_policy_authority.py`
+- [X] T035 [P] [US3] Add failing stale-create/replace/delete active confirmation cases in `tests/integration/test_confirmation_reconciliation.py`
+- [X] T036 [P] [US3] Add failing exact-new-file cleanup, neighbor preservation, outside-workspace refusal, and secret-canary cases in `tests/integration/test_prepared_request_error_cleanup.py`
+- [X] T037 [US3] Run the US3 focused tests, confirm each diagnosed red failure, and commit them before production edits in `tests/integration/test_preexecution_run_lifecycle.py`
 
 ### Implementation for User Story 3
 
