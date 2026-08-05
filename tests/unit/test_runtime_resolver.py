@@ -40,6 +40,29 @@ def test_workspace_core_command_wins_over_environment(tmp_path: Path, monkeypatc
     assert result.source == "workspace"
 
 
+def test_terminal_workspace_candidate_does_not_scan_ancestor_siblings(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    init_workspace(tmp_path)
+    save_core_configuration(
+        tmp_path,
+        "missing-workspace-core",
+        source="workspace",
+        version="0.1.0",
+    )
+
+    def fail_ancestor_scan(_project: Path) -> list[Path]:
+        raise AssertionError("terminal workspace resolution must not scan ancestor siblings")
+
+    monkeypatch.setattr(runtime_resolver, "_ancestor_sibling_paths", fail_ancestor_scan)
+
+    result = ensure_core_runtime(tmp_path)
+
+    assert result.status == "blocked"
+    assert [attempt.source for attempt in result.attempts] == ["workspace"]
+
+
 def test_verifysignal_core_path_candidate_is_selected(tmp_path: Path, monkeypatch) -> None:
     bin_dir = tmp_path / "bin"
     core = write_fake_core_executable(bin_dir / "verifysignal-core")
