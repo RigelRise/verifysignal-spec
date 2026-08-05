@@ -6,6 +6,7 @@ import os
 import sys
 import tempfile
 import unittest
+from collections.abc import Iterable
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -108,6 +109,75 @@ def assert_no_core_contract_snapshots(project: Path) -> None:
             if lower_name in suspicious_names or "core-contract" in lower_name or "executable-contract" in lower_name:
                 offenders.append(str(rel))
     assert offenders == []
+
+
+def workspace_file_snapshot(project: Path) -> dict[str, bytes]:
+    """Capture project-local workspace files without following symlinks."""
+    root = project / ".verifysignal"
+    if not root.exists():
+        return {}
+    if root.is_symlink():
+        raise ValueError("Workspace snapshot refuses a symlinked .verifysignal root.")
+    return {
+        path.relative_to(root).as_posix(): path.read_bytes()
+        for path in sorted(root.rglob("*"))
+        if path.is_file() and not path.is_symlink()
+    }
+
+
+def assert_exact_workspace_file_changes(
+    project: Path,
+    before: dict[str, bytes],
+    *,
+    created: Iterable[str] = (),
+    changed: Iterable[str] = (),
+    removed: Iterable[str] = (),
+) -> None:
+    """Assert exact path ownership for a workspace mutation."""
+    expected_created = _safe_workspace_paths(created)
+    expected_changed = _safe_workspace_paths(changed)
+    expected_removed = _safe_workspace_paths(removed)
+    after = workspace_file_snapshot(project)
+    before_paths = set(before)
+    after_paths = set(after)
+    actual_created = after_paths - before_paths
+    actual_removed = before_paths - after_paths
+    actual_changed = {
+        path
+        for path in before_paths & after_paths
+        if before[path] != after[path]
+    }
+    assert actual_created == expected_created
+    assert actual_changed == expected_changed
+    assert actual_removed == expected_removed
+
+
+def assert_secret_canary_absent(project: Path, canary: str, *captured_outputs: str) -> None:
+    """Scan all workspace files and captured output without echoing the canary."""
+    if not canary:
+        raise ValueError("Secret canary must be non-empty.")
+    canary_bytes = canary.encode("utf-8")
+    offenders = [
+        f"captured-output[{index}]"
+        for index, output in enumerate(captured_outputs)
+        if canary in output
+    ]
+    offenders.extend(
+        f".verifysignal/{path}"
+        for path, content in workspace_file_snapshot(project).items()
+        if canary_bytes in content
+    )
+    assert offenders == [], f"Secret canary found in project-local outputs: {offenders}"
+
+
+def _safe_workspace_paths(paths: Iterable[str]) -> set[str]:
+    normalized: set[str] = set()
+    for value in paths:
+        path = Path(value)
+        if path.is_absolute() or path.as_posix() == "." or ".." in path.parts:
+            raise ValueError("Expected workspace paths must be project-relative.")
+        normalized.add(path.as_posix())
+    return normalized
 
 
 def row_by_alias(payload: dict, alias: str) -> dict:

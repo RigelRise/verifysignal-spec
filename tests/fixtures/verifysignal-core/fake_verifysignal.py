@@ -10,13 +10,18 @@ from pathlib import Path
 def main() -> int:
     args = sys.argv[1:]
     mode = os.environ.get("FAKE_VERIFYSIGNAL_MODE", "ok").replace("_", "-")
-    protected = bool(
-        args[:2] == ["authoring-check", "run-request"]
-        or (args and args[0] == "run")
-        or (args and args[0] == "probe")
-        or args[:2] == ["report", "inspect"]
-        or (args and args[0] == "crystallize")
-    )
+    protected_operation = _protected_operation(args)
+    protected = protected_operation is not None
+    protected_fixture_modes = {
+        "current-entitlement-error",
+        "legacy-entitlement-error",
+        "malformed-protected-response",
+        "operation-mismatched-response",
+    }
+    if protected_operation in {"authoring-check", "run"} and mode in protected_fixture_modes:
+        payload, exit_code = _protected_fixture_response(mode, protected_operation)
+        print(json.dumps(payload))
+        return exit_code
     if protected and mode in {"requires-entitlement", "rejects-entitlement", "expired-entitlement", "malformed-entitlement"}:
         receipt_path = os.environ.get("VERIFYSIGNAL_ENTITLEMENT_RECEIPT")
         error_code = None
@@ -500,6 +505,75 @@ def main() -> int:
         return 0
     print(json.dumps({"schema": "verifysignal.error/v1", "schemaVersion": 1, "operation": "unknown", "status": "error"}))
     return 1
+
+
+def _protected_operation(args: list[str]) -> str | None:
+    if args[:2] == ["authoring-check", "run-request"]:
+        return "authoring-check"
+    if args and args[0] == "run":
+        return "run"
+    if args and args[0] == "probe":
+        return "probe"
+    if args[:2] == ["report", "inspect"]:
+        return "report.inspect"
+    if args and args[0] == "crystallize":
+        return "crystallize"
+    return None
+
+
+def _protected_fixture_response(mode: str, operation: str) -> tuple[dict[str, object], int]:
+    if mode == "malformed-protected-response":
+        return {
+            "operation": operation,
+            "status": "blocked",
+            "error": "malformed-public-error",
+        }, 2
+
+    if mode == "operation-mismatched-response":
+        mismatched_operation = "authoring-check" if operation == "run" else "run"
+        return {
+            "schema": _success_schema(operation),
+            "schemaVersion": 1,
+            "operation": mismatched_operation,
+            "status": "passed",
+            "data": {},
+        }, 0
+
+    payload: dict[str, object] = {
+        "schema": "verifysignal.error/v1",
+        "schemaVersion": 1,
+        "operation": operation,
+        "status": "error",
+        "error": {
+            "code": "entitlement.key-unknown",
+            "message": "Protected operation rejected by the public fixture.",
+        },
+        # The deliberately different legacy code lets normalization tests prove
+        # that the current top-level public code has precedence.
+        "data": {
+            "findings": [
+                {
+                    "severity": "blocking",
+                    "code": "entitlement.expired",
+                    "message": "Legacy public finding retained for compatibility.",
+                }
+            ]
+        },
+    }
+    if mode == "current-entitlement-error":
+        payload["execution"] = {
+            "started": False,
+            "phase": "pre-execution",
+            "sideEffectMayExist": False,
+        }
+    return payload, 2
+
+
+def _success_schema(operation: str) -> str:
+    return {
+        "authoring-check": "verifysignal.authoring-check/v1",
+        "run": "verifysignal.run/v1",
+    }[operation]
 
 
 def _receipt_key_id(receipt_path: str | None) -> str | None:

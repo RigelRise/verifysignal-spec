@@ -21,11 +21,11 @@ must remain compatible with older envelopes that omit it.
 
 **Purpose**: Preserve diagnostic evidence and establish the pre-change baseline.
 
-- [ ] T001 Create/verify Python/Docker exclusions in `.dockerignore`, run the focused baseline commands, and retain counts for PR evidence using `specs/028-entitlement-preflight-recovery/quickstart.md`
-- [ ] T002 [P] Add current, legacy, malformed, and operation-mismatched public Core response modes in `tests/fixtures/verifysignal-core/fake_verifysignal.py`
-- [ ] T003 [P] Add fresh/legacy workspace, protected-readiness, and side-effect-policy builders in `tests/fixtures/workflows/entitlement_preflight_recovery.py`
-- [ ] T004 [P] Add exact path-ownership and full-workspace secret-canary helpers in `tests/helpers.py`
-- [ ] T005 Validate fixture outputs contain public codes and metadata but no raw receipt, key, signature, credential, or environment values in `tests/fixtures/verifysignal-core/fake_verifysignal.py`
+- [X] T001 Create/verify Python/Docker exclusions in `.dockerignore`, run the focused baseline commands, and retain counts for PR evidence using `specs/028-entitlement-preflight-recovery/quickstart.md`
+- [X] T002 [P] Add current, legacy, malformed, and operation-mismatched public Core response modes in `tests/fixtures/verifysignal-core/fake_verifysignal.py`
+- [X] T003 [P] Add fresh/legacy workspace, protected-readiness, and side-effect-policy builders in `tests/fixtures/workflows/entitlement_preflight_recovery.py`
+- [X] T004 [P] Add exact path-ownership and full-workspace secret-canary helpers in `tests/helpers.py`
+- [X] T005 Validate fixture outputs contain public codes and metadata but no raw receipt, key, signature, credential, or environment values in `tests/fixtures/verifysignal-core/fake_verifysignal.py`
 
 ---
 
@@ -34,9 +34,9 @@ must remain compatible with older envelopes that omit it.
 **Purpose**: Block implementation until the approved artifacts are internally
 consistent.
 
-- [ ] T006 Run `/speckit-analyze` across `specs/028-entitlement-preflight-recovery/spec.md`, `plan.md`, `contracts/`, and `tasks.md`
-- [ ] T007 Resolve every Critical or High analysis finding without expanding the exclusions in `specs/028-entitlement-preflight-recovery/spec.md`
-- [ ] T008 Confirm the companion Core contract exposes additive `execution` metadata and no private-Core dependency is assumed in `specs/028-entitlement-preflight-recovery/contracts/core-outcome.md`
+- [X] T006 Run `/speckit-analyze` across `specs/028-entitlement-preflight-recovery/spec.md`, `plan.md`, `contracts/`, and `tasks.md`
+- [X] T007 Resolve every Critical or High analysis finding without expanding the exclusions in `specs/028-entitlement-preflight-recovery/spec.md`
+- [X] T008 Confirm the companion Core contract exposes additive `execution` metadata and no private-Core dependency is assumed in `specs/028-entitlement-preflight-recovery/contracts/core-outcome.md`
 
 **Checkpoint**: No Critical/High artifact finding remains; production code is
 still unchanged.
@@ -54,10 +54,10 @@ legacy-auto, and successful explicit setup persists development-override.
 
 ### Red tests for User Story 1
 
-- [ ] T009 [P] [US1] Add failing fresh-versus-legacy initialization cases in `tests/integration/test_fresh_workspace_runtime_mode.py`
-- [ ] T010 [P] [US1] Add failing managed-only candidate-exclusion cases in `tests/unit/test_runtime_resolver.py`
-- [ ] T011 [P] [US1] Add failing explicit `init --core-cmd` persistence and setup-failure preservation cases in `tests/contract/test_cli_init_check_contract.py`
-- [ ] T012 [US1] Run the US1 focused tests, confirm the diagnosed red failures, and commit the failing assertions before production edits in `tests/integration/test_fresh_workspace_runtime_mode.py`
+- [X] T009 [P] [US1] Add failing fresh-versus-legacy initialization cases in `tests/integration/test_fresh_workspace_runtime_mode.py`
+- [X] T010 [P] [US1] Add failing managed-only candidate-exclusion cases in `tests/unit/test_runtime_resolver.py`
+- [X] T011 [P] [US1] Add failing explicit `init --core-cmd` persistence and setup-failure preservation cases in `tests/contract/test_cli_init_check_contract.py`
+- [X] T012 [US1] Run the US1 focused tests, confirm the diagnosed red failures, and commit the failing assertions before production edits in `tests/integration/test_fresh_workspace_runtime_mode.py`
 
 ### Implementation for User Story 1
 

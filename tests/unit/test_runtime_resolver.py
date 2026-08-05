@@ -5,9 +5,18 @@ from pathlib import Path
 
 from helpers import FAKE_CORE
 from tests.fixtures.managed_runtime import write_fake_core_executable
+from tests.fixtures.workflows.entitlement_preflight_recovery import create_fresh_workspace_root
 
+from verifysignal_spec.runtime import resolver as runtime_resolver
 from verifysignal_spec.runtime.resolver import ensure_core_runtime
-from verifysignal_spec.workspace.repository import init_workspace, save_core_configuration
+from verifysignal_spec.workspace import layout
+from verifysignal_spec.workspace.repository import (
+    get_core_resolution_mode,
+    init_workspace,
+    load_document,
+    save_core_configuration,
+    save_document,
+)
 
 
 def test_explicit_core_command_wins_before_managed_sources(tmp_path: Path, monkeypatch) -> None:
@@ -57,3 +66,43 @@ def test_public_verifysignal_path_candidate_is_not_selected_as_core(tmp_path: Pa
     assert result.runtimeCommand != str(public_cli)
     assert all(attempt.source != "path" or attempt.command != str(public_cli) for attempt in result.attempts)
 
+
+def test_managed_only_excludes_workspace_environment_path_and_ancestor_candidates(tmp_path: Path, monkeypatch) -> None:
+    init_workspace(tmp_path)
+    workspace_path = layout.workspace_root(tmp_path) / layout.WORKSPACE_FILE
+    workspace = load_document(workspace_path)
+    workspace["coreResolutionMode"] = "managed-only"
+    workspace["coreCommand"] = "workspace-core"
+    save_document(workspace_path, workspace)
+    monkeypatch.setenv("VERIFYSIGNAL_CORE_CMD", "environment-core")
+    monkeypatch.setattr(runtime_resolver.shutil, "which", lambda _name: "/fixture/path/verifysignal-core")
+    monkeypatch.setattr(runtime_resolver, "_ancestor_sibling_paths", lambda _project: [Path("/fixture/ancestor/verifysignal")])
+
+    candidates = runtime_resolver._override_candidates(
+        tmp_path,
+        None,
+        managed_only=get_core_resolution_mode(tmp_path) == "managed-only",
+    )
+
+    assert candidates == []
+    assert runtime_resolver._override_candidates(tmp_path, "explicit-core", managed_only=True) == [
+        ("explicit", "explicit-core")
+    ]
+
+
+def test_fresh_workspace_mode_excludes_all_ambient_local_candidates(tmp_path: Path, monkeypatch) -> None:
+    project = create_fresh_workspace_root(tmp_path / "new-project")
+    init_workspace(project)
+    workspace_path = layout.workspace_root(project) / layout.WORKSPACE_FILE
+    workspace = load_document(workspace_path)
+    workspace["coreCommand"] = "workspace-core"
+    save_document(workspace_path, workspace)
+    monkeypatch.setenv("VERIFYSIGNAL_CORE_CMD", "environment-core")
+    monkeypatch.setattr(runtime_resolver.shutil, "which", lambda _name: "/fixture/path/verifysignal-core")
+    monkeypatch.setattr(runtime_resolver, "_ancestor_sibling_paths", lambda _project: [Path("/fixture/ancestor/verifysignal")])
+
+    mode = get_core_resolution_mode(project)
+    candidates = runtime_resolver._override_candidates(project, None, managed_only=mode == "managed-only")
+
+    assert mode == "managed-only"
+    assert candidates == []
