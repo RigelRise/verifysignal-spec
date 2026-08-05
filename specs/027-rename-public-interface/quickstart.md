@@ -44,5 +44,5 @@ Follow `contracts/release-cutover.md` exactly. Record PyPI project/version URLs,
 - Canonical wheel/sdist build and `twine check`: passed.
 - Isolated wheel: canonical metadata, both console scripts, and the stable trust-helper import passed.
 - Docker: all 11 post-rename contracts passed.
-- Manual gates still block merge/release: repository rename, new exact PyPI publisher binding, 0.23.1 verification, and only then removal of the old binding.
+- Manual gates still block merge/release: repository rename, new exact PyPI publisher binding, 0.26.1 verification, and only then removal of the old binding.
 - Draft post-rename patch: #25, stacked on canonical distribution PR #22.

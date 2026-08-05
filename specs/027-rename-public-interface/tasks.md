@@ -72,12 +72,12 @@
 - GREEN (`1bde2c9`): 11/11 focused repository/distribution/release assertions green.
 - Rebased regression: 32 focused distribution, compatibility, release, freshness, prerequisite, and browser-first tests passed; full clean-runner GitHub `spec` CI passed without deselection. The rebase inherits #24's fixture-freshness ratchet instead of duplicating its concurrent fix.
 - Cross-repository dogfood passed after restoring the Core worktree's native macOS dependencies.
-- Artifact: `uv build` produced the current pre-release-automation canonical 0.22.1 wheel and sdist; both passed `twine check`.
+- Artifact: `uv build` produced the current pre-release-automation canonical 0.25.0 wheel and sdist; both passed `twine check`.
 - Isolated install: distribution metadata is `verifysignal`; `verifysignal` and `verifysignal-spec` both run; `verifysignal_spec.runtime.release_signature` imports.
 - Docker: 11/11 post-rename contracts passed under the declared Playwright/Python toolchain.
 - Compatibility inventory: all four frozen-inventory assertions passed, including the exact 47 schema IDs.
-- T027 is partially prepared in draft PR #25: branch/PR publication is complete, but 0.23.1 verification and old-publisher retirement remain manual post-merge gates.
-- PyPI currently reports `verifysignal-spec` 0.22.1 as latest and no published `verifysignal` distribution. T028 remains manual: publish/verify final old-name 0.22.2, then re-check and freeze the project without deleting or yanking artifacts.
+- T027 is partially prepared in draft PR #25: branch/PR publication is complete, but 0.26.1 verification and old-publisher retirement remain manual post-merge gates.
+- PyPI currently reports `verifysignal-spec` 0.25.0 as latest and no published `verifysignal` distribution. T028 remains manual: publish/verify final old-name 0.25.1, then re-check and freeze the project without deleting or yanking artifacts.
 
 ## Dependencies
 

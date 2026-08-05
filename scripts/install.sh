@@ -39,7 +39,7 @@ LEGACY_PACKAGE="verifysignal-spec"
 PYTHON_VERSION="3.12"
 UV_INSTALLER_URL="https://astral.sh/uv/install.sh"
 PLAYWRIGHT_MCP_SETUP="verifysignal integration setup-playwright-mcp"
-DOCS_URL="https://github.com/RigelRise/verifysignal-spec/blob/main/docs/installation.md"
+DOCS_URL="https://github.com/RigelRise/verifysignal/blob/main/docs/installation.md"
 WINDOWS_ONELINER='powershell -ExecutionPolicy Bypass -c "irm https://verifysignal.io/install.ps1 | iex"'
 
 version="${VERIFYSIGNAL_INSTALL_VERSION:-}"
@@ -113,7 +113,7 @@ while [ $# -gt 0 ]; do
       shift
       ;;
     --from)
-      [ $# -ge 2 ] || die "--from needs a value (e.g. --from git+https://github.com/RigelRise/verifysignal-spec.git)"
+      [ $# -ge 2 ] || die "--from needs a value (e.g. --from git+https://github.com/RigelRise/verifysignal.git)"
       from_spec="$2"
       shift 2
       ;;
