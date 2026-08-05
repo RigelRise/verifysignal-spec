@@ -150,10 +150,48 @@ def gate_packaged_identity(command: str) -> dict:
     return payload
 
 
+def _blockers(payload: object) -> list[str]:
+    """Every blocker code anywhere in a CLI payload, in the order found.
+
+    The CLI nests its blocker differently per command (`runtime.blocker.code`,
+    `blockers[].code`, one per stage), so a walk is more honest than guessing at a shape --
+    and a gate that cannot name the blocker is a gate that sends someone to the run log.
+    """
+
+    found: list[str] = []
+    if isinstance(payload, dict):
+        code = payload.get("code")
+        if isinstance(code, str) and "." in code:
+            found.append(code)
+        for value in payload.values():
+            found.extend(_blockers(value))
+    elif isinstance(payload, list):
+        for value in payload:
+            found.extend(_blockers(value))
+    return found
+
+
+def _failed(gate: str, step: str, code: int, out: str, err: str, fix: str) -> GateFailure:
+    """Turn a non-zero CLI exit into a ledger line that names the PRODUCT blocker.
+
+    With `--json` the structured payload goes to STDOUT even on failure, so reporting only stderr
+    (which is usually empty) throws away the one thing worth reading.
+    """
+
+    try:
+        payload = json.loads(out)
+    except json.JSONDecodeError:
+        detail = (err.strip() or out.strip() or "no output")[:200]
+        return GateFailure(gate, step, f"exit {code}: {detail}", "exit 0", fix)
+    codes = _blockers(payload)
+    observed = f"exit {code}: {', '.join(dict.fromkeys(codes))}" if codes else f"exit {code}: {json.dumps(payload)[:200]}"
+    return GateFailure(gate, step, observed, "exit 0", codes[0] if codes else fix)
+
+
 def gate_init(project: Path, command: str) -> dict:
     code, out, err = _cli(["init", str(project), "--integration", "claude", "--core-cmd", command, "--json"])
     if code != 0:
-        raise GateFailure("init", "verifysignal init", f"exit {code}: {err.strip()[:200]}", "exit 0", "verifysignal init on Windows")
+        raise _failed("init", "verifysignal init --json", code, out, err, "verifysignal init on Windows")
     return _json_or_fail("init", "verifysignal init", out, "verifysignal init on Windows")
 
 
