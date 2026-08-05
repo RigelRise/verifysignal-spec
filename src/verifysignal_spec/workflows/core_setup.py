@@ -9,6 +9,7 @@ from verifysignal_spec.core.adapter import CoreAdapter, resolve_persistable_core
 from verifysignal_spec.core.contracts import CompatibilityResult, PUBLIC_CONTRACT_VERSION, public_contract_summary
 from verifysignal_spec.core.errors import CoreExecutionError, CoreMissingError
 from verifysignal_spec.repos import ancestor_core_candidates
+from verifysignal_spec.workspace import layout
 from verifysignal_spec.workspace.repository import (
     get_core_command,
     init_workspace,
@@ -123,7 +124,6 @@ def verify_candidate(
 
 def run_core_setup(project: Path, explicit_core_cmd: str | None = None, *, persist: bool = True) -> CoreSetupResult:
     project = project.resolve()
-    init_workspace(project)
     attempts: list[CoreCandidateAttempt] = []
     last_compatibility: CompatibilityResult | None = None
     last_blocking_attempt: CoreCandidateAttempt | None = None
@@ -146,6 +146,8 @@ def run_core_setup(project: Path, explicit_core_cmd: str | None = None, *, persi
             if persist:
                 save_core_configuration(project, core_command, source=candidate.source, version=compatibility.verifysignalVersion)
                 persisted = True
+            elif not (layout.workspace_root(project) / layout.WORKSPACE_FILE).exists():
+                init_workspace(project)
             selected = CoreCandidateAttempt(
                 source=attempt.source,
                 command=core_command,

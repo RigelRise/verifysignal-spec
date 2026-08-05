@@ -101,13 +101,17 @@ def _parse_scalar(value: str) -> Any:
 
 def init_workspace(project: Path, force: bool = False, core_cmd: str | None = None, api_base_url: str | None = None) -> dict[str, Any]:
     root = layout.workspace_root(project)
+    workspace_path = root / layout.WORKSPACE_FILE
+    is_new_workspace = not workspace_path.exists()
     for directory in layout.workspace_dirs(project):
         directory.mkdir(parents=True, exist_ok=True)
 
     created = now_iso()
-    workspace = load_document(root / layout.WORKSPACE_FILE, default={}) or {}
+    workspace = load_document(workspace_path, default={}) or {}
     workspace.setdefault("workspaceVersion", "verifysignal-spec-workspace/v1")
     workspace.setdefault("createdAt", created)
+    if is_new_workspace:
+        workspace["coreResolutionMode"] = "managed-only"
     workspace["updatedAt"] = now_iso()
     workspace.update(
         {
@@ -129,9 +133,10 @@ def init_workspace(project: Path, force: bool = False, core_cmd: str | None = No
     )
     if core_cmd:
         workspace["coreCommand"] = core_cmd
+        workspace["coreResolutionMode"] = "development-override"
     if api_base_url:
         workspace["entitlementApiBaseUrl"] = api_base_url
-    save_document(root / layout.WORKSPACE_FILE, workspace)
+    save_document(workspace_path, workspace)
 
     product_context_path = layout.product_context_path(project)
     if force or not product_context_path.exists():

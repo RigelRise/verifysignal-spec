@@ -9,7 +9,9 @@ from verifysignal_spec.workspace.repository import init_workspace, load_document
 
 class InitCheckContractTests(CliTestCase):
     def test_init_json_contract_and_check(self) -> None:
-        code, out, err = self.cli(["init", str(self.project), "--integration", "codex", "--json"])
+        code, out, err = self.cli(
+            ["init", str(self.project), "--integration", "codex", "--core-cmd", str(FAKE_CORE), "--json"]
+        )
         self.assertEqual(code, 0, err)
         payload = json.loads(out)
         self.assertEqual(payload["integration"], "codex")
@@ -98,4 +100,27 @@ class InitCheckContractTests(CliTestCase):
 
         self.assertEqual(code, 0, err)
         self.assertEqual(json.loads(out)["status"], "missing")
+        self.assertEqual(workspace_path.read_bytes(), before)
+
+    def test_failed_explicit_init_preserves_existing_workspace(self) -> None:
+        init_workspace(self.project)
+        save_core_configuration(self.project, str(FAKE_CORE), source="explicit", version="0.1.0")
+        workspace_path = self.project / ".verifysignal" / "workspace.yaml"
+        before = workspace_path.read_bytes()
+
+        with patch("verifysignal_spec.workspace.repository.now_iso", return_value="2099-01-01T00:00:00Z"):
+            code, out, _err = self.cli(
+                [
+                    "init",
+                    str(self.project),
+                    "--integration",
+                    "codex",
+                    "--core-cmd",
+                    "missing-explicit-core-for-existing-init",
+                    "--json",
+                ]
+            )
+
+        self.assertEqual(code, 2)
+        self.assertEqual(json.loads(out)["status"], "blocked")
         self.assertEqual(workspace_path.read_bytes(), before)

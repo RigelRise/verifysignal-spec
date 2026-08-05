@@ -61,12 +61,12 @@ legacy-auto, and successful explicit setup persists development-override.
 
 ### Implementation for User Story 1
 
-- [ ] T013 [US1] Distinguish new creation from existing field absence and stamp managed-only only for new workspaces in `src/verifysignal_spec/workspace/repository.py`
-- [ ] T014 [US1] Persist development override only after successful explicit init Core setup in `src/verifysignal_spec/commands/init.py`
-- [ ] T015 [US1] Align explicit setup persistence and failure rollback with init semantics in `src/verifysignal_spec/commands/core_setup.py`
-- [ ] T016 [US1] Enforce managed-only exclusion for workspace, environment, PATH, and ancestor-sibling candidates in `src/verifysignal_spec/runtime/resolver.py`
-- [ ] T017 [US1] Run US1 tests to green and retain red/green SHAs using `tests/integration/test_fresh_workspace_runtime_mode.py`
-- [ ] T018 [US1] Run adjacent reset/update/setup and legacy compatibility regression suites in `tests/integration/test_core_update.py` and `tests/integration/test_core_setup.py`
+- [X] T013 [US1] Distinguish new creation from existing field absence and stamp managed-only only for new workspaces in `src/verifysignal_spec/workspace/repository.py`
+- [X] T014 [US1] Persist development override only after successful explicit init Core setup in `src/verifysignal_spec/commands/init.py`
+- [X] T015 [US1] Align explicit setup persistence and failure rollback with init semantics in `src/verifysignal_spec/commands/core_setup.py`
+- [X] T016 [US1] Enforce managed-only exclusion for workspace, environment, PATH, and ancestor-sibling candidates in `src/verifysignal_spec/runtime/resolver.py`
+- [X] T017 [US1] Run US1 tests to green and retain red/green SHAs using `tests/integration/test_fresh_workspace_runtime_mode.py`
+- [X] T018 [US1] Run adjacent reset/update/setup and legacy compatibility regression suites in `tests/integration/test_core_update.py` and `tests/integration/test_core_setup.py`
 
 **Checkpoint**: User Story 1 passes independently without a protected Core call.
 

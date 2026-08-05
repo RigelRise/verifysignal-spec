@@ -10,7 +10,9 @@ from verifysignal_spec.workspace.repository import load_document
 class InitCodexIntegrationTests(CliTestCase):
     def test_fresh_init_completes_quickly_and_installs_codex(self) -> None:
         started = time.monotonic()
-        code, _, err = self.cli(["init", str(self.project), "--integration", "codex", "--json"])
+        code, _, err = self.cli(
+            ["init", str(self.project), "--integration", "codex", "--core-cmd", str(FAKE_CORE), "--json"]
+        )
         elapsed = time.monotonic() - started
         self.assertEqual(code, 0, err)
         self.assertLess(elapsed, 300)
