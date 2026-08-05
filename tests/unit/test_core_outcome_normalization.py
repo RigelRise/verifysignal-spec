@@ -23,6 +23,7 @@ def test_exact_operation_success_schema_is_required(
     schema: str,
     eligible_for_run_persistence: bool,
 ) -> None:
+    data = {"runId": "run-20260805T010203Z"} if operation == "run" else {}
     outcome = _normalize(
         operation,
         {
@@ -30,7 +31,7 @@ def test_exact_operation_success_schema_is_required(
             "schemaVersion": 1,
             "operation": operation,
             "status": "passed",
-            "data": {},
+            "data": data,
         },
     )
 
@@ -237,3 +238,116 @@ def test_error_operation_mismatch_is_contract_invalid() -> None:
     assert outcome["kind"] == "contract-invalid"
     assert outcome["blockerCode"] == "core.contract-invalid"
     assert outcome["eligibleForRunPersistence"] is False
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        None,
+        [],
+        {},
+        {"runId": ""},
+        {"runId": "../outside"},
+        {"runId": "nested/run"},
+        {"runId": "/absolute"},
+        {"runId": ".hidden"},
+    ],
+)
+def test_run_success_requires_a_mapping_with_a_path_safe_nonempty_run_id(data: Any) -> None:
+    outcome = _normalize(
+        "run",
+        {
+            "schema": "verifysignal.run/v1",
+            "schemaVersion": 1,
+            "operation": "run",
+            "status": "passed",
+            "data": data,
+        },
+    )
+
+    assert outcome["kind"] == "contract-invalid"
+    assert outcome["schema"] == "verifysignal.run/v1"
+    assert outcome["blockerCode"] == "core.contract-invalid"
+    assert outcome["eligibleForRunPersistence"] is False
+
+
+def test_success_requires_the_public_schema_version_and_mapping_data() -> None:
+    for response in (
+        {
+            "schema": "verifysignal.run/v1",
+            "schemaVersion": 2,
+            "operation": "run",
+            "status": "passed",
+            "data": {"runId": "safe-run"},
+        },
+        {
+            "schema": "verifysignal.authoring-check/v1",
+            "schemaVersion": 1,
+            "operation": "authoring-check",
+            "status": "passed",
+            "data": [],
+        },
+    ):
+        outcome = _normalize(response["operation"], response)
+
+        assert outcome["kind"] == "contract-invalid"
+        assert outcome["eligibleForRunPersistence"] is False
+
+
+def test_unknown_schema_and_error_code_are_replaced_by_safe_public_values() -> None:
+    canary = "VS_TEST_SECRET_DO_NOT_PERSIST_in_schema_or_code"
+
+    invalid_schema = _normalize(
+        "run",
+        {
+            "schema": canary,
+            "schemaVersion": 1,
+            "operation": "run",
+            "status": "passed",
+            "data": {"runId": "safe-run"},
+        },
+    )
+    unknown_error = _normalize(
+        "run",
+        {
+            "schema": "verifysignal.error/v1",
+            "schemaVersion": 1,
+            "operation": "run",
+            "status": "error",
+            "error": {"code": canary},
+            "execution": {
+                "started": False,
+                "phase": "pre-execution",
+                "sideEffectMayExist": False,
+            },
+        },
+    )
+
+    assert invalid_schema["schema"] is None
+    assert canary not in str(invalid_schema)
+    assert unknown_error["errorCode"] == "core.error"
+    assert unknown_error["blockerCode"] == "core.error"
+    assert canary not in str(unknown_error)
+
+
+def test_unknown_execution_phase_fails_closed_without_reflecting_it() -> None:
+    canary = "VS_TEST_SECRET_DO_NOT_PERSIST_in_phase"
+    outcome = _normalize(
+        "run",
+        {
+            "schema": "verifysignal.error/v1",
+            "schemaVersion": 1,
+            "operation": "run",
+            "status": "error",
+            "error": {"code": "entitlement.key-unknown"},
+            "execution": {
+                "started": False,
+                "phase": canary,
+                "sideEffectMayExist": False,
+            },
+        },
+    )
+
+    assert outcome["executionKnown"] is False
+    assert outcome["executionPhase"] is None
+    assert canary not in str(outcome)

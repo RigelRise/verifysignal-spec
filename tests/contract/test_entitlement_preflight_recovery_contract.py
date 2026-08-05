@@ -40,6 +40,7 @@ def test_protected_success_schemas_track_the_existing_public_operation_contract(
     } == EXPECTED_PROTECTED_SCHEMAS
 
     for operation, schema in EXPECTED_PROTECTED_SCHEMAS.items():
+        data = {"runId": "contract-run-1"} if operation == "run" else {}
         outcome = _normalize(
             operation,
             {
@@ -47,7 +48,7 @@ def test_protected_success_schemas_track_the_existing_public_operation_contract(
                 "schemaVersion": 1,
                 "operation": operation,
                 "status": "passed",
-                "data": {},
+                "data": data,
             },
         )
         assert outcome["kind"] == "success"
