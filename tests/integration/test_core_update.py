@@ -219,3 +219,4 @@ class CoreUpdateTests(CliTestCase):
         assert workspace["coreResolutionMode"] == "managed-only"
         assert workspace["managedCoreVersion"] == "0.6.1"
         assert "coreCommand" not in workspace
+

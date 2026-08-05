@@ -27,9 +27,10 @@ import shlex
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any
 
-__all__ = ["run_text", "popen_text", "resolve_tool", "split_command", "join_command", "configure_stdio"]
+__all__ = ["run_text", "popen_text", "resolve_tool", "launch_argv", "split_command", "join_command", "configure_stdio"]
 
 _IS_WINDOWS = os.name == "nt"
 
@@ -75,6 +76,37 @@ def resolve_tool(name: str, *, is_windows: bool | None = None) -> list[str] | No
     if windows and resolved.lower().endswith(_SHIM_SUFFIXES):
         return [os.environ.get("COMSPEC") or "cmd.exe", "/d", "/s", "/c", resolved]
     return [resolved]
+
+
+def launch_argv(command: str, *, is_windows: bool | None = None) -> list[str]:
+    """Argv that actually starts a resolved runtime command.
+
+    The Windows Core package declares ``bin/verifysignal-core.cmd`` as its entry point, and
+    ``CreateProcess`` cannot execute a batch file from an argv vector -- ``subprocess.run`` raises
+    ``WinError 193``. Two ways out, and the choice matters:
+
+    * ``cmd.exe /d /s /c <shim>`` puts the arguments through Python's ``list2cmdline`` AND then
+      through cmd.exe's own re-parse. ``list2cmdline`` quotes on spaces only, so an argument
+      containing ``&``, ``^`` or ``|`` is interpreted by cmd.exe -- the BatBadBut class.
+    * running the bundled ``runtime/verifysignal-core.js`` under ``node`` is a single quoting layer,
+      obeying the msvcrt rules ``list2cmdline`` is written for. ``node`` is already required: the
+      POSIX launcher this shim mirrors is itself ``exec node``.
+
+    The node vector therefore wins whenever the shim is one of ours (recognizable by the sibling
+    bundle it launches). ``cmd.exe`` stays as the fallback for a foreign shim we did not write.
+    The ``.cmd`` remains the declared, human-pasteable entry point either way.
+    """
+
+    windows = _IS_WINDOWS if is_windows is None else is_windows
+    path = Path(command)
+    if not windows or path.suffix.lower() not in _SHIM_SUFFIXES:
+        return [command]
+
+    bundle = path.parent.parent / "runtime" / "verifysignal-core.js"
+    if bundle.is_file():
+        node = shutil.which("node") or "node"
+        return [node, str(bundle)]
+    return [os.environ.get("COMSPEC") or "cmd.exe", "/d", "/s", "/c", command]
 
 
 def split_command(raw: str, *, is_windows: bool | None = None) -> list[str]:

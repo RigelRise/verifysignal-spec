@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .contracts import CompatibilityResult, normalize_status, validate_version_response
-from ..process import join_command, run_text, split_command
+from ..process import join_command, launch_argv, resolve_tool, run_text, split_command
 from .errors import CoreExecutionError, CoreIncompatibleError, CoreMissingError
 
 CORE_SETUP_HINT = (
@@ -33,10 +33,17 @@ class CoreAdapter:
         path = Path(raw).expanduser()
         if path.exists() and path.is_dir():
             if (path / "package.json").exists():
-                return ["npm", "--silent", "--prefix", str(path.resolve()), "run", "verifysignal:dev", "--"]
+                # Bare "npm" is left alone on POSIX: PATH lookup works there, and the resolved
+                # command is PERSISTED as the workspace's coreCommand, where an absolute path would
+                # be machine-specific. On Windows npm is npm.cmd -- shutil.which finds it and
+                # CreateProcess still cannot launch it -- so there the shim must be resolved.
+                npm = resolve_tool("npm") if os.name == "nt" else ["npm"]
+                if not npm:
+                    raise CoreMissingError(f"npm was not found on PATH. {CORE_SETUP_HINT}")
+                return [*npm, "--silent", "--prefix", str(path.resolve()), "run", "verifysignal:dev", "--"]
             raise CoreMissingError(f"VerifySignal Core path is a directory without package.json: {path}. {CORE_SETUP_HINT}")
         if path.exists() and path.is_file():
-            return [str(path.resolve())]
+            return launch_argv(str(path.resolve()))
 
         # split_command, not shlex.split: shlex runs in POSIX mode where a backslash ESCAPES, so a
         # persisted `C:\Tools\core.exe --flag` came back as `C:Toolscore.exe`.
