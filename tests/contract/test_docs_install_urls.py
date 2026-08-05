@@ -34,7 +34,7 @@ def test_docs_have_no_stale_proofsignal_repo_urls() -> None:
 
 
 def test_every_advertised_github_repo_url_is_the_canonical_one() -> None:
-    # Any GitHub repo URL in 0.23.0 docs must still identify the live pre-rename repository.
+    # Any GitHub repo URL in 0.26.0 docs must still identify the live pre-rename repository.
     offenders = [
         f"{path.relative_to(ROOT)}: {match.group(0)}"
         for path, text in _docs_with_text()
