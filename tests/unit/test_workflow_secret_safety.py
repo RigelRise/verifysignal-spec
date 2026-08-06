@@ -196,6 +196,20 @@ def test_secret_scanner_rejects_credential_bearing_uri_references(
 
 
 @pytest.mark.parametrize(
+    "prose",
+    [
+        "Open https://user:pass@example.com/app for details.",
+        "Retry /callback?token=abc123abc123abc123 after login.",
+    ],
+    ids=["absolute-userinfo", "relative-token-query"],
+)
+def test_secret_scanner_rejects_secret_locator_embedded_in_prose(
+    prose: str,
+) -> None:
+    assert validate_no_secret_values({"summary": prose})
+
+
+@pytest.mark.parametrize(
     "path",
     [
         "/callback?view=summary",
@@ -282,6 +296,26 @@ def test_secret_named_containers_keep_secret_field_context(
     findings = validate_no_secret_values(payload)
 
     assert findings
+    assert any(finding["path"] == expected_path for finding in findings)
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected_path"),
+    [
+        ({"apiToken": {"value": "short-real-secret"}}, "apiToken.value"),
+        (
+            {"databasePassword": {"details": {"value": "short-real-secret"}}},
+            "databasePassword.details.value",
+        ),
+    ],
+    ids=["compound-api-token", "compound-password"],
+)
+def test_compound_secret_named_containers_keep_secret_field_context(
+    payload: dict[str, object],
+    expected_path: str,
+) -> None:
+    findings = validate_no_secret_values(payload)
+
     assert any(finding["path"] == expected_path for finding in findings)
 
 

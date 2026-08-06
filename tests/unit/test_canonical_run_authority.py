@@ -298,6 +298,99 @@ def test_load_rejects_legacy_contradictory_committed_risk(
         load_use_case(tmp_path, record.alias)
 
 
+def test_cross_mapping_commit_step_outweighs_safe_interpretation(
+    tmp_path: Path,
+) -> None:
+    record = _saved_record(tmp_path)
+    side_effects = {
+        "class": "write",
+        "commitStep": {"id": "submit", "reached": True},
+    }
+    interpretation = {
+        "postCommit": False,
+        "sideEffectMayExist": False,
+        "sideEffectStatus": "not-committed",
+        "rerunRisk": "safe",
+    }
+    entry = _entry(record.alias)
+    entry.sideEffects = side_effects
+    entry.postCommitInterpretation = interpretation
+    history_path = layout.run_history_path(
+        tmp_path,
+        record.alias,
+        entry.runId,
+    )
+
+    with pytest.raises(ValueError, match="(?i)(contradict|risk|commit)"):
+        record_run(tmp_path, entry)
+
+    assert not history_path.exists()
+    record.lastRun = {
+        "runId": "cross-mapping-risk-run",
+        "status": "failed",
+        "sideEffects": side_effects,
+        "postCommitInterpretation": interpretation,
+    }
+    record.rerunPolicy = {
+        "afterNoCommit": "allowed",
+        "afterCommit": "blocked",
+        "afterUnknown": "requires-confirmation",
+    }
+    decision = evaluate_rerun_decision(record)
+    assert decision["decision"] == "blocked"
+    assert decision["outcomeClass"] == "commit"
+    assert decision["policyBranch"] == "afterCommit"
+
+
+@pytest.mark.parametrize(
+    "side_effect_status",
+    [
+        "violated",
+        "inferred",
+        "possible",
+        " committed-confirmed ",
+    ],
+    ids=["violated", "inferred", "possible", "surrounding-whitespace"],
+)
+def test_all_restrictive_statuses_outweigh_explicit_false_risk(
+    tmp_path: Path,
+    side_effect_status: str,
+) -> None:
+    record = _saved_record(tmp_path)
+    interpretation = {
+        "postCommit": False,
+        "sideEffectMayExist": False,
+        "sideEffectStatus": side_effect_status,
+        "rerunRisk": "blocked",
+    }
+    entry = _entry(record.alias)
+    entry.postCommitInterpretation = interpretation
+    history_path = layout.run_history_path(
+        tmp_path,
+        record.alias,
+        entry.runId,
+    )
+
+    with pytest.raises(ValueError, match="(?i)(contradict|risk|commit)"):
+        record_run(tmp_path, entry)
+
+    assert not history_path.exists()
+    record.lastRun = {
+        "runId": "restrictive-status-run",
+        "status": "failed",
+        "postCommitInterpretation": interpretation,
+    }
+    record.rerunPolicy = {
+        "afterNoCommit": "allowed",
+        "afterCommit": "blocked",
+        "afterUnknown": "requires-confirmation",
+    }
+    decision = evaluate_rerun_decision(record)
+    assert decision["decision"] == "blocked"
+    assert decision["outcomeClass"] == "commit"
+    assert decision["policyBranch"] == "afterCommit"
+
+
 def test_equal_time_matching_run_history_cannot_diverge_from_canonical_risk(
     tmp_path: Path,
 ) -> None:
