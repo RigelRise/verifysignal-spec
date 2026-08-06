@@ -24,10 +24,16 @@ from verifysignal_spec.commands.run_request_preparation import (
 )
 from verifysignal_spec.workspace import layout
 from verifysignal_spec.workspace import repository as workspace_repository
-from verifysignal_spec.workspace.repository import now_iso, save_document, save_use_case
+from verifysignal_spec.workspace.repository import (
+    load_use_case,
+    now_iso,
+    save_document,
+    save_use_case,
+)
 from verifysignal_spec.workflows.engine import create_workflow_run
 from verifysignal_spec.workflows.repository import load_active_workflow_run
 from verifysignal_spec.workflows.transitions import transition_workflow
+from verifysignal_spec.workflows.write_safety import evaluate_rerun_decision
 
 
 FIXED_NOW = "2026-08-05T01:02:03Z"
@@ -108,6 +114,16 @@ def test_exception_before_outcome_classification_releases_and_removes_the_owned_
     assert transient.exists() is False
     assert list(_run_dir(tmp_path, alias).glob("*.run-request.json")) == []
     assert list(_run_dir(tmp_path, alias).glob("*.yaml")) == []
+    attempt = load_use_case(tmp_path, alias).lastCoreAttempt
+    assert attempt is not None
+    assert attempt.operation == "run"
+    assert attempt.status == "error"
+    assert attempt.executionState == "unknown"
+    assert attempt.sideEffectMayExist is None
+    rerun = evaluate_rerun_decision(load_use_case(tmp_path, alias))
+    assert rerun["decision"] == "requires-confirmation"
+    assert rerun["outcomeClass"] == "unknown-write"
+    assert rerun["policyBranch"] == "afterUnknown"
 
 
 def test_preexisting_exact_prepared_path_is_never_overwritten_or_deleted(
