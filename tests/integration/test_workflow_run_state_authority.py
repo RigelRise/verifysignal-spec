@@ -13,6 +13,7 @@ from tests.fixtures.workflows.prerequisites import (
     create_current_understanding_workspace,
 )
 from tests.helpers import FAKE_CORE
+from verifysignal_spec.commands import repair as repair_command
 from verifysignal_spec.commands import run as run_command
 from verifysignal_spec.commands import validate as validate_command
 from verifysignal_spec.workspace.repository import (
@@ -254,6 +255,48 @@ def test_core_error_keeps_run_blocked_without_claiming_execution(
     assert {blocker["code"] for blocker in run_stage.blockers} == {
         "entitlement.unverifiable"
     }
+
+
+def test_applied_repair_advances_the_authoritative_run_to_protected_validation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = _create_executable_workflow(tmp_path, current_stage="repair")
+    record = load_use_case(tmp_path, ALIAS)
+    record.validation = {
+        "findings": [
+            {
+                "code": "main-skill-ordering",
+                "message": "The planned main skill must lead execution.",
+                "artifact": record.runRequest.path,
+                "path": "skills",
+            }
+        ]
+    }
+    save_use_case(tmp_path, record)
+    monkeypatch.setattr(
+        repair_command,
+        "_apply_safe_artifact_repair",
+        lambda *_args, **_kwargs: {
+            "changed": [record.runRequest.path],
+            "before": {record.runRequest.path: "a" * 64},
+            "after": {record.runRequest.path: "b" * 64},
+        },
+    )
+    monkeypatch.setattr(
+        repair_command,
+        "_revalidate_after_mutation",
+        lambda *_args, **_kwargs: {"status": "passed"},
+    )
+
+    result = repair_command.run(tmp_path, ALIAS, approve=True)
+
+    assert result["repair"]["approvalStatus"] == "applied"
+    updated = _assert_authoritative_projections(tmp_path, ALIAS, run.runId)
+    assert updated.currentStage == "validate"
+    assert updated.status == "paused"
+    assert _stage(updated, "repair").status == "completed"
+    assert _stage(updated, "validate").status == "pending"
 
 
 def test_read_only_status_and_show_render_from_run_without_healing_disk(
