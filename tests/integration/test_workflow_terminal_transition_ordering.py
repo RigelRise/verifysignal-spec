@@ -8,6 +8,7 @@ from tests.fixtures.workflows.main_skill_run_coverage import (
     ALIAS,
     create_main_skill_coverage_workspace,
 )
+from tests.fixtures.workflows.entitlement_preflight_recovery import write_active_run_documents
 from tests.helpers import FAKE_CORE
 from verifysignal_spec.commands import run as run_command
 from verifysignal_spec.commands import validate as validate_command
@@ -167,6 +168,8 @@ def _place_run_at_stage(
     run: WorkflowRun,
     current_stage: str,
 ) -> WorkflowRun:
+    if current_stage == "run":
+        write_active_run_documents(project, run.useCaseAlias)
     current_index = WORKFLOW_STAGES.index(current_stage)
     completed_at = now_iso()
     for index, stage in enumerate(run.stageStates):

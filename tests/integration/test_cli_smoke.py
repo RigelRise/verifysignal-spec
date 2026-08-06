@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from helpers import FAKE_CORE, CliTestCase
+from tests.fixtures.workflows.entitlement_preflight_recovery import write_active_run_documents
 from verifysignal_spec.workspace.models import RuntimeInputRequirement
 from verifysignal_spec.workspace.repository import (
     load_document,
@@ -42,6 +43,7 @@ class CliSmokeTests(CliTestCase):
         request = load_document(request_path)
         request["parameters"] = {"baseUrl": "https://example.test"}
         save_document(request_path, request)
+        write_active_run_documents(self.project, "login")
         self.assertEqual(self.cli(["list", "--project", str(self.project)])[0], 0)
         self.assertEqual(
             self.cli([

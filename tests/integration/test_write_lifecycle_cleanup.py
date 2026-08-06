@@ -30,6 +30,7 @@ def test_run_with_matching_confirmation_reports_lifecycle_summary(tmp_path, monk
     record = load_use_case(tmp_path, "add-collaboration-project")
     record.status = "ready"
     record.sideEffectLifecycle = {"cleanupPolicy": "manual", "cleanupRequired": True, "instructions": "Delete the project manually."}
+    record.lastRun = None
     save_use_case(tmp_path, record)
     save_ready_snapshot(tmp_path, record.alias, side_effect_class="write")
     confirmation_id = run_confirmation_requirements(tmp_path, load_use_case(tmp_path, "add-collaboration-project"))[0].id

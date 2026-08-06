@@ -5,7 +5,7 @@ from verifysignal_spec.workflows.stage_persistence import persist_stage
 from verifysignal_spec.workspace.repository import init_workspace, load_use_case
 from verifysignal_spec.workflows.transitions import transition_workflow
 
-from tests.fixtures.workflows.entitlement_preflight_recovery import save_protected_ready_snapshot
+from tests.fixtures.workflows.entitlement_preflight_recovery import save_protected_ready_snapshot, write_active_run_documents
 from tests.fixtures.workflows.main_skill_run_coverage import create_main_skill_coverage_workspace
 from tests.fixtures.workflows.real_run_guardrails import coherent_profile_skill, create_real_run_guardrail_workspace, run_request_payload
 
@@ -32,6 +32,7 @@ def test_custom_profile_is_persisted_and_passed_to_core(tmp_path, monkeypatch) -
         },
     )
     assert result["status"] == "persisted"
+    write_active_run_documents(tmp_path, "profile-view-unauth")
     save_protected_ready_snapshot(tmp_path, "profile-view-unauth")
     transition_workflow(
         tmp_path,

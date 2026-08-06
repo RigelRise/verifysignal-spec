@@ -94,6 +94,23 @@ def save_protected_ready_snapshot(
     save_document(layout.readiness_snapshot_path(project, alias), snapshot)
 
 
+def write_active_run_documents(project: Path, alias: str) -> None:
+    """Materialize the canonical authored stages required by an active run."""
+
+    root = layout.workflow_use_case_dir(project, alias)
+    root.mkdir(parents=True, exist_ok=True)
+    for filename, content in {
+        "spec.md": "# Fixture Specification\n",
+        "plan.md": "# Fixture Plan\n",
+        "plan.yaml": "{}\n",
+        "tasks.md": "# Fixture Tasks\n",
+        "tasks.yaml": "{}\n",
+    }.items():
+        path = root / filename
+        if not path.exists():
+            path.write_text(content, encoding="utf-8")
+
+
 def build_side_effect_policy(
     *,
     side_effect_class: SideEffectClass = "none",

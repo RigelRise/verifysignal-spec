@@ -16,20 +16,27 @@ def test_passed_legacy_write_without_core_envelope_is_reported_as_unknown_write_
     record = load_use_case(tmp_path, "add-collaboration-project")
     record.status = "ready"
     record.sideEffectLifecycle = {"cleanupPolicy": "manual", "cleanupRequired": True, "instructions": "Delete the project manually."}
+    record.lastRun = None
     save_use_case(tmp_path, record)
     save_ready_snapshot(
         tmp_path,
         "add-collaboration-project",
         side_effect_class="write",
     )
-    confirmation_id = run_confirmation_requirements(tmp_path, load_use_case(tmp_path, "add-collaboration-project"))[0].id
+    confirmation_ids = [
+        item.id
+        for item in run_confirmation_requirements(
+            tmp_path,
+            load_use_case(tmp_path, "add-collaboration-project"),
+        )
+    ]
 
     result = run_command.run(
         tmp_path,
         "add-collaboration-project",
         interactive=False,
         core_cmd=str(FAKE_CORE),
-        confirmed_risks=[confirmation_id],
+        confirmed_risks=confirmation_ids,
     )
 
     assert result["status"] == "passed"

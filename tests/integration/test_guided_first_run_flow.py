@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import json
-
 from helpers import FAKE_CORE, CliTestCase
-from tests.fixtures.workflows.entitlement_preflight_recovery import save_protected_ready_snapshot
+from tests.fixtures.workflows.entitlement_preflight_recovery import save_protected_ready_snapshot, write_active_run_documents
 from tests.fixtures.workflows.golden_path_onboarding import PUBLIC_ALIAS, create_onboarding_repository
 from verifysignal_spec.workspace.repository import init_workspace, load_document, load_use_case, save_use_case
 from verifysignal_spec.workflows.transitions import transition_workflow
@@ -42,6 +41,7 @@ class GuidedFirstRunFlowIntegrationTests(CliTestCase):
 
     def test_run_updates_guided_state_to_direct_pass(self) -> None:
         self.cli(["workflow", "accept-first-run", PUBLIC_ALIAS, "--project", str(self.project), "--json"])
+        write_active_run_documents(self.project, PUBLIC_ALIAS)
         save_protected_ready_snapshot(self.project, PUBLIC_ALIAS)
         import os
 
@@ -63,6 +63,7 @@ class GuidedFirstRunFlowIntegrationTests(CliTestCase):
 
     def test_side_effect_violation_prevents_strict_pass_and_blocks_unchanged_policy_rerun(self) -> None:
         self.cli(["workflow", "accept-first-run", PUBLIC_ALIAS, "--project", str(self.project), "--json"])
+        write_active_run_documents(self.project, PUBLIC_ALIAS)
         save_protected_ready_snapshot(self.project, PUBLIC_ALIAS)
         import os
 

@@ -6,6 +6,7 @@ from tests.fixtures.workflows.main_skill_run_coverage import (
     ALIAS,
     create_main_skill_coverage_workspace,
 )
+from tests.fixtures.workflows.entitlement_preflight_recovery import write_active_run_documents
 from tests.helpers import FAKE_CORE
 from verifysignal_spec.commands.run import run as execute_run
 from verifysignal_spec.commands.validate import run as validate_run
@@ -108,6 +109,7 @@ def test_authoring_only_validation_cannot_mint_protected_readiness_or_authorize_
     # Isolate the readiness gate from terminal stage ordering: even when an
     # authoritative fixture is positioned at run, authoring-only evidence is
     # insufficient to authorize browser execution.
+    write_active_run_documents(tmp_path, ALIAS)
     transition_workflow(
         tmp_path,
         ALIAS,

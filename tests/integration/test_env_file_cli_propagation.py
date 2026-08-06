@@ -9,7 +9,7 @@ from verifysignal_spec.cli import main
 from verifysignal_spec.commands import probe, run, validate
 from verifysignal_spec.workspace.models import ArtifactReference, UseCaseRecord
 from verifysignal_spec.workspace.repository import init_workspace, save_use_case
-from tests.fixtures.workflows.entitlement_preflight_recovery import save_protected_ready_snapshot
+from tests.fixtures.workflows.entitlement_preflight_recovery import save_protected_ready_snapshot, write_active_run_documents
 from verifysignal_spec.workflows.engine import create_workflow_run
 from verifysignal_spec.workflows.transitions import transition_workflow
 
@@ -61,6 +61,7 @@ def test_explicit_env_file_blocks_undeclared_keys_before_core_invocation(
     )
     skill.write_text("# fixture\n", encoding="utf-8")
     if command == "run":
+        write_active_run_documents(tmp_path, record.alias)
         record.status = "ready"
         save_use_case(tmp_path, record)
         save_protected_ready_snapshot(tmp_path, record.alias)
