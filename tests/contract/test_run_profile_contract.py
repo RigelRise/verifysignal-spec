@@ -3,7 +3,9 @@ from __future__ import annotations
 from verifysignal_spec.commands import run as run_command
 from verifysignal_spec.workflows.stage_persistence import persist_stage
 from verifysignal_spec.workspace.repository import init_workspace, load_use_case
+from verifysignal_spec.workflows.transitions import transition_workflow
 
+from tests.fixtures.workflows.entitlement_preflight_recovery import save_protected_ready_snapshot
 from tests.fixtures.workflows.main_skill_run_coverage import create_main_skill_coverage_workspace
 from tests.fixtures.workflows.real_run_guardrails import coherent_profile_skill, create_real_run_guardrail_workspace, run_request_payload
 
@@ -30,6 +32,14 @@ def test_custom_profile_is_persisted_and_passed_to_core(tmp_path, monkeypatch) -
         },
     )
     assert result["status"] == "persisted"
+    save_protected_ready_snapshot(tmp_path, "profile-view-unauth")
+    transition_workflow(
+        tmp_path,
+        "profile-view-unauth",
+        stage="validate",
+        outcome="completed",
+        handoff_summary="Protected-ready profile fixture setup.",
+    )
 
     run = run_command.run(tmp_path, "profile-view-unauth", profile_name="visual-15s", core_cmd=str(FAKE_CORE), interactive=False)
 
@@ -42,7 +52,7 @@ def test_custom_profile_is_persisted_and_passed_to_core(tmp_path, monkeypatch) -
 
 
 def test_unknown_profile_lists_available_profiles(tmp_path) -> None:
-    create_main_skill_coverage_workspace(tmp_path)
+    create_main_skill_coverage_workspace(tmp_path, protected_ready=True)
 
     try:
         run_command.run(tmp_path, "profile-view-unauth", profile_name="visual", interactive=False)
@@ -60,7 +70,11 @@ def test_debug_profile_defaults_to_900ms_slow_motion(tmp_path, monkeypatch) -> N
 
     monkeypatch.setenv("VERIFYSIGNAL_CORE_CMD", str(FAKE_CORE))
     monkeypatch.setenv("FAKE_VERIFYSIGNAL_MODE", "full-coverage")
-    create_main_skill_coverage_workspace(tmp_path)
+    create_main_skill_coverage_workspace(
+        tmp_path,
+        core_cmd=str(FAKE_CORE),
+        protected_ready=True,
+    )
 
     run = run_command.run(tmp_path, "profile-view-unauth", profile_name="debug", core_cmd=str(FAKE_CORE), interactive=False)
 
@@ -73,7 +87,11 @@ def test_normal_profile_defaults_to_zero_slow_motion(tmp_path, monkeypatch) -> N
 
     monkeypatch.setenv("VERIFYSIGNAL_CORE_CMD", str(FAKE_CORE))
     monkeypatch.setenv("FAKE_VERIFYSIGNAL_MODE", "full-coverage")
-    create_main_skill_coverage_workspace(tmp_path)
+    create_main_skill_coverage_workspace(
+        tmp_path,
+        core_cmd=str(FAKE_CORE),
+        protected_ready=True,
+    )
 
     run = run_command.run(tmp_path, "profile-view-unauth", profile_name="normal", core_cmd=str(FAKE_CORE), interactive=False)
 
@@ -86,7 +104,11 @@ def test_explicit_slow_motion_override_wins(tmp_path, monkeypatch) -> None:
 
     monkeypatch.setenv("VERIFYSIGNAL_CORE_CMD", str(FAKE_CORE))
     monkeypatch.setenv("FAKE_VERIFYSIGNAL_MODE", "full-coverage")
-    create_main_skill_coverage_workspace(tmp_path)
+    create_main_skill_coverage_workspace(
+        tmp_path,
+        core_cmd=str(FAKE_CORE),
+        protected_ready=True,
+    )
 
     run = run_command.run(tmp_path, "profile-view-unauth", profile_name="debug", slow_mo_override=1200, core_cmd=str(FAKE_CORE), interactive=False)
 

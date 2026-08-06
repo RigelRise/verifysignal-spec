@@ -30,6 +30,7 @@ def test_run_resolves_named_output_runtime_input_before_core(tmp_path, monkeypat
     from verifysignal_spec.commands import run as run_command
     from verifysignal_spec.workspace.models import ArtifactReference, RuntimeInputRequirement, UseCaseRecord
     from verifysignal_spec.workspace.repository import init_workspace, save_use_case
+    from tests.fixtures.workflows.entitlement_preflight_recovery import save_protected_ready_snapshot
     from tests.helpers import FAKE_CORE
 
     monkeypatch.setenv("VERIFYSIGNAL_CORE_CMD", str(FAKE_CORE))
@@ -96,6 +97,7 @@ browser:
             sideEffects={"class": "none"},
         ),
     )
+    save_protected_ready_snapshot(tmp_path, "project-details")
 
     result = run_command.run(tmp_path, "project-details", interactive=False, core_cmd=str(FAKE_CORE))
 

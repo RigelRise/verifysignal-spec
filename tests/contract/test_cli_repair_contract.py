@@ -3,14 +3,14 @@ from __future__ import annotations
 import json
 import os
 
-from helpers import CliTestCase
+from helpers import FAKE_CORE, CliTestCase
 from verifysignal_spec.workspace.repository import load_use_case, save_use_case
 from tests.fixtures.workflows.main_skill_run_coverage import create_main_skill_coverage_workspace
 
 
 class RepairContractTests(CliTestCase):
     def test_repair_requires_approval_by_default(self) -> None:
-        self.cli(["init", str(self.project), "--integration", "codex"])
+        self.cli(["init", str(self.project), "--integration", "codex", "--core-cmd", str(FAKE_CORE)])
         self.cli(["author", "login", "Validate login.", "--project", str(self.project)])
         code, out, _ = self.cli(["repair", "login", "--project", str(self.project), "--json"])
         self.assertEqual(code, 4)
@@ -117,7 +117,11 @@ class RepairContractTests(CliTestCase):
         self.assertEqual(repair["recommendations"][0]["category"], "clarification-required")
 
     def test_aborted_run_does_not_generate_required_gate_weakening_recommendations(self) -> None:
-        create_main_skill_coverage_workspace(self.project)
+        create_main_skill_coverage_workspace(
+            self.project,
+            core_cmd=str(FAKE_CORE),
+            protected_ready=True,
+        )
         os.environ["FAKE_VERIFYSIGNAL_MODE"] = "aborted-activity-wait"
 
         code, out, err = self.cli(["run", "profile-view-unauth", "--project", str(self.project), "--json", "--non-interactive"])

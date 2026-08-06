@@ -1109,6 +1109,8 @@ def test_codex_init_prepares_managed_mcp_before_new_agent_session(
             str(tmp_path),
             "--integration",
             "codex",
+            "--core-cmd",
+            str(FAKE_CORE),
             "--json",
         ]
     )
@@ -1359,7 +1361,17 @@ def test_playwright_launcher_forwards_signals_and_cleans_temporary_outputs(
 
 class McpConfigInstallTest(CliTestCase):
     def test_claude_install_writes_playwright_mcp(self) -> None:
-        code, _, err = self.cli(["init", str(self.project), "--integration", "claude", "--json"])
+        code, _, err = self.cli(
+            [
+                "init",
+                str(self.project),
+                "--integration",
+                "claude",
+                "--core-cmd",
+                str(FAKE_CORE),
+                "--json",
+            ]
+        )
         self.assertEqual(code, 0, err)
         mcp = self.project / ".mcp.json"
         assert mcp.exists()
@@ -1371,7 +1383,17 @@ class McpConfigInstallTest(CliTestCase):
         ]
 
     def test_codex_install_writes_project_scoped_playwright_mcp(self) -> None:
-        code, out, err = self.cli(["init", str(self.project), "--integration", "codex", "--json"])
+        code, out, err = self.cli(
+            [
+                "init",
+                str(self.project),
+                "--integration",
+                "codex",
+                "--core-cmd",
+                str(FAKE_CORE),
+                "--json",
+            ]
+        )
         self.assertEqual(code, 0, err)
         payload = json.loads(out)
         assert not (self.project / ".mcp.json").exists()
@@ -1385,7 +1407,17 @@ class McpConfigInstallTest(CliTestCase):
         assert data["mcp_servers"]["playwright"]["required"] is True
 
     def test_codex_upgrade_restores_missing_project_mcp_config(self) -> None:
-        code, _, err = self.cli(["init", str(self.project), "--integration", "codex", "--json"])
+        code, _, err = self.cli(
+            [
+                "init",
+                str(self.project),
+                "--integration",
+                "codex",
+                "--core-cmd",
+                str(FAKE_CORE),
+                "--json",
+            ]
+        )
         self.assertEqual(code, 0, err)
         (self.project / ".codex" / "config.toml").unlink()
 
@@ -1401,7 +1433,15 @@ class McpConfigInstallTest(CliTestCase):
 
     def test_claude_upgrade_preserves_default_integration(self) -> None:
         code, _, err = self.cli(
-            ["init", str(self.project), "--integration", "claude", "--json"]
+            [
+                "init",
+                str(self.project),
+                "--integration",
+                "claude",
+                "--core-cmd",
+                str(FAKE_CORE),
+                "--json",
+            ]
         )
         self.assertEqual(code, 0, err)
 

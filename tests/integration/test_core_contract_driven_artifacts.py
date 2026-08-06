@@ -3,13 +3,21 @@ from __future__ import annotations
 import json
 
 from verifysignal_spec.workflows.stage_persistence import persist_stage
+from verifysignal_spec.workflows.engine import create_workflow_run
+from verifysignal_spec.workflows.transitions import transition_workflow
 from verifysignal_spec.workspace.repository import init_workspace, load_document
 from tests.helpers import FAKE_CORE
 
 
 def _prepare_project(project) -> None:
-    init_workspace(project)
-    persist_stage(
+    init_workspace(project, core_cmd=str(FAKE_CORE))
+    create_workflow_run(
+        project,
+        "Create a collaboration project.",
+        alias="add-collaboration-project",
+        integration="codex",
+    )
+    specified = persist_stage(
         project,
         "specify",
         alias="add-collaboration-project",
@@ -21,7 +29,23 @@ def _prepare_project(project) -> None:
             "customSourceReason": "Authenticated credential fixture.",
         },
     )
-    persist_stage(
+    assert specified["status"] == "persisted"
+    clarified = persist_stage(
+        project,
+        "clarify",
+        alias="add-collaboration-project",
+        payload={
+            "answers": [
+                {
+                    "questionId": "browser-target-environment",
+                    "answerSummary": "https://app.example.test",
+                    "confirmationSource": "direct-user",
+                }
+            ]
+        },
+    )
+    assert clarified["status"] == "persisted"
+    planned = persist_stage(
         project,
         "plan",
         alias="add-collaboration-project",
@@ -32,6 +56,14 @@ def _prepare_project(project) -> None:
             "runtimeInputs": [{"name": "baseUrl", "value": "https://app.example.test"}],
             "unresolvedBlockingClarifications": [],
         },
+    )
+    assert planned["status"] == "persisted"
+    transition_workflow(
+        project,
+        "add-collaboration-project",
+        stage="tasks",
+        outcome="completed",
+        handoff_summary="Canonical Core-contract fixture setup.",
     )
 
 

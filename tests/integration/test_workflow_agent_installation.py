@@ -1,13 +1,23 @@
 from __future__ import annotations
 
-from helpers import CliTestCase, assert_guardrail_template
+from helpers import FAKE_CORE, CliTestCase, assert_guardrail_template
 from verifysignal_spec.integrations.manifests import load_manifest, save_manifest, sha256_bytes, sha256_text
 from verifysignal_spec.workspace.models import AgentIntegrationState, ManagedFileRecord
 
 
 class WorkflowAgentInstallationTests(CliTestCase):
     def test_claude_workflow_commands_install(self) -> None:
-        code, _, err = self.cli(["init", str(self.project), "--integration", "claude", "--json"])
+        code, _, err = self.cli(
+            [
+                "init",
+                str(self.project),
+                "--integration",
+                "claude",
+                "--core-cmd",
+                str(FAKE_CORE),
+                "--json",
+            ]
+        )
         self.assertEqual(code, 0, err)
         understand = self.project / ".claude" / "skills" / "verifysignal-understand" / "SKILL.md"
         plan = self.project / ".claude" / "skills" / "verifysignal-plan" / "SKILL.md"
@@ -22,7 +32,17 @@ class WorkflowAgentInstallationTests(CliTestCase):
         # decide whether the user edited it. Python's text mode translates "\n" to os.linesep, so on
         # Windows those two never matched: every managed file was classified as user-modified
         # forever -- never refreshed, never removed on uninstall. `init` was silently non-idempotent.
-        code, _, err = self.cli(["init", str(self.project), "--integration", "claude", "--json"])
+        code, _, err = self.cli(
+            [
+                "init",
+                str(self.project),
+                "--integration",
+                "claude",
+                "--core-cmd",
+                str(FAKE_CORE),
+                "--json",
+            ]
+        )
         self.assertEqual(code, 0, err)
 
         manifest = load_manifest(self.project, "claude")
@@ -37,12 +57,21 @@ class WorkflowAgentInstallationTests(CliTestCase):
     def test_reinstalling_does_not_report_untouched_files_as_user_modified(self) -> None:
         # The observable consequence of the above: a second `init` over an untouched workspace must
         # rewrite every managed file rather than preserving it as if the user had edited it.
-        code, _, err = self.cli(["init", str(self.project), "--integration", "claude", "--json"])
+        init_args = [
+            "init",
+            str(self.project),
+            "--integration",
+            "claude",
+            "--core-cmd",
+            str(FAKE_CORE),
+            "--json",
+        ]
+        code, _, err = self.cli(init_args)
         self.assertEqual(code, 0, err)
         first = load_manifest(self.project, "claude")
         assert first is not None
 
-        code, _, err = self.cli(["init", str(self.project), "--integration", "claude", "--json"])
+        code, _, err = self.cli(init_args)
         self.assertEqual(code, 0, err)
         second = load_manifest(self.project, "claude")
         assert second is not None
@@ -68,7 +97,17 @@ class WorkflowAgentInstallationTests(CliTestCase):
             ),
         )
 
-        code, _, err = self.cli(["init", str(self.project), "--integration", "claude", "--json"])
+        code, _, err = self.cli(
+            [
+                "init",
+                str(self.project),
+                "--integration",
+                "claude",
+                "--core-cmd",
+                str(FAKE_CORE),
+                "--json",
+            ]
+        )
 
         self.assertEqual(code, 0, err)
         self.assertFalse(legacy.exists())

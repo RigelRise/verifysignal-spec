@@ -3,13 +3,13 @@ from __future__ import annotations
 import json
 import os
 
-from helpers import CliTestCase
+from helpers import FAKE_CORE, CliTestCase
 
 
 class RepairAutonomyContractTests(CliTestCase):
     def test_wait_strategy_report_is_proposed_without_a_verified_mutation(self) -> None:
         os.environ["FAKE_VERIFYSIGNAL_MODE"] = "aborted-activity-wait"
-        self.cli(["init", str(self.project), "--integration", "codex"])
+        self.cli(["init", str(self.project), "--integration", "codex", "--core-cmd", str(FAKE_CORE)])
         self.cli(["author", "home-page-unauth", "Validate home page.", "--project", str(self.project)])
         report = self.project / "report.json"
         report.write_text("{}", encoding="utf-8")
@@ -33,7 +33,7 @@ class RepairAutonomyContractTests(CliTestCase):
         self.assertEqual(repair["stageCards"][0]["statusMarker"], "[REPAIR]")
 
     def test_gate_mapping_repair_still_requires_confirmation(self) -> None:
-        self.cli(["init", str(self.project), "--integration", "codex"])
+        self.cli(["init", str(self.project), "--integration", "codex", "--core-cmd", str(FAKE_CORE)])
         self.cli(["author", "home-page-unauth", "Validate home page.", "--project", str(self.project)])
         record_path = self.project / ".verifysignal/use-cases/home-page-unauth.yaml"
         data = json.loads(record_path.read_text(encoding="utf-8"))

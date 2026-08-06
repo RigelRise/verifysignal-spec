@@ -8,6 +8,7 @@ from verifysignal_spec.workspace import layout
 from verifysignal_spec.workspace.repository import load_use_case, save_use_case
 from verifysignal_spec.workflows.prerequisites import check_prerequisites
 from verifysignal_spec.workflows.repository import save_golden_path_state
+from verifysignal_spec.workflows.transitions import transition_workflow
 
 
 def test_read_only_violation_prevents_strict_pass_persists_policy_and_blocks_blind_rerun(
@@ -39,6 +40,20 @@ def test_read_only_violation_prevents_strict_pass_persists_policy_and_blocks_bli
     assert persisted.lastRun["sideEffects"]["violations"][0]["code"] == "side-effect-class-none-violation"
     persisted.status = "ready"
     save_use_case(tmp_path, persisted)
+    transition_workflow(
+        tmp_path,
+        ALIAS,
+        stage="repair",
+        outcome="completed",
+        handoff_summary="Policy-reconciliation fixture repair was reviewed.",
+    )
+    transition_workflow(
+        tmp_path,
+        ALIAS,
+        stage="validate",
+        outcome="completed",
+        handoff_summary="Policy-reconciliation fixture is protected-ready.",
+    )
 
     workflow = check_prerequisites(tmp_path, "run", alias=ALIAS)
 

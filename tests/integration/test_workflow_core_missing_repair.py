@@ -16,6 +16,7 @@ def test_repair_with_missing_core_and_no_finding_is_environment_setup_noop(tmp_p
     assert result["findings"] == []
     assert result["applications"] == []
     assert result["rootCauseCategory"] == "environment-setup"
-    assert result["nextCommand"] == "verifysignal core setup --json"
-    assert "Core setup is required" in result["message"]
+    assert "verifysignal init --here" in result["nextCommand"]
+    assert "verifysignal core setup --core-cmd" in result["nextCommand"]
+    assert "runtime setup is required" in result["message"]
     assert use_case_path.read_text(encoding="utf-8") == before

@@ -4,6 +4,7 @@ from verifysignal_spec.workflows.engine import create_workflow_run
 from verifysignal_spec.workflows.stage_persistence import persist_stage
 from verifysignal_spec.workflows.transitions import transition_workflow
 from verifysignal_spec.workspace.repository import init_workspace, load_document
+from tests.helpers import FAKE_CORE
 
 
 def _confirm_target(project, alias: str, url: str = "https://app.example.test") -> None:
@@ -57,7 +58,7 @@ def _advance_from_clarify_to_implement(project, alias: str) -> None:
 def test_persistence_rejects_secret_looking_payload_values(tmp_path) -> None:
     project = tmp_path / "repo"
     project.mkdir()
-    init_workspace(project)
+    init_workspace(project, core_cmd=str(FAKE_CORE))
     result = persist_stage(
         project,
         "specify",
@@ -78,7 +79,7 @@ def test_persistence_rejects_secret_looking_payload_values(tmp_path) -> None:
 def test_missing_stage_payload_field_reports_public_contract_recovery(tmp_path) -> None:
     project = tmp_path / "repo"
     project.mkdir()
-    init_workspace(project)
+    init_workspace(project, core_cmd=str(FAKE_CORE))
 
     result = persist_stage(
         project,
@@ -112,7 +113,7 @@ def test_unknown_persistence_stage_is_invalid(tmp_path) -> None:
 def test_specify_accepts_real_agent_payload_synonyms(tmp_path) -> None:
     project = tmp_path / "repo"
     project.mkdir()
-    init_workspace(project)
+    init_workspace(project, core_cmd=str(FAKE_CORE))
     _start_workflow(project, "search-people")
     result = persist_stage(
         project,
@@ -134,7 +135,7 @@ def test_specify_accepts_real_agent_payload_synonyms(tmp_path) -> None:
 def test_plan_accepts_skills_alias_for_reusable_skills(tmp_path) -> None:
     project = tmp_path / "repo"
     project.mkdir()
-    init_workspace(project)
+    init_workspace(project, core_cmd=str(FAKE_CORE))
     _start_workflow(project, "search-people")
     persist_stage(
         project,
@@ -166,7 +167,7 @@ def test_plan_accepts_skills_alias_for_reusable_skills(tmp_path) -> None:
 def test_plan_accepts_supporting_skills_alias_from_real_agent_payload(tmp_path) -> None:
     project = tmp_path / "repo"
     project.mkdir()
-    init_workspace(project)
+    init_workspace(project, core_cmd=str(FAKE_CORE))
     _start_workflow(project, "search-people")
     persist_stage(
         project,
@@ -205,7 +206,7 @@ def test_plan_accepts_supporting_skills_alias_from_real_agent_payload(tmp_path) 
 def test_plan_required_gate_intent_change_requires_recorded_reason(tmp_path) -> None:
     project = tmp_path / "repo"
     project.mkdir()
-    init_workspace(project)
+    init_workspace(project, core_cmd=str(FAKE_CORE))
     _start_workflow(project, "search-people")
     persist_stage(
         project,
@@ -258,7 +259,7 @@ def test_plan_required_gate_intent_change_requires_recorded_reason(tmp_path) -> 
 def test_implement_accepts_artifacts_list_and_writes_core_envelopes(tmp_path) -> None:
     project = tmp_path / "repo"
     project.mkdir()
-    init_workspace(project)
+    init_workspace(project, core_cmd=str(FAKE_CORE))
     _start_workflow(project, "search-people")
     persist_stage(
         project,
@@ -320,7 +321,7 @@ def test_implement_accepts_artifacts_list_and_writes_core_envelopes(tmp_path) ->
 def test_implement_rejects_detailed_skill_intent_without_executable_browser_steps(tmp_path) -> None:
     project = tmp_path / "repo"
     project.mkdir()
-    init_workspace(project)
+    init_workspace(project, core_cmd=str(FAKE_CORE))
     _start_workflow(project, "search-people")
     persist_stage(
         project,
@@ -365,7 +366,7 @@ def test_implement_rejects_detailed_skill_intent_without_executable_browser_step
 def test_implement_preserves_executable_intent_and_runtime_input_values(tmp_path) -> None:
     project = tmp_path / "repo"
     project.mkdir()
-    init_workspace(project)
+    init_workspace(project, core_cmd=str(FAKE_CORE))
     _start_workflow(project, "search-people")
     persist_stage(
         project,
@@ -432,7 +433,7 @@ def test_implement_preserves_executable_intent_and_runtime_input_values(tmp_path
 def test_implement_persists_credential_refs_without_runtime_credential_parameters(tmp_path) -> None:
     project = tmp_path / "repo"
     project.mkdir()
-    init_workspace(project)
+    init_workspace(project, core_cmd=str(FAKE_CORE))
     _start_workflow(project, "add-project")
     persist_stage(
         project,
@@ -491,7 +492,7 @@ def test_implement_persists_credential_refs_without_runtime_credential_parameter
 def test_clarify_accepts_answer_only_payload_for_existing_questions(tmp_path) -> None:
     project = tmp_path / "repo"
     project.mkdir()
-    init_workspace(project)
+    init_workspace(project, core_cmd=str(FAKE_CORE))
     _start_workflow(project, "search-people")
     persist_stage(
         project,
@@ -612,7 +613,7 @@ def test_implement_rejects_target_with_multiple_primary_locator_signals(tmp_path
 def _persist_browser_skill(tmp_path, browser: dict) -> dict:
     project = tmp_path / "repo"
     project.mkdir()
-    init_workspace(project)
+    init_workspace(project, core_cmd=str(FAKE_CORE))
     _start_workflow(project, "search-people")
     persist_stage(
         project,
@@ -654,7 +655,7 @@ def test_implement_pairs_reordered_skill_content_with_its_own_path(tmp_path) -> 
     # positional zip of the two would write the helper's body into the main-skill path.
     project = tmp_path / "repo"
     project.mkdir()
-    init_workspace(project)
+    init_workspace(project, core_cmd=str(FAKE_CORE))
     _start_workflow(project, "search-people")
     helper_path = ".verifysignal/skills/navigate-to-search.browser.md"
     main_path = ".verifysignal/skills/validate-search-people-flow.browser.md"

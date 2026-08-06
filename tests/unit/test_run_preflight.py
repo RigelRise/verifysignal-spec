@@ -23,6 +23,8 @@ from verifysignal_spec.workspace.repository import (
     save_use_case,
 )
 from verifysignal_spec.workflows.prerequisites import check_prerequisites
+from verifysignal_spec.workflows.engine import create_workflow_run
+from verifysignal_spec.workflows.transitions import transition_workflow
 
 
 @pytest.mark.parametrize(
@@ -228,6 +230,20 @@ def _prepare_run_workspace(
         (workflow_root / f"{stage}.md").write_text(f"# {stage}\n", encoding="utf-8")
         if stage != "spec":
             (workflow_root / f"{stage}.yaml").write_text("{}\n", encoding="utf-8")
+    create_workflow_run(
+        project,
+        "Validate a write-capable collaboration flow.",
+        alias=record.alias,
+        integration="codex",
+    )
+    for stage in ("specify", "clarify", "plan", "tasks", "implement", "validate"):
+        transition_workflow(
+            project,
+            record.alias,
+            stage=stage,
+            outcome="completed",
+            handoff_summary="Run-preflight fixture setup.",
+        )
     return record.alias
 
 

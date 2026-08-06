@@ -3,12 +3,22 @@ from __future__ import annotations
 import json
 import os
 
-from helpers import CliTestCase, assert_no_core_contract_snapshots
+from helpers import FAKE_CORE, CliTestCase, assert_no_core_contract_snapshots
 
 
 class CoreContractDrivenWorkflowInfoTests(CliTestCase):
     def test_workflow_info_follows_fake_core_contract_drift(self) -> None:
-        self.cli(["init", str(self.project), "--integration", "codex", "--json"])
+        self.cli(
+            [
+                "init",
+                str(self.project),
+                "--integration",
+                "codex",
+                "--core-cmd",
+                str(FAKE_CORE),
+                "--json",
+            ]
+        )
         os.environ["FAKE_VERIFYSIGNAL_MODE"] = "contract-drift"
 
         code, out, err = self.cli(["workflow", "info", "--project", str(self.project), "--json"])
@@ -23,7 +33,17 @@ class CoreContractDrivenWorkflowInfoTests(CliTestCase):
         assert_no_core_contract_snapshots(self.project)
 
     def test_separate_workflow_info_commands_perform_fresh_contract_discovery(self) -> None:
-        self.cli(["init", str(self.project), "--integration", "codex", "--json"])
+        self.cli(
+            [
+                "init",
+                str(self.project),
+                "--integration",
+                "codex",
+                "--core-cmd",
+                str(FAKE_CORE),
+                "--json",
+            ]
+        )
         counter = self.project / "contract-counter.txt"
         os.environ["FAKE_VERIFYSIGNAL_CONTRACT_COUNTER"] = str(counter)
         try:

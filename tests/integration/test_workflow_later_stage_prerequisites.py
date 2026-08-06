@@ -5,6 +5,7 @@ from verifysignal_spec.workspace.repository import load_use_case
 from verifysignal_spec.workflows.engine import create_workflow_run, generate_tasks, plan_artifacts, specify
 from verifysignal_spec.workflows.prerequisites import check_prerequisites
 from verifysignal_spec.workflows.stage_persistence import persist_stage
+from verifysignal_spec.workflows.transitions import transition_workflow
 from tests.fixtures.workflows.prerequisites import create_current_understanding_workspace
 
 
@@ -49,6 +50,14 @@ def test_validate_missing_generated_artifacts_points_to_implement(tmp_path) -> N
     specify(tmp_path, "login", "Validate login.")
     plan_artifacts(tmp_path, "login")
     generate_tasks(tmp_path, "login")
+    for stage in ("specify", "clarify", "plan", "tasks", "implement"):
+        transition_workflow(
+            tmp_path,
+            "login",
+            stage=stage,
+            outcome="completed",
+            handoff_summary="Missing-artifact fixture setup.",
+        )
     result = check_prerequisites(tmp_path, "validate", alias="login")
     assert result["status"] == "missing"
     assert result["nextCommand"] == "/verifysignal-implement login"
@@ -69,6 +78,14 @@ def test_run_missing_plan_is_an_explicit_blocker_with_recovery(
         "public-project-discovery",
         "Validate a public project.",
     )
+    for stage in ("specify", "clarify", "plan", "tasks", "implement", "validate"):
+        transition_workflow(
+            tmp_path,
+            "public-project-discovery",
+            stage=stage,
+            outcome="completed",
+            handoff_summary="Missing-plan fixture setup.",
+        )
 
     result = check_prerequisites(
         tmp_path,

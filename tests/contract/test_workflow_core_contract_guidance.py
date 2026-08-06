@@ -2,12 +2,22 @@ from __future__ import annotations
 
 import json
 
-from helpers import CliTestCase
+from helpers import FAKE_CORE, CliTestCase
 
 
 class WorkflowCoreContractGuidanceTests(CliTestCase):
     def test_workflow_info_separates_spec_policy_and_redacted_core_contract(self) -> None:
-        self.cli(["init", str(self.project), "--integration", "codex", "--json"])
+        self.cli(
+            [
+                "init",
+                str(self.project),
+                "--integration",
+                "codex",
+                "--core-cmd",
+                str(FAKE_CORE),
+                "--json",
+            ]
+        )
 
         code, out, err = self.cli(["workflow", "info", "--project", str(self.project), "--json"])
 

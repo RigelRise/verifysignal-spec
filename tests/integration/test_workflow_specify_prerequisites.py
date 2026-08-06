@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from helpers import CliTestCase
+from helpers import FAKE_CORE, CliTestCase
 
 from verifysignal_spec.workflows.prerequisites import check_prerequisites
 from verifysignal_spec.workflows.stage_persistence import persist_stage
@@ -16,7 +16,17 @@ from tests.fixtures.workflows.prerequisites import (
 
 class WorkflowSpecifyPrerequisitesTests(CliTestCase):
     def test_missing_understanding_guidance_is_installed_for_codex(self) -> None:
-        code, _, err = self.cli(["init", str(self.project), "--integration", "codex", "--json"])
+        code, _, err = self.cli(
+            [
+                "init",
+                str(self.project),
+                "--integration",
+                "codex",
+                "--core-cmd",
+                str(FAKE_CORE),
+                "--json",
+            ]
+        )
         self.assertEqual(code, 0, err)
         content = (self.project / ".agents" / "skills" / "verifysignal-specify" / "SKILL.md").read_text(encoding="utf-8")
         self.assertIn("verifysignal workflow check specify --json", content)
