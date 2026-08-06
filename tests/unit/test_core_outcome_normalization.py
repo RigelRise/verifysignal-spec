@@ -50,6 +50,46 @@ def test_exact_operation_success_schema_is_required(
     }
 
 
+def test_run_accepts_the_core_public_summary_run_id() -> None:
+    outcome = _normalize(
+        "run",
+        {
+            "schema": "verifysignal.run/v1",
+            "schemaVersion": 1,
+            "operation": "run",
+            "status": "passed",
+            "data": {
+                "summary": {
+                    "runId": "run-20260805T010203Z",
+                    "status": "passed",
+                }
+            },
+        },
+    )
+
+    assert outcome["kind"] == "success"
+    assert outcome["eligibleForRunPersistence"] is True
+
+
+def test_run_rejects_conflicting_legacy_and_public_summary_run_ids() -> None:
+    outcome = _normalize(
+        "run",
+        {
+            "schema": "verifysignal.run/v1",
+            "schemaVersion": 1,
+            "operation": "run",
+            "status": "passed",
+            "data": {
+                "runId": "legacy-run",
+                "summary": {"runId": "public-run", "status": "passed"},
+            },
+        },
+    )
+
+    assert outcome["kind"] == "contract-invalid"
+    assert outcome["eligibleForRunPersistence"] is False
+
+
 @pytest.mark.parametrize(
     "response",
     [
