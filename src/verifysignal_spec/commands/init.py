@@ -13,8 +13,7 @@ from verifysignal_spec.runtime.models import ManagedRuntimeReadinessResult, Runt
 from verifysignal_spec.runtime.resolver import ensure_core_runtime
 from verifysignal_spec.workflows.models import CoreCandidateAttempt, CoreSetupResult
 from verifysignal_spec.workflows.core_setup import run_core_setup
-from verifysignal_spec.workspace import layout
-from verifysignal_spec.workspace.repository import init_workspace, load_document, save_core_configuration
+from verifysignal_spec.workspace.repository import init_workspace, save_core_configuration
 from verifysignal_spec.integrations.invocation import native_invocation
 
 CORE_SETUP_ATTEMPT_SOURCES = {"explicit", "workspace", "env", "path", "ancestor-sibling"}
@@ -23,12 +22,11 @@ CORE_SETUP_ATTEMPT_SOURCES = {"explicit", "workspace", "env", "path", "ancestor-
 def run(project: Path, integration: str, force: bool = False, core_cmd: str | None = None, api_base_url: str | None = None) -> dict[str, Any]:
     entitlement_config = resolve_entitlement_config(api_base_url=api_base_url)
     persisted_api_base_url = entitlement_config.apiBaseUrl if api_base_url or entitlement_config.source == "environment" else None
-    workspace_path = layout.workspace_root(project) / layout.WORKSPACE_FILE
-    workspace_preexisting = workspace_path.exists()
-    if core_cmd and workspace_preexisting:
-        workspace = load_document(workspace_path, default={}) or {}
-    else:
-        workspace = init_workspace(project, force=False, api_base_url=persisted_api_base_url)
+    workspace = init_workspace(
+        project,
+        force=False,
+        api_base_url=persisted_api_base_url,
+    )
     email = os.environ.get("VERIFYSIGNAL_EMAIL")
     token = os.environ.get("VERIFYSIGNAL_EMAIL_UNLOCK_TOKEN")
     if not token and not email and sys.stdin.isatty():
