@@ -12,6 +12,7 @@ from tests.fixtures.workflows.guardrails import stage_payload
 from verifysignal_spec.workspace import layout
 from verifysignal_spec.workspace.models import ArtifactReference, AuthoringQuestion
 from verifysignal_spec.workspace.repository import (
+    core_attempt_iso_after,
     create_default_use_case,
     init_workspace,
     load_document,
@@ -590,6 +591,15 @@ def test_workflow_run_writes_use_strict_high_resolution_ordering(
     assert first.updatedAt is not None
     assert second.updatedAt is not None
     assert first.updatedAt < second.updatedAt
+
+
+def test_core_attempt_completion_is_strictly_later_when_clock_moves_back(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    previous = "2026-08-05T00:00:00.000000009Z"
+    monkeypatch.setattr(time, "time_ns", lambda: 1)
+
+    assert core_attempt_iso_after(previous) == "2026-08-05T00:00:00.000000010Z"
 
 
 def test_equal_timestamp_without_reference_is_rejected_as_ambiguous(

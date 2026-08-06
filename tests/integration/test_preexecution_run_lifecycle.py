@@ -16,6 +16,8 @@ from verifysignal_spec.workspace import layout, repository as workspace_reposito
 from verifysignal_spec.workspace.models import LastCoreAttempt, RunHistoryEntry
 from verifysignal_spec.workspace.repository import load_document, now_iso, save_document, save_use_case
 from verifysignal_spec.workflows.engine import create_workflow_run
+from verifysignal_spec.workflows.prerequisites import check_prerequisites
+from verifysignal_spec.workflows.run_lock import acquire_run_invocation_lease
 from verifysignal_spec.workflows.transitions import transition_workflow
 from verifysignal_spec.workflows.write_safety import evaluate_rerun_decision
 
@@ -25,6 +27,8 @@ def test_current_preexecution_core_error_records_a_safe_non_run_attempt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     alias = _prepare_error_workspace(tmp_path, monkeypatch, mode="current-entitlement-error")
+    attempted_at = "2026-08-05T01:02:03.000000004Z"
+    monkeypatch.setattr(run_command, "core_attempt_iso", lambda: attempted_at)
 
     result = run_command.run(tmp_path, alias, interactive=False, core_cmd=str(FAKE_CORE))
 
@@ -38,7 +42,7 @@ def test_current_preexecution_core_error_records_a_safe_non_run_attempt(
     assert attempt["errorCode"] == "entitlement.key-unknown"
     assert attempt["executionState"] == "not-started"
     assert attempt["sideEffectMayExist"] is False
-    assert attempt["attemptedAt"]
+    assert attempt["attemptedAt"] == attempted_at
     assert re.fullmatch(
         r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{9}Z",
         attempt["attemptedAt"],
@@ -208,6 +212,62 @@ def test_valid_core_run_keeps_conservative_attempt_until_last_run_is_durable(
     assert decision["policyBranch"] == "afterUnknown"
 
 
+def test_core_invocation_starts_only_after_write_ahead_marker_is_durable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    alias = _prepare_error_workspace(tmp_path, monkeypatch, mode="current-entitlement-error")
+    original_run = run_command.CoreAdapter.run
+
+    def assert_marker_before_core(adapter, *args, **kwargs):
+        attempt = workspace_repository.load_use_case(tmp_path, alias).lastCoreAttempt
+        assert attempt is not None
+        assert attempt.operation == "run"
+        assert attempt.status == "unknown"
+        assert attempt.executionState == "unknown"
+        assert attempt.sideEffectMayExist is True
+        return original_run(adapter, *args, **kwargs)
+
+    monkeypatch.setattr(run_command.CoreAdapter, "run", assert_marker_before_core)
+
+    result = run_command.run(tmp_path, alias, interactive=False, core_cmd=str(FAKE_CORE))
+
+    assert result["status"] == "blocked"
+
+
+def test_concurrent_run_and_workflow_check_fail_closed_without_invoking_core(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    alias = _prepare_error_workspace(tmp_path, monkeypatch, mode="ok")
+    lease = acquire_run_invocation_lease(tmp_path, alias)
+    assert lease is not None
+
+    def forbid_core(*_args, **_kwargs):
+        raise AssertionError("Core must not run while the alias lease is held")
+
+    monkeypatch.setattr(run_command.CoreAdapter, "run", forbid_core)
+    try:
+        checked = check_prerequisites(tmp_path, "run", alias)
+        result = run_command.run(
+            tmp_path,
+            alias,
+            interactive=False,
+            core_cmd=str(FAKE_CORE),
+        )
+    finally:
+        lease.release()
+
+    assert checked["canProceed"] is False
+    assert _blocker_codes(checked) == ["runtime.run-in-progress"]
+    assert result["status"] == "blocked"
+    assert result["coreStatus"] == "not-run"
+    assert _blocker_codes(result) == ["runtime.run-in-progress"]
+    persisted = workspace_repository.load_use_case(tmp_path, alias)
+    assert persisted.lastCoreAttempt is None
+    assert persisted.lastRun is None
+
+
 def test_successful_last_run_outranks_write_ahead_marker_when_clear_fails(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -225,8 +285,40 @@ def test_successful_last_run_outranks_write_ahead_marker_when_clear_fails(
     persisted = workspace_repository.load_use_case(tmp_path, alias)
     assert persisted.lastRun is not None
     assert persisted.lastCoreAttempt is not None
+    assert persisted.lastRun["startedAt"] == persisted.lastCoreAttempt.attemptedAt
+    assert persisted.lastRun["completedAt"] > persisted.lastCoreAttempt.attemptedAt
     decision = evaluate_rerun_decision(persisted)
     assert decision.get("sourceRunId") == persisted.lastRun["runId"]
+
+
+def test_successful_run_never_clears_a_marker_owned_by_another_attempt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    alias = _prepare_error_workspace(tmp_path, monkeypatch, mode="ok")
+    original_record_run = run_command.record_run
+    foreign_attempt = LastCoreAttempt(
+        attemptedAt="2999-08-05T01:00:00.000000001Z",
+        operation="run",
+        schema=None,
+        status="unknown",
+        errorCode=None,
+        executionState="unknown",
+        sideEffectMayExist=True,
+    )
+
+    def persist_run_then_replace_marker(project: Path, entry: RunHistoryEntry) -> None:
+        original_record_run(project, entry)
+        workspace_repository.save_last_core_attempt(project, alias, foreign_attempt)
+
+    monkeypatch.setattr(run_command, "record_run", persist_run_then_replace_marker)
+
+    with pytest.raises(workspace_repository.LastCoreAttemptOwnershipError):
+        run_command.run(tmp_path, alias, interactive=False, core_cmd=str(FAKE_CORE))
+
+    persisted = workspace_repository.load_use_case(tmp_path, alias)
+    assert persisted.lastRun is not None
+    assert persisted.lastCoreAttempt == foreign_attempt
 
 
 def _prepare_error_workspace(
