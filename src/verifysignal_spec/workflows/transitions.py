@@ -7,12 +7,20 @@ from typing import Any, Literal
 from verifysignal_spec.integrations.invocation import project_integration
 from verifysignal_spec.workspace import layout
 from verifysignal_spec.workspace.repository import (
+    load_document,
     load_readiness_snapshot,
     load_use_case,
     now_iso,
 )
 
-from .models import WORKFLOW_STAGES, WorkflowRun, WorkflowStageState, native_invocation
+from .models import (
+    WORKFLOW_ARTIFACT_PLAN_SCHEMA,
+    WORKFLOW_STAGES,
+    WORKFLOW_TASK_SET_SCHEMA,
+    WorkflowRun,
+    WorkflowStageState,
+    native_invocation,
+)
 from .repository import (
     create_stage_states,
     fingerprint_text,
@@ -69,6 +77,10 @@ _CANONICAL_STAGE_TITLES = {
     "plan": "Artifact Plan: {alias}",
     "tasks": "Authoring Tasks: {alias}",
     "implement": "Workflow Handoff: {alias}",
+}
+_DURABLE_STAGE_PROJECTION_SCHEMAS = {
+    "plan": WORKFLOW_ARTIFACT_PLAN_SCHEMA,
+    "tasks": WORKFLOW_TASK_SET_SCHEMA,
 }
 
 
@@ -464,12 +476,14 @@ def _legacy_furthest_authored_stage(
                 stage_name = _MIGRATABLE_AUTHORED_STAGES[completed_index]
                 evidence.setdefault(stage_name, f"workflow:{current_stage}")
 
-    plan_yaml = layout.workflow_stage_document_path(project, alias, "plan").with_suffix(".yaml")
-    if _project_owned_regular_file(project, plan_yaml.relative_to(project)) is not None:
-        evidence.setdefault("plan", str(plan_yaml.relative_to(project)))
-    tasks_yaml = layout.workflow_stage_document_path(project, alias, "tasks").with_suffix(".yaml")
-    if _project_owned_regular_file(project, tasks_yaml.relative_to(project)) is not None:
-        evidence.setdefault("tasks", str(tasks_yaml.relative_to(project)))
+    for stage_name in ("plan", "tasks"):
+        projection_path = _durable_stage_projection(
+            project,
+            alias,
+            stage_name,
+        )
+        if projection_path is not None:
+            evidence.setdefault(stage_name, str(projection_path.relative_to(project)))
 
     executable_references = [
         getattr(record, "runRequest", None),
@@ -541,6 +555,32 @@ def _durable_stage_document(
     if first_line != f"# {expected_title}":
         return None
     return content
+
+
+def _durable_stage_projection(
+    project: Path,
+    alias: str,
+    stage: str,
+) -> Path | None:
+    path = layout.workflow_stage_document_path(
+        project,
+        alias,
+        stage,
+    ).with_suffix(".yaml")
+    durable_path = _project_owned_regular_file(project, path.relative_to(project))
+    if durable_path is None:
+        return None
+    try:
+        content = load_document(durable_path)
+    except (OSError, UnicodeError, TypeError, ValueError):
+        return None
+    if not isinstance(content, dict):
+        return None
+    if content.get("schemaVersion") != _DURABLE_STAGE_PROJECTION_SCHEMAS[stage]:
+        return None
+    if content.get("useCaseAlias") != alias:
+        return None
+    return durable_path
 
 
 def _protected_readiness_is_valid(snapshot: Any) -> bool:
