@@ -62,6 +62,14 @@ _MIGRATABLE_AUTHORED_STAGES = [
     "tasks",
     "implement",
 ]
+_CANONICAL_STAGE_TITLES = {
+    "understand": "Understanding Snapshot: {alias}",
+    "specify": "Use Case Specification: {alias}",
+    "clarify": "Clarifications: {alias}",
+    "plan": "Artifact Plan: {alias}",
+    "tasks": "Authoring Tasks: {alias}",
+    "implement": "Workflow Handoff: {alias}",
+}
 
 
 def validate_workflow_stage_position(
@@ -416,8 +424,7 @@ def _has_legacy_workflow_evidence(
     if state_path.is_file() and not state_path.is_symlink():
         return True
     if any(
-        (path := layout.workflow_stage_document_path(project, alias, stage)).is_file()
-        and not path.is_symlink()
+        _durable_stage_document(project, alias, stage) is not None
         for stage in _MIGRATABLE_AUTHORED_STAGES
     ):
         return True
@@ -440,8 +447,7 @@ def _legacy_furthest_authored_stage(
 ) -> tuple[str | None, dict[str, str]]:
     evidence: dict[str, str] = {}
     for stage_name in _MIGRATABLE_AUTHORED_STAGES:
-        path = layout.workflow_stage_document_path(project, alias, stage_name)
-        content = _durable_stage_document(path)
+        content = _durable_stage_document(project, alias, stage_name)
         if content is not None:
             evidence[stage_name] = content
 
@@ -459,10 +465,10 @@ def _legacy_furthest_authored_stage(
                 evidence.setdefault(stage_name, f"workflow:{current_stage}")
 
     plan_yaml = layout.workflow_stage_document_path(project, alias, "plan").with_suffix(".yaml")
-    if plan_yaml.is_file() and not plan_yaml.is_symlink():
+    if _project_owned_regular_file(project, plan_yaml.relative_to(project)) is not None:
         evidence.setdefault("plan", str(plan_yaml.relative_to(project)))
     tasks_yaml = layout.workflow_stage_document_path(project, alias, "tasks").with_suffix(".yaml")
-    if tasks_yaml.is_file() and not tasks_yaml.is_symlink():
+    if _project_owned_regular_file(project, tasks_yaml.relative_to(project)) is not None:
         evidence.setdefault("tasks", str(tasks_yaml.relative_to(project)))
 
     executable_references = [
@@ -492,22 +498,47 @@ def _durable_artifact_reference(project: Path, reference: Any) -> bool:
     raw_path = getattr(reference, "path", None)
     if not isinstance(raw_path, str) or not raw_path.strip():
         return False
+    return _project_owned_regular_file(project, raw_path) is not None
+
+
+def _project_owned_regular_file(project: Path, raw_path: str | Path) -> Path | None:
+    relative = Path(raw_path)
+    if relative.is_absolute() or ".." in relative.parts:
+        return None
+    current = project.resolve()
+    for part in relative.parts:
+        if part in {"", "."}:
+            continue
+        current /= part
+        try:
+            if current.is_symlink():
+                return None
+        except OSError:
+            return None
     try:
-        path = layout.project_relative_path(project, raw_path)
-    except (TypeError, ValueError):
-        return False
-    return path.is_file() and not path.is_symlink()
+        resolved = current.resolve(strict=True)
+        resolved.relative_to(project.resolve())
+    except (OSError, RuntimeError, ValueError):
+        return None
+    return resolved if resolved.is_file() else None
 
 
-def _durable_stage_document(path: Path) -> str | None:
-    if not path.is_file() or path.is_symlink():
+def _durable_stage_document(
+    project: Path,
+    alias: str,
+    stage: str,
+) -> str | None:
+    path = layout.workflow_stage_document_path(project, alias, stage)
+    durable_path = _project_owned_regular_file(project, path.relative_to(project))
+    if durable_path is None:
         return None
     try:
-        content = path.read_text(encoding="utf-8")
+        content = durable_path.read_text(encoding="utf-8")
     except (OSError, UnicodeError):
         return None
-    stripped = content.lstrip()
-    if not stripped or not stripped.startswith("# "):
+    expected_title = _CANONICAL_STAGE_TITLES[stage].format(alias=alias)
+    first_line = content.lstrip().partition("\n")[0].rstrip("\r")
+    if first_line != f"# {expected_title}":
         return None
     return content
 
