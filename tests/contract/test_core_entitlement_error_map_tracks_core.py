@@ -20,9 +20,14 @@ from pathlib import Path
 import pytest
 
 from verifysignal_spec.core.contracts import CORE_ENTITLEMENT_ERROR_MAP
+from verifysignal_spec.repos import resolve_sibling_repo
 
+SPEC_REPOSITORY = Path(__file__).resolve().parents[2]
+CORE_REPOSITORY = resolve_sibling_repo("core", SPEC_REPOSITORY)
 CORE_ENTITLEMENT_SRC = (
-    Path(__file__).resolve().parents[3] / "verifysignal" / "apps" / "verifysignal-cli" / "src" / "entitlement"
+    CORE_REPOSITORY / "apps" / "verifysignal-cli" / "src" / "entitlement"
+    if CORE_REPOSITORY is not None
+    else SPEC_REPOSITORY / ".missing-core-entitlement-source"
 )
 
 
