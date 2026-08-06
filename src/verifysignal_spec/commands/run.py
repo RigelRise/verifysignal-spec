@@ -18,7 +18,7 @@ from verifysignal_spec.commands.run_request_preparation import (
 from verifysignal_spec.core.adapter import CoreAdapter, core_status
 from verifysignal_spec.core.errors import CoreMissingError
 from verifysignal_spec.core.executable_contract import project_core_contract
-from verifysignal_spec.core.outcomes import normalize_core_outcome
+from verifysignal_spec.core.outcomes import normalize_core_outcome, public_run_id
 from verifysignal_spec.runtime.entitlement import api_base_url_for_runtime, valid_receipt_path
 from verifysignal_spec.runtime.env_file import (
     EnvironmentFileError,
@@ -554,7 +554,9 @@ def run(
         return blocked_result
     release_prepared_run_request_ownership(prepared_ownership)
     data = result["data"]
-    run_id = str(data["runId"])
+    run_id = public_run_id(result)
+    if run_id is None:  # pragma: no cover - normalized success already proves this
+        raise RuntimeError("Core run identity was not available after normalization.")
     core = core_status(result)
     result_with_report = _result_with_public_report(project, result)
     side_effects = _public_result_field(result_with_report, "sideEffects")

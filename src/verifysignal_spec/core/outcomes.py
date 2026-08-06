@@ -105,7 +105,7 @@ def normalize_core_outcome(operation: str, response: Any) -> NormalizedCoreOutco
         and response_operation == operation
         and status in ALLOWED_CORE_STATUSES
         and isinstance(data, dict)
-        and (operation != "run" or _path_safe_run_id(data.get("runId")))
+        and (operation != "run" or public_run_id(response) is not None)
     ):
         execution = _execution_projection(response)
         return NormalizedCoreOutcome(
@@ -166,6 +166,29 @@ def _execution_projection(
 
 def _path_safe_run_id(value: Any) -> bool:
     return isinstance(value, str) and bool(PUBLIC_RUN_ID_RE.fullmatch(value))
+
+
+def public_run_id(response: Any) -> str | None:
+    """Return a non-conflicting run identity from current or legacy envelopes."""
+
+    if not isinstance(response, dict):
+        return None
+    data = response.get("data")
+    if not isinstance(data, dict):
+        return None
+    summary = data.get("summary")
+    summary_run_id = summary.get("runId") if isinstance(summary, dict) else None
+    legacy_run_id = data.get("runId")
+    candidates = [
+        value
+        for value in (summary_run_id, legacy_run_id)
+        if value is not None
+    ]
+    if not candidates or any(not _path_safe_run_id(value) for value in candidates):
+        return None
+    if len(set(candidates)) != 1:
+        return None
+    return str(candidates[0])
 
 
 def _safe_error_code(operation: str, value: str | None) -> str | None:
