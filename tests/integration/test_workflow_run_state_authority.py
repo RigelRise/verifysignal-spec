@@ -358,6 +358,15 @@ def _create_executable_workflow(
     current_stage: str,
 ) -> WorkflowRun:
     create_main_skill_coverage_workspace(project)
+    workflow_root = project / ".verifysignal" / "workflows" / "use-cases" / ALIAS
+    workflow_root.mkdir(parents=True, exist_ok=True)
+    for name in ("spec", "plan", "tasks"):
+        (workflow_root / f"{name}.md").write_text(
+            f"# {name}\n",
+            encoding="utf-8",
+        )
+        if name != "spec":
+            (workflow_root / f"{name}.yaml").write_text("{}\n", encoding="utf-8")
     run = create_workflow_run(
         project,
         "Validate a public profile page.",

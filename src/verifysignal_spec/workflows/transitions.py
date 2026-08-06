@@ -247,6 +247,8 @@ def transition_workflow(
 
     if stage == "validate" and source_stage in {"run", "repair"}:
         _reset_stages_after_validation(run)
+    if stage == "repair" and outcome == "completed":
+        _reset_stages_after_repair(run)
 
     stage_state.status = outcome
     if outcome == "completed":
@@ -587,6 +589,16 @@ def _validate_transition_position(
 def _reset_stages_after_validation(run: WorkflowRun) -> None:
     validate_index = WORKFLOW_STAGES.index("validate")
     for state in run.stageStates[validate_index + 1 :]:
+        state.status = "pending"
+        state.startedAt = None
+        state.completedAt = None
+        state.blockers = []
+        state.nextCommand = None
+
+
+def _reset_stages_after_repair(run: WorkflowRun) -> None:
+    for stage_name in ("validate", "run"):
+        state = _stage_state(run, stage_name)
         state.status = "pending"
         state.startedAt = None
         state.completedAt = None
