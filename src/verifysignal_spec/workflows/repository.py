@@ -181,13 +181,25 @@ def load_active_workflow_run(project: Path, alias: str) -> WorkflowRun | None:
     record = load_use_case(project, alias)
     workflow = record.workflow if isinstance(record.workflow, dict) else {}
     run_id = workflow.get("lastWorkflowRunId")
+    referenced: WorkflowRun | None = None
+    if run_id:
+        try:
+            referenced = load_workflow_run(project, str(run_id))
+        except FileNotFoundError:
+            # A stale projection may legitimately point at a removed run while
+            # a newer matching authority is still recoverable from disk.
+            referenced = None
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"Referenced workflow run {run_id} is unreadable."
+            ) from exc
+        if referenced is not None and referenced.useCaseAlias != alias:
+            raise ValueError(
+                f"Referenced workflow run {run_id} belongs to another use case."
+            )
     matching = _matching_workflow_runs(project, alias)
     if not matching:
         return None
-    referenced = next(
-        (run for run in matching if run.runId == str(run_id)),
-        None,
-    )
     newest_stamp = max(_workflow_run_stamp(run) for run in matching)
     newest = [
         run for run in matching if _workflow_run_stamp(run) == newest_stamp

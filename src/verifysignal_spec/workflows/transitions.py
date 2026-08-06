@@ -99,7 +99,42 @@ def managed_workflow_stage_decision(
     if not record_path.is_file() or record_path.is_symlink():
         return {"managed": False, "blocker": None}
     record = load_use_case(project, alias)
-    run = load_active_workflow_run(project, alias)
+    try:
+        run = load_active_workflow_run(project, alias)
+    except ValueError:
+        workflow_reference = (
+            record.workflow if isinstance(record.workflow, dict) else {}
+        )
+        referenced_run_id = str(
+            workflow_reference.get("lastWorkflowRunId") or ""
+        )
+        try:
+            safe_run_id = layout.ensure_path_safe_run_id(referenced_run_id)
+        except ValueError:
+            safe_run_id = ""
+        recovery_command = (
+            f"verifysignal workflow status {safe_run_id} --json"
+            if safe_run_id
+            else "verifysignal workflow list --json"
+        )
+        blocker = {
+            "code": "workflow.authority-invalid",
+            "severity": "blocker",
+            "category": "workflow",
+            "message": (
+                "The referenced WorkflowRun authority is unreadable; "
+                "execution is blocked until it is repaired or replaced."
+            ),
+            "currentStage": "unknown",
+            "requestedStage": requested_stage,
+            "recoveryCommand": recovery_command,
+        }
+        return {
+            "managed": True,
+            "currentStage": "unknown",
+            "requestedStage": requested_stage,
+            "blocker": blocker,
+        }
     if run is None and not _has_legacy_workflow_evidence(
         project,
         alias,
