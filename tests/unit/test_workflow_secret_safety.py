@@ -134,6 +134,32 @@ def test_target_locator_rejects_credential_bearing_urls_and_token_queries() -> N
 
 
 @pytest.mark.parametrize(
+    "payload",
+    [
+        {"values": ["Bearer abc123abc123abc123abc123"]},
+        {"values": [["Bearer abc123abc123abc123abc123"]]},
+    ],
+    ids=["direct-list-scalar", "nested-list-scalar"],
+)
+def test_secret_scanner_rejects_secret_scalars_inside_lists(
+    payload: dict[str, object],
+) -> None:
+    assert validate_no_secret_values(payload)
+
+
+@pytest.mark.parametrize(
+    "locator",
+    [
+        "postgres://dbuser:dbpassword@example.test/app",
+        "wss://example.test/socket?token=abc123abc123abc123",
+    ],
+    ids=["postgres-userinfo", "wss-query-token"],
+)
+def test_target_locator_rejects_credentials_in_non_http_uris(locator: str) -> None:
+    assert validate_no_secret_values({"target": locator})
+
+
+@pytest.mark.parametrize(
     ("field", "value"),
     [
         ("path", "https://user:pass@example.com/artifact"),

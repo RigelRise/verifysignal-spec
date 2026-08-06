@@ -35,6 +35,24 @@ def test_run_authority_rejects_integer_boolean_impersonation(tmp_path: Path) -> 
         load_use_case(tmp_path, record.alias)
 
 
+@pytest.mark.parametrize("side_effect_may_exist", [None, True])
+def test_not_started_attempt_requires_explicit_false_side_effect_authority(
+    tmp_path: Path,
+    side_effect_may_exist: bool | None,
+) -> None:
+    record = _saved_record(tmp_path)
+    attempt = _attempt().to_dict()
+    attempt["executionState"] = "not-started"
+    attempt["sideEffectMayExist"] = side_effect_may_exist
+    save_document(
+        layout.run_authority_path(tmp_path, record.alias),
+        _authority_document(record.alias, attempt, None),
+    )
+
+    with pytest.raises(ValueError, match="(?i)(not-started|side-effect|coherent)"):
+        load_use_case(tmp_path, record.alias)
+
+
 def test_run_authority_rejects_secret_looking_attempt_values(tmp_path: Path) -> None:
     record = _saved_record(tmp_path)
     attempt = _attempt().to_dict()
@@ -61,6 +79,33 @@ def test_record_run_rejects_nested_secret_before_writing_run_history(
             },
         }
     ]
+    history_path = layout.run_history_path(
+        tmp_path,
+        record.alias,
+        entry.runId,
+    )
+    rejection: ValueError | None = None
+
+    try:
+        record_run(tmp_path, entry)
+    except ValueError as exc:
+        rejection = exc
+
+    assert rejection is not None
+    assert "secret" in str(rejection).lower()
+    assert not history_path.exists()
+
+
+def test_record_run_rejects_summary_secret_before_writing_run_history(
+    tmp_path: Path,
+) -> None:
+    record = _saved_record(tmp_path)
+    entry = _entry(record.alias)
+    entry.summary = {
+        "diagnostics": {
+            "apiToken": "sk_live_not_for_logs_123456789",
+        }
+    }
     history_path = layout.run_history_path(
         tmp_path,
         record.alias,
