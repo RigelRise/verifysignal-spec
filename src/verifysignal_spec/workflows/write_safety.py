@@ -528,8 +528,14 @@ def _classify_previous_run(record: Any) -> dict[str, Any]:
         evidence.get("sideEffectMayExist") is False
         and str(evidence.get("sideEffectStatus") or "").lower() in {"not-started", "none", "not-committed"}
     )
-    if explicitly_safe or not evidence:
+    if explicitly_safe:
         return {"outcomeClass": "no-commit", "policyBranch": "afterNoCommit", **source}
+    if not evidence:
+        return (
+            {"outcomeClass": "unknown-write", "policyBranch": "afterUnknown", **source}
+            if _has_write_evidence(record, last_run)
+            else {"outcomeClass": "no-commit", "policyBranch": "afterNoCommit", **source}
+        )
     committed_statuses = {"possible", "inferred", "likely-committed", "committed", "committed-confirmed", "violated"}
     if _has_write_evidence(record, last_run) and (
         evidence.get("postCommit") is True
