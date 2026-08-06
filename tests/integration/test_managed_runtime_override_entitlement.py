@@ -13,7 +13,7 @@ from verifysignal_spec.runtime.distribution import load_verification_keys, save_
 from verifysignal_spec.runtime.entitlement import load_receipt, receipt_path
 from verifysignal_spec.runtime.resolver import normalize_platform
 from verifysignal_spec.runtime.resolver import ensure_core_runtime
-from verifysignal_spec.workspace.repository import load_document
+from verifysignal_spec.workspace.repository import init_workspace, load_document
 from tests.fixtures.managed_runtime import build_managed_runtime_distribution, serve_fake_entitlement_backend, write_fake_core_executable
 from tests.fixtures.workflows.entitlement_preflight_recovery import create_legacy_field_absent_workspace
 from tests.fixtures.workflows.main_skill_run_coverage import create_main_skill_coverage_workspace
@@ -384,6 +384,39 @@ def test_init_api_base_url_persists_for_later_validate(tmp_path, monkeypatch) ->
         "/entitlements/exchange",
         "/entitlements/exchange",
     ]
+
+
+def test_explicit_init_persists_api_base_url_when_workspace_already_exists(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("VERIFYSIGNAL_RUNTIME_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setenv("VERIFYSIGNAL_EMAIL_UNLOCK_TOKEN", "vs_valid")
+    monkeypatch.setenv("FAKE_VERIFYSIGNAL_MODE", "requires-entitlement")
+    monkeypatch.delenv("VERIFYSIGNAL_API_BASE_URL", raising=False)
+    monkeypatch.delenv("VERIFYSIGNAL_ENTITLEMENT_RECEIPT", raising=False)
+    monkeypatch.delenv("VERIFYSIGNAL_ENTITLEMENT_RECEIPT_PATH", raising=False)
+    init_workspace(tmp_path)
+
+    with serve_fake_entitlement_backend() as (api_base_url, _state):
+        code, _out, err = _cli(
+            [
+                "init",
+                str(tmp_path),
+                "--integration",
+                "claude",
+                "--core-cmd",
+                str(FAKE_CORE),
+                "--api-base-url",
+                api_base_url,
+                "--json",
+            ]
+        )
+
+    assert code == 0, err
+    workspace = load_document(tmp_path / ".verifysignal" / "workspace.yaml")
+    assert workspace["coreResolutionMode"] == "development-override"
+    assert workspace["entitlementApiBaseUrl"] == api_base_url
 
 
 def test_managed_runtime_sources_prepare_verification_keys(tmp_path, monkeypatch) -> None:
