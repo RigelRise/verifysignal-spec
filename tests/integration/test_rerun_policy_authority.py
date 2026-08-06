@@ -314,6 +314,28 @@ def test_equal_timestamp_attempt_does_not_override_the_real_run(tmp_path: Path) 
     assert decision["sourceRunId"] == "real-run"
 
 
+def test_nanosecond_later_unknown_attempt_outranks_safe_real_run(
+    tmp_path: Path,
+) -> None:
+    last_run = _real_run(post_commit=False, side_effect_may_exist=False)
+    last_run["completedAt"] = "2026-08-05T00:00:00.000000002Z"
+    record = _record_for_case(
+        tmp_path,
+        side_effect_class="none",
+        last_run=last_run,
+        last_attempt={
+            **_attempt("unknown", side_effect_may_exist=True),
+            "attemptedAt": "2026-08-05T00:00:00.000000003Z",
+        },
+    )
+
+    decision = evaluate_rerun_decision(record)
+
+    assert decision["decision"] == "requires-confirmation"
+    assert decision["outcomeClass"] == "unknown-write"
+    assert decision["policyBranch"] == "afterUnknown"
+
+
 def test_attempt_confirmation_identity_uses_all_redacted_attempt_evidence(tmp_path: Path) -> None:
     first = _record_for_case(
         tmp_path / "first",

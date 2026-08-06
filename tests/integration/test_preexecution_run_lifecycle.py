@@ -321,6 +321,50 @@ def test_successful_run_never_clears_a_marker_owned_by_another_attempt(
     assert persisted.lastCoreAttempt == foreign_attempt
 
 
+def test_new_write_ahead_attempt_orders_after_prior_run_when_clock_moves_back(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    alias = _prepare_error_workspace(tmp_path, monkeypatch, mode="ok")
+    record = workspace_repository.load_use_case(tmp_path, alias)
+    record.lastRun = {
+        "runId": "prior-safe-run",
+        "status": "failed",
+        "startedAt": "2026-08-05T02:00:00.000000001Z",
+        "completedAt": "2026-08-05T02:00:00.000000002Z",
+        "sideEffectPolicy": {"class": "none", "mode": "observe"},
+        "postCommitInterpretation": {
+            "postCommit": False,
+            "sideEffectMayExist": False,
+            "sideEffectStatus": "not-started",
+            "failurePhase": "pre-commit",
+            "rerunRisk": "safe",
+        },
+    }
+    save_use_case(tmp_path, record)
+    monkeypatch.setattr(
+        workspace_repository.time,
+        "time_ns",
+        lambda: 1_754_356_800_000_000_001,
+    )
+
+    def fail_after_core(*_args, **_kwargs):
+        raise RuntimeError("forced post-Core crash")
+
+    monkeypatch.setattr(run_command, "_result_with_public_report", fail_after_core)
+
+    with pytest.raises(RuntimeError, match="post-Core crash"):
+        run_command.run(tmp_path, alias, interactive=False, core_cmd=str(FAKE_CORE))
+
+    persisted = workspace_repository.load_use_case(tmp_path, alias)
+    assert persisted.lastCoreAttempt is not None
+    assert persisted.lastCoreAttempt.attemptedAt > record.lastRun["completedAt"]
+    decision = evaluate_rerun_decision(persisted)
+    assert decision["decision"] == "requires-confirmation"
+    assert decision["outcomeClass"] == "unknown-write"
+    assert decision["policyBranch"] == "afterUnknown"
+
+
 def _prepare_error_workspace(
     project: Path,
     monkeypatch: pytest.MonkeyPatch,

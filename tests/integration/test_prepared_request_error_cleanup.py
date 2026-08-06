@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from tests.fixtures.workflows.entitlement_preflight_recovery import (
+    build_side_effect_policy,
     build_protected_readiness_snapshot,
 )
 from tests.fixtures.workflows.prerequisites import create_current_understanding_workspace
@@ -253,6 +254,39 @@ def test_contract_invalid_run_envelopes_never_create_history_or_escape_the_run_d
     assert (tmp_path / "outside.yaml").exists() is False
     changed = set(workspace_file_snapshot(tmp_path)) - set(workspace_before)
     assert not any(path.endswith(".yaml") and "/runs/" in path for path in changed)
+
+
+def test_contract_invalid_run_keeps_conservative_unknown_risk_for_class_none(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    alias = _prepare_cleanup_workspace(tmp_path, monkeypatch)
+    record = load_use_case(tmp_path, alias)
+    record.sideEffects = build_side_effect_policy(side_effect_class="none")
+    save_use_case(tmp_path, record)
+
+    monkeypatch.setattr(
+        run_command.CoreAdapter,
+        "run",
+        lambda *_args, **_kwargs: {
+            "operation": "run",
+            "status": "blocked",
+            "error": "malformed-public-error",
+        },
+    )
+
+    result = run_command.run(tmp_path, alias, interactive=False, core_cmd=str(FAKE_CORE))
+
+    assert result["status"] == "blocked"
+    assert result["blockers"][0]["code"] == "core.contract-invalid"
+    persisted = load_use_case(tmp_path, alias)
+    assert persisted.lastCoreAttempt is not None
+    assert persisted.lastCoreAttempt.executionState == "unknown"
+    assert persisted.lastCoreAttempt.sideEffectMayExist is True
+    decision = evaluate_rerun_decision(persisted)
+    assert decision["decision"] == "requires-confirmation"
+    assert decision["outcomeClass"] == "unknown-write"
+    assert decision["policyBranch"] == "afterUnknown"
 
 
 @pytest.mark.parametrize("tainted_field", ["schema", "errorCode"])
