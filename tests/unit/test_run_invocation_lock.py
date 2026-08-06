@@ -88,6 +88,50 @@ sys.stdin.read()
             parent_lease.release()
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX directory-lock semantics")
+def test_run_invocation_lease_survives_identity_directory_replacement(
+    tmp_path: Path,
+) -> None:
+    source_root = Path(__file__).resolve().parents[2] / "src"
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = os.pathsep.join(
+        [str(source_root), environment.get("PYTHONPATH", "")]
+    ).rstrip(os.pathsep)
+    alias = "localized-home"
+    first = acquire_run_invocation_lease(tmp_path, alias)
+    assert first is not None
+    identity_dir = tmp_path / ".verifysignal" / ".run-locks" / alias
+    displaced_identity_dir = identity_dir.with_name(f"{alias}-displaced")
+    identity_dir.rename(displaced_identity_dir)
+    script = """
+from pathlib import Path
+import sys
+from verifysignal_spec.workflows.run_lock import acquire_run_invocation_lease
+
+lease = acquire_run_invocation_lease(Path(sys.argv[1]), sys.argv[2])
+if lease is None:
+    print("blocked")
+else:
+    print("acquired")
+    lease.release()
+"""
+
+    try:
+        contender = subprocess.run(
+            [sys.executable, "-c", script, str(tmp_path), alias],
+            env=environment,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+        )
+    finally:
+        first.release()
+
+    assert contender.stdout.strip() == "blocked"
+
+
 def test_last_core_attempt_replacement_and_clear_require_exact_ownership(
     tmp_path: Path,
 ) -> None:

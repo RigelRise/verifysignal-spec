@@ -133,6 +133,27 @@ def test_target_locator_rejects_credential_bearing_urls_and_token_queries() -> N
     assert validate_no_secret_values({"target": "https://example.com/app#access_token=abc123abc123abc123"})
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("path", "https://user:pass@example.com/artifact"),
+        (
+            "reportPath",
+            "https://example.com/report?token=abc123abc123abc123",
+        ),
+        (
+            "evidenceDir",
+            "https://example.com/evidence#access_token=abc123abc123abc123",
+        ),
+    ],
+)
+def test_artifact_path_exemptions_do_not_allow_secret_bearing_urls(
+    field: str,
+    value: str,
+) -> None:
+    assert validate_no_secret_values({field: value})
+
+
 def test_target_locator_allows_safe_staging_and_local_urls() -> None:
     assert validate_no_secret_values({"target": "https://app.example.test"}) == []
     assert validate_no_secret_values({"target": "https://app.example.test/profile/jordan-rivera/overview"}) == []

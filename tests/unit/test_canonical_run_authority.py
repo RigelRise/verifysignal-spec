@@ -35,6 +35,255 @@ def test_run_authority_rejects_integer_boolean_impersonation(tmp_path: Path) -> 
         load_use_case(tmp_path, record.alias)
 
 
+def test_run_authority_rejects_secret_looking_attempt_values(tmp_path: Path) -> None:
+    record = _saved_record(tmp_path)
+    attempt = _attempt().to_dict()
+    attempt["errorCode"] = "Bearer abc123abc123abc123abc123"
+    save_document(
+        layout.run_authority_path(tmp_path, record.alias),
+        _authority_document(record.alias, attempt, None),
+    )
+
+    with pytest.raises(ValueError, match="secret"):
+        load_use_case(tmp_path, record.alias)
+
+
+def test_record_run_rejects_nested_secret_before_writing_run_history(
+    tmp_path: Path,
+) -> None:
+    record = _saved_record(tmp_path)
+    entry = _entry(record.alias)
+    entry.runtimeOutputs = [
+        {
+            "name": "diagnostic",
+            "metadata": {
+                "apiToken": "sk_live_not_for_logs_123456789",
+            },
+        }
+    ]
+    history_path = layout.run_history_path(
+        tmp_path,
+        record.alias,
+        entry.runId,
+    )
+    rejection: ValueError | None = None
+
+    try:
+        record_run(tmp_path, entry)
+    except ValueError as exc:
+        rejection = exc
+
+    assert rejection is not None
+    assert "secret" in str(rejection).lower()
+    assert not history_path.exists()
+
+
+def test_equal_time_matching_run_history_cannot_diverge_from_canonical_risk(
+    tmp_path: Path,
+) -> None:
+    record = _saved_record(tmp_path)
+    entry = _entry(record.alias)
+    entry.postCommitInterpretation = {
+        "postCommit": False,
+        "sideEffectMayExist": False,
+    }
+    save_last_core_attempt(tmp_path, record.alias, _attempt())
+    record_run(tmp_path, entry)
+    clear_last_core_attempt(
+        tmp_path,
+        record.alias,
+        expected_attempted_at=ATTEMPTED_AT,
+    )
+    history_path = layout.run_history_path(tmp_path, record.alias, entry.runId)
+    history = load_document(history_path)
+    history["postCommitInterpretation"] = {
+        "postCommit": True,
+        "sideEffectMayExist": True,
+    }
+    save_document(history_path, history)
+
+    with pytest.raises(ValueError, match="(?i)(conflict|diverge|authority)"):
+        load_use_case(tmp_path, record.alias)
+
+
+def test_run_authority_rejects_completion_before_start(tmp_path: Path) -> None:
+    record = _saved_record(tmp_path)
+    last_run = {
+        "runId": "time-reversed-run",
+        "status": "passed",
+        "startedAt": COMPLETED_AT,
+        "completedAt": ATTEMPTED_AT,
+    }
+    save_document(
+        layout.run_authority_path(tmp_path, record.alias),
+        _authority_document(record.alias, None, last_run),
+    )
+
+    with pytest.raises(ValueError, match="(?i)(timestamp|completion|started)"):
+        load_use_case(tmp_path, record.alias)
+
+
+@pytest.mark.parametrize(
+    "timestamp_fields",
+    [
+        {},
+        {"startedAt": "not-a-timestamp"},
+    ],
+    ids=["missing", "unparseable"],
+)
+def test_alias_run_history_requires_comparable_timestamp(
+    tmp_path: Path,
+    timestamp_fields: dict[str, str],
+) -> None:
+    record = _saved_record(tmp_path)
+    save_last_core_attempt(tmp_path, record.alias, _attempt())
+    history_path = layout.run_history_path(
+        tmp_path,
+        record.alias,
+        "unorderable-run",
+    )
+    save_document(
+        history_path,
+        {
+            "runId": "unorderable-run",
+            "useCaseAlias": record.alias,
+            "status": "passed",
+            **timestamp_fields,
+        },
+    )
+
+    with pytest.raises(ValueError, match="(?i)(timestamp|order|history)"):
+        load_use_case(tmp_path, record.alias)
+
+
+def test_malformed_raw_base_attempt_is_not_silently_tombstoned(
+    tmp_path: Path,
+) -> None:
+    record = _saved_record(tmp_path)
+    save_last_core_attempt(tmp_path, record.alias, _attempt())
+    record_run(tmp_path, _entry(record.alias))
+    clear_last_core_attempt(
+        tmp_path,
+        record.alias,
+        expected_attempted_at=ATTEMPTED_AT,
+    )
+    use_case_path = layout.use_case_path(tmp_path, record.alias)
+    base = load_document(use_case_path)
+    base["lastCoreAttempt"] = ["malformed-attempt"]
+    save_document(use_case_path, base)
+
+    with pytest.raises(ValueError, match="(?i)(attempt|projection|authority)"):
+        load_use_case(tmp_path, record.alias)
+
+
+def test_first_sidecar_recovers_timestamp_less_legacy_run_from_history(
+    tmp_path: Path,
+) -> None:
+    record = _saved_record(tmp_path)
+    record.lastRun = {
+        "runId": "legacy-real-run",
+        "status": "passed",
+        "profile": "normal",
+    }
+    save_use_case(tmp_path, record)
+    history_entry = RunHistoryEntry(
+        runId="legacy-real-run",
+        useCaseAlias=record.alias,
+        profile="normal",
+        status="passed",
+        startedAt=ATTEMPTED_AT,
+        completedAt=COMPLETED_AT,
+    )
+    save_document(
+        layout.run_history_path(tmp_path, record.alias, history_entry.runId),
+        history_entry.to_dict(),
+    )
+    attempt = _attempt()
+    attempt.attemptedAt = "2026-08-05T00:00:00.000000003Z"
+
+    save_last_core_attempt(tmp_path, record.alias, attempt)
+
+    recovered = load_use_case(tmp_path, record.alias)
+    assert recovered.lastRun is not None
+    assert recovered.lastRun["runId"] == history_entry.runId
+    assert recovered.lastRun["startedAt"] == ATTEMPTED_AT
+    assert recovered.lastRun["completedAt"] == COMPLETED_AT
+
+
+def test_later_marker_cannot_mask_intervening_run_history(
+    tmp_path: Path,
+) -> None:
+    record = _saved_record(tmp_path)
+    save_last_core_attempt(tmp_path, record.alias, _attempt())
+    record_run(tmp_path, _entry(record.alias))
+    later_attempt = _attempt()
+    later_attempt.attemptedAt = "2026-08-05T00:00:00.000000005Z"
+    save_last_core_attempt(
+        tmp_path,
+        record.alias,
+        later_attempt,
+        expected_attempted_at=ATTEMPTED_AT,
+    )
+    intervening = RunHistoryEntry(
+        runId="intervening-real-run",
+        useCaseAlias=record.alias,
+        profile="normal",
+        status="passed",
+        startedAt="2026-08-05T00:00:00.000000003Z",
+        completedAt="2026-08-05T00:00:00.000000004Z",
+    )
+    save_document(
+        layout.run_history_path(tmp_path, record.alias, intervening.runId),
+        intervening.to_dict(),
+    )
+
+    with pytest.raises(ValueError, match="(?i)(newer|conflict|downgrade|history)"):
+        load_use_case(tmp_path, record.alias)
+
+
+def test_base_attempt_equal_to_canonical_completion_is_not_tombstoned(
+    tmp_path: Path,
+) -> None:
+    record = _saved_record(tmp_path)
+    save_last_core_attempt(tmp_path, record.alias, _attempt())
+    record_run(tmp_path, _entry(record.alias))
+    clear_last_core_attempt(
+        tmp_path,
+        record.alias,
+        expected_attempted_at=ATTEMPTED_AT,
+    )
+    use_case_path = layout.use_case_path(tmp_path, record.alias)
+    base = load_document(use_case_path)
+    equal_attempt = _attempt()
+    equal_attempt.attemptedAt = COMPLETED_AT
+    base["lastCoreAttempt"] = equal_attempt.to_dict()
+    save_document(use_case_path, base)
+
+    with pytest.raises(ValueError, match="(?i)(attempt|tombstone|conflict)"):
+        load_use_case(tmp_path, record.alias)
+
+
+def test_base_run_equal_to_canonical_marker_requires_run_history_provenance(
+    tmp_path: Path,
+) -> None:
+    record = _saved_record(tmp_path)
+    marker = _attempt()
+    marker.attemptedAt = COMPLETED_AT
+    save_last_core_attempt(tmp_path, record.alias, marker)
+    use_case_path = layout.use_case_path(tmp_path, record.alias)
+    base = load_document(use_case_path)
+    base["lastRun"] = {
+        "runId": "unproven-equal-run",
+        "status": "passed",
+        "startedAt": ATTEMPTED_AT,
+        "completedAt": COMPLETED_AT,
+    }
+    save_document(use_case_path, base)
+
+    with pytest.raises(ValueError, match="(?i)(run|provenance|conflict|authority)"):
+        load_use_case(tmp_path, record.alias)
+
+
 def test_newer_base_projection_than_canonical_authority_fails_closed(
     tmp_path: Path,
 ) -> None:

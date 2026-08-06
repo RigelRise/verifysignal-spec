@@ -208,6 +208,89 @@ def test_validate_stage_authority_rejects_pending_predecessor(
         load_active_workflow_run(tmp_path, ALIAS)
 
 
+def test_repair_stage_requires_a_real_failed_run_predecessor(
+    tmp_path: Path,
+) -> None:
+    run = _create_runnable_workflow_authority(tmp_path)
+    document = _run_document(tmp_path, run.runId)
+    document["currentStage"] = "repair"
+    run_state = next(
+        state for state in document["stageStates"] if state["stage"] == "run"
+    )
+    run_state["status"] = "blocked"
+    run_state.pop("completedAt", None)
+    save_document(layout.workflow_run_path(tmp_path, run.runId), document)
+
+    with pytest.raises(ValueError, match="(?i)(repair|run|predecessor|coherent)"):
+        load_active_workflow_run(tmp_path, ALIAS)
+
+
+def test_normal_workflow_authority_requires_later_stages_to_remain_pending(
+    tmp_path: Path,
+) -> None:
+    run = _create_runnable_workflow_authority(tmp_path)
+    document = _run_document(tmp_path, run.runId)
+    repair_state = next(
+        state for state in document["stageStates"] if state["stage"] == "repair"
+    )
+    repair_state["status"] = "completed"
+    repair_state["startedAt"] = document["updatedAt"]
+    repair_state["completedAt"] = document["updatedAt"]
+    save_document(layout.workflow_run_path(tmp_path, run.runId), document)
+
+    with pytest.raises(ValueError, match="(?i)(later|repair|pending|coherent)"):
+        load_active_workflow_run(tmp_path, ALIAS)
+
+
+def test_post_repair_validate_requires_validate_and_run_to_be_reset(
+    tmp_path: Path,
+) -> None:
+    run = _create_runnable_workflow_authority(tmp_path)
+    document = _run_document(tmp_path, run.runId)
+    document["currentStage"] = "validate"
+    validate_state = next(
+        state for state in document["stageStates"] if state["stage"] == "validate"
+    )
+    run_state = next(
+        state for state in document["stageStates"] if state["stage"] == "run"
+    )
+    repair_state = next(
+        state for state in document["stageStates"] if state["stage"] == "repair"
+    )
+    validate_state["status"] = "pending"
+    validate_state.pop("startedAt", None)
+    validate_state.pop("completedAt", None)
+    run_state["status"] = "failed"
+    run_state["startedAt"] = document["updatedAt"]
+    run_state["completedAt"] = document["updatedAt"]
+    repair_state["status"] = "completed"
+    repair_state["startedAt"] = document["updatedAt"]
+    repair_state["completedAt"] = document["updatedAt"]
+    save_document(layout.workflow_run_path(tmp_path, run.runId), document)
+
+    with pytest.raises(ValueError, match="(?i)(repair|reset|pending|coherent)"):
+        load_active_workflow_run(tmp_path, ALIAS)
+
+
+def test_paused_run_stage_cannot_claim_the_run_stage_completed(
+    tmp_path: Path,
+) -> None:
+    run = _create_runnable_workflow_authority(tmp_path)
+    document = _run_document(tmp_path, run.runId)
+    run_state = next(
+        state for state in document["stageStates"] if state["stage"] == "run"
+    )
+    run_state["status"] = "completed"
+    run_state["startedAt"] = document["updatedAt"]
+    run_state["completedAt"] = document["updatedAt"]
+    assert document["status"] == "paused"
+    assert document["currentStage"] == "run"
+    save_document(layout.workflow_run_path(tmp_path, run.runId), document)
+
+    with pytest.raises(ValueError, match="(?i)(paused|run|completed|coherent)"):
+        load_active_workflow_run(tmp_path, ALIAS)
+
+
 def test_corrupt_different_alias_candidate_does_not_block_valid_authority(
     tmp_path: Path,
 ) -> None:
