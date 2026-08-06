@@ -20,6 +20,7 @@ from verifysignal_spec.workspace.repository import (
 )
 from verifysignal_spec.workspace.validation import validate_workspace
 from verifysignal_spec.workflows.run_preflight import build_run_preflight
+from verifysignal_spec.workflows.write_safety import evaluate_rerun_decision
 
 
 ATTEMPTED_AT = "2026-08-05T00:00:00.000000001Z"
@@ -234,6 +235,66 @@ def test_load_rejects_legacy_non_boolean_risk_authority(
     save_document(path, document)
 
     with pytest.raises(ValueError, match="(?i)(risk|side.effect|boolean|invalid)"):
+        load_use_case(tmp_path, record.alias)
+
+
+def test_contradictory_committed_risk_is_rejected_and_never_classified_safe(
+    tmp_path: Path,
+) -> None:
+    record = _saved_record(tmp_path)
+    contradictory = {
+        "postCommit": False,
+        "sideEffectMayExist": False,
+        "sideEffectStatus": "committed-confirmed",
+        "rerunRisk": "blocked",
+    }
+    entry = _entry(record.alias)
+    entry.postCommitInterpretation = contradictory
+    history_path = layout.run_history_path(
+        tmp_path,
+        record.alias,
+        entry.runId,
+    )
+
+    with pytest.raises(ValueError, match="(?i)(contradict|risk|commit)"):
+        record_run(tmp_path, entry)
+
+    assert not history_path.exists()
+    record.lastRun = {
+        "runId": "malformed-in-memory-run",
+        "status": "passed",
+        "postCommitInterpretation": contradictory,
+    }
+    record.rerunPolicy = {
+        "afterNoCommit": "allowed",
+        "afterCommit": "blocked",
+        "afterUnknown": "requires-confirmation",
+    }
+    decision = evaluate_rerun_decision(record)
+    assert decision["decision"] == "blocked"
+    assert decision["outcomeClass"] == "commit"
+    assert decision["policyBranch"] == "afterCommit"
+
+
+def test_load_rejects_legacy_contradictory_committed_risk(
+    tmp_path: Path,
+) -> None:
+    record = _saved_record(tmp_path)
+    path = layout.use_case_path(tmp_path, record.alias)
+    document = load_document(path)
+    document["lastRun"] = {
+        "runId": "legacy-run",
+        "status": "passed",
+        "postCommitInterpretation": {
+            "postCommit": False,
+            "sideEffectMayExist": False,
+            "sideEffectStatus": "committed-confirmed",
+            "rerunRisk": "blocked",
+        },
+    }
+    save_document(path, document)
+
+    with pytest.raises(ValueError, match="(?i)(contradict|risk|commit)"):
         load_use_case(tmp_path, record.alias)
 
 

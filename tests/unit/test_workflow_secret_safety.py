@@ -181,6 +181,34 @@ def test_artifact_path_exemptions_do_not_allow_secret_bearing_urls(
     assert validate_no_secret_values({field: value})
 
 
+@pytest.mark.parametrize(
+    "locator",
+    [
+        "//user:pass@example.com/app",
+        "/callback?token=abc123abc123abc123",
+        "user:pass@example.com",
+    ],
+)
+def test_secret_scanner_rejects_credential_bearing_uri_references(
+    locator: str,
+) -> None:
+    assert validate_no_secret_values({"reportPath": locator})
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/callback?view=summary",
+        r"C:\Users\example\report.json",
+        "mailto:qa@example.com",
+    ],
+)
+def test_secret_scanner_preserves_non_secret_relative_and_platform_paths(
+    path: str,
+) -> None:
+    assert validate_no_secret_values({"reportPath": path}) == []
+
+
 def test_target_locator_allows_safe_staging_and_local_urls() -> None:
     assert validate_no_secret_values({"target": "https://app.example.test"}) == []
     assert validate_no_secret_values({"target": "https://app.example.test/profile/jordan-rivera/overview"}) == []

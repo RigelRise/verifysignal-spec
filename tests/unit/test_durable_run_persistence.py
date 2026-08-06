@@ -20,6 +20,7 @@ from verifysignal_spec.workspace.repository import (
 from verifysignal_spec.workspace.textio import (
     atomic_write_text_lf,
     durable_atomic_write_text_lf,
+    durable_create_text_lf,
 )
 
 
@@ -140,6 +141,19 @@ def test_attempt_and_real_run_authority_use_durable_document_writes(
     history_path = layout.run_history_path(tmp_path, record.alias, entry.runId)
     assert durable_paths.count(use_case_path) == 3
     assert history_path in durable_paths
+
+
+def test_durable_create_is_native_no_replace_and_leaves_no_temporary_file(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "missing" / "history" / "run-a.yaml"
+    durable_create_text_lf(target, "first\n")
+
+    with pytest.raises(FileExistsError):
+        durable_create_text_lf(target, "second\n")
+
+    assert target.read_bytes() == b"first\n"
+    assert list(target.parent.glob(f".{target.name}.*")) == []
 
 
 def test_durable_atomic_write_replaces_existing_file(tmp_path: Path) -> None:
