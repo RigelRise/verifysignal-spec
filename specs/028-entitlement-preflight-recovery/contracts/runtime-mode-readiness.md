@@ -56,16 +56,19 @@ Allowed values:
   contract only.
 - `trustMaterialStatus` reports availability and local validation of receipt/key
   inputs only. It does not claim the selected Core accepted or armed them.
-- `protectedOperationStatus` reports the normalized result of the actual
-  protected authoring check for this use case.
+- `protectedOperationStatus` reports the normalized result only when the
+  entitlement-protected authoring check was invoked with
+  `--runtime-readiness`. An authoring check without that flag remains
+  `not-checked` for this component even though its authoring result is returned.
 - `readinessScope` states the strongest proof represented by the object.
 
 ### Invariants
 
 1. `readinessScope: protected-operation` requires
-   `commandCompatibilityStatus: passed` and an attempted protected operation.
-2. `protectedOperationStatus: passed` requires the exact expected public success
-   schema and `status: passed`.
+   `commandCompatibilityStatus: passed` and an `authoring-check` invocation with
+   `--runtime-readiness`.
+2. `protectedOperationStatus: passed` requires that flag, the exact expected
+   public success schema, and `status: passed`.
 3. Any attempted component that blocks makes the aggregate readiness `blocked`.
 4. Aggregate `ready` requires protected scope, command compatibility and
    protected operation `passed`, and trust material `ready`.
@@ -92,12 +95,13 @@ validation to upgrade the snapshot.
 
 ## Protected validation projections
 
-| Normalized authoring-check outcome | Component result | Aggregate result | Next action |
-|---|---|---|---|
-| Expected schema, `passed` | protected `passed` | `passed` when all earlier layers passed | `verifysignal run <alias> --json` |
-| Expected schema, non-passing authoring result | protected `blocked` | `blocked` | Repair authored artifacts, then validate |
-| `verifysignal.error/v1` | protected `blocked` | `blocked` | Follow normalized Core blocker recovery |
-| Unknown/malformed schema | protected `blocked` | `blocked` | Upgrade compatible Core/Spec contract |
+| Invocation | Normalized authoring-check outcome | Component result | Aggregate result | Next action |
+|---|---|---|---|---|
+| Without `--runtime-readiness` | Any authoring result | protected `not-checked` | `blocked` for run readiness | `verifysignal validate <alias> --runtime-readiness --json` |
+| With `--runtime-readiness` | Expected schema, `passed` | protected `passed` | `passed` when all earlier layers passed | `verifysignal run <alias> --json` |
+| With `--runtime-readiness` | Expected schema, non-passing authoring result | protected `blocked` | `blocked` | Repair authored artifacts, then validate |
+| With `--runtime-readiness` | `verifysignal.error/v1` | protected `blocked` | `blocked` | Follow normalized Core blocker recovery |
+| With `--runtime-readiness` | Unknown/malformed schema | protected `blocked` | `blocked` | Upgrade compatible Core/Spec contract |
 
 No row may be presented as browser evidence or create a RunHistory entry.
 

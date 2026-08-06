@@ -123,8 +123,11 @@ than introducing a second persistence system.
 - Extend `ReadinessSnapshot` v1 and runtime-readiness projections with the four
   additive fields in [runtime-mode-readiness.md](contracts/runtime-mode-readiness.md).
   Legacy missing fields decode conservatively as protected `not-checked`.
-- Validation writes `protectedOperationStatus: passed` only after a schema-valid
-  protected authoring check passes; any normalized blocker writes `blocked`.
+- Validation writes `protectedOperationStatus: passed` only when the
+  entitlement-protected `authoring-check` is invoked with `--runtime-readiness`
+  and returns a schema-valid pass; any normalized runtime-readiness blocker
+  writes `blocked`. Authoring-check without that flag keeps the protected proof
+  `not-checked` and cannot advance WorkflowRun from `validate` to `run`.
 
 ### 2. Schema-aware Core outcome boundary
 
@@ -134,6 +137,10 @@ than introducing a second persistence system.
 - Accept the exact operation success schema or `verifysignal.error/v1`. Read
   top-level `error.code` first and legacy `data.findings[].code` second. Anything
   else becomes `core.contract-invalid`.
+- For run success, read current Core identity from `data.summary.runId` and
+  retain `data.runId` only as legacy compatibility. Require every present
+  identity to be path-safe and require both locations to agree when both exist;
+  reject a missing, invalid, or conflicting identity.
 - Preserve explicit Core execution classification. Missing metadata stays
   unknown; an error envelope is never eligible for browser-run persistence.
 - Route validate and run through the normalizer before readiness, history,
@@ -156,7 +163,7 @@ than introducing a second persistence system.
   Track whether the invocation created its exact prepared-request file and remove
   only that file after a Core error. Never change prior run/evidence/repair state
   for an error envelope.
-- Persist a redacted `lastCoreAttempt` for Core errors. Explicit
+- Persist a redacted `lastCoreAttempt` for Core errors returned by `run`. Explicit
   `started: false`/`sideEffectMayExist: false` records `not-started`; missing or
   unsafe execution metadata records `unknown`. The marker is not RunHistory but
   participates in the next rerun/confirmation decision and is cleared by a later
@@ -172,9 +179,26 @@ than introducing a second persistence system.
 - Use the transition boundary from authored-stage persistence, protected
   validation, and real run handling. Follow the transition table in
   [workflow-run.md](contracts/workflow-run.md).
+- Guard protected commands before runtime resolution. Active workflows use
+  WorkflowRun; validation is allowed from `validate`, `run`, or `repair`, and
+  run only from `run`. A legacy staged use case with no WorkflowRun may derive
+  only this pre-migration decision from the validated durable evidence accepted
+  by lazy migration; the next workflow persistence creates WorkflowRun. Return
+  `workflow.stage-out-of-order` for a valid position at the wrong stage and
+  `workflow.authority-invalid` for an on-disk referenced authority that cannot
+  be decoded or validated, without trusting mutable projections; ambiguous
+  newest matching authorities receive the same fail-closed blocker.
+- Allow protected revalidation from later stages to reset future state before
+  recording the new result. A successfully applied repair completes `repair`,
+  resets `validate` and `run` to pending, and returns to `validate`
+  without claiming either follow-up passed.
 - Lazy migration is triggered only during a mutating workflow persistence call,
-  is idempotent, infers completed stages from durable documents, and copies any
-  existing target confirmation into the new run.
+  is idempotent, selects the furthest authored stage from valid canonical
+  documents, exact-schema plan/task projections with the same use-case alias,
+  compatible durable workflow references, and executable references that
+  resolve to actual project files, then backfills earlier authored stages.
+  It copies any existing target confirmation into the new WorkflowRun without
+  synthesizing a browser run, RunHistory, Core result, or evidence.
 - Multi-file projection is coordinated but not transactionally atomic. Every
   mutating transition compares projections with WorkflowRun and heals an
   interrupted update; read-only surfaces render from WorkflowRun without writes.
@@ -190,12 +214,20 @@ than introducing a second persistence system.
 - Preserve legacy findings mapping only when no top-level public error code is
   available. Top-level public data always wins.
 - Preserve all previous real run history, evidence references, repair sessions,
-  supersede reviews, and target confirmation through migrations and blocked
-  outcomes. Core errors may update only `lastCoreAttempt` and its derived active
-  confirmation gate.
+  readiness snapshots, supersede reviews, and target confirmation through
+  migrations and blocked outcomes. Among execution-history and risk projections,
+  Core errors returned by `run` update `lastCoreAttempt` and its derived active
+  confirmation gate; managed workflows additionally persist the
+  normalized `run`-stage blocker and derived workflow projections.
+  Authoring-check errors update validation, readiness, and workflow blockers
+  without creating a rerun-attempt marker.
 - No data-wide migration command is required. WorkflowRun migration happens
-  lazily at the next workflow write, and readiness fields upgrade at the next
-  validation write.
+  lazily at the next workflow write. It infers the furthest durable legacy
+  authored stage and backfills earlier stages, but never rebuilds an on-disk
+  referenced authority that cannot be decoded or validated, or invents browser
+  execution/evidence.
+  Readiness fields upgrade at the next validation write, and only a protected
+  validation attempt may upgrade protected readiness.
 
 ## TDD and Delivery Sequence
 
@@ -206,8 +238,8 @@ than introducing a second persistence system.
    green; run adjacent regression tests before refactoring.
 4. Run the full Spec suite, then pinned Docker verification and browser
    product-truth against the companion Core worktree.
-5. Reproduce the localized-home case in an isolated workspace, including a
-   forced entitlement-error control that must leave zero run artifacts.
+5. Reproduce the localized-home positive browser path in an isolated workspace,
+   then run the deterministic fake-Core current/legacy error controls separately.
 6. Rebase and rerun before opening the PR. Windows remains a required CI gate.
 
 The expected Spec release class is **patch**, declared by PR title

@@ -29,7 +29,7 @@ by identifier and gains optional fields on read, required fields on new writes.
 |---|---|---|---|
 | `commandCompatibilityStatus` | `not-checked \| passed \| blocked` | `not-checked` | Passed only after public version/operation compatibility passes |
 | `trustMaterialStatus` | `not-checked \| ready \| blocked` | `not-checked` | Describes receipt/key inputs, not Core trust arming |
-| `protectedOperationStatus` | `not-checked \| passed \| blocked` | `not-checked` | Passed only after a schema-valid protected authoring check passes |
+| `protectedOperationStatus` | `not-checked \| passed \| blocked` | `not-checked` | Passed only after `authoring-check --runtime-readiness` returns a schema-valid pass |
 | `readinessScope` | `command-and-trust-inputs \| protected-operation` | `command-and-trust-inputs` | Protected scope requires a checked protected operation |
 
 The existing aggregate `status` remains readable. On new writes:
@@ -39,6 +39,13 @@ The existing aggregate `status` remains readable. On new writes:
 - `blocked` is used when any attempted required component is blocked;
 - `not-checked`, `stale`, and `needs-validate` retain existing invalidation
   semantics and cannot satisfy run preflight.
+
+Validation still invokes the entitlement-protected `authoring-check` when
+`--runtime-readiness` is absent, but that authoring-only result MUST keep
+`protectedOperationStatus: not-checked` and
+`readinessScope: command-and-trust-inputs`. It can report its authoring result,
+but it cannot make the aggregate snapshot eligible for run preflight or advance
+an authoritative WorkflowRun from `validate` to `run`.
 
 ## NormalizedCoreOutcome
 
@@ -63,7 +70,10 @@ copy of the raw response and is not a new Core wire schema.
 
 - Expected success schema is selected by invoked operation.
 - Schema version must match the advertised operation version and `data` must be
-  a mapping. A run additionally requires a non-empty path-safe `data.runId`.
+  a mapping. A run additionally requires one unambiguous, non-empty path-safe
+  identity. Current Core publishes it at `data.summary.runId`; legacy
+  `data.runId` remains accepted. If both are present they must be equal, and an
+  invalid value in either location fails the response closed.
 - `verifysignal.error/v1` is accepted as an error for a protected operation.
 - A malformed response, operation/schema mismatch, or unexpected schema yields
   `kind: contract-invalid`, `blockerCode: core.contract-invalid`.
@@ -89,13 +99,15 @@ filesystem writes, environment reads, runtime resolution, or Core invocation.
 
 ## LastCoreAttempt
 
-An additive optional field on `UseCaseRecord` that records the latest protected
-Core error without asserting that a browser run exists.
+An additive optional field on `UseCaseRecord` that records the latest Core error
+returned by `run` without asserting that a browser run exists. Protected
+authoring-check errors belong to validation/readiness state and do not create this
+rerun-attempt marker.
 
 | Field | Type | Rules |
 |---|---|---|
 | `attemptedAt` | UTC timestamp | Local time Spec invoked the protected Core operation, retained at nanosecond precision |
-| `operation` | string | Public operation name, primarily `run` or `authoring-check` |
+| `operation` | string | Public operation name; current writers emit `run` |
 | `schema` | string or null | Public response schema only |
 | `status` | string | Normalized Core status |
 | `errorCode` | string or null | Public code; no raw message required |
@@ -193,16 +205,55 @@ transition compares its stage/run identity to both projections and rewrites
 either stale or missing projection. Read-only surfaces render from WorkflowRun
 without writing. No contract may claim crash-atomic multi-file persistence.
 
+### Protected transition eligibility
+
+- Authoring-check without `--runtime-readiness` leaves the authoritative
+  `validate` state pending; only runtime-readiness validation can complete or
+  block that stage.
+- Runtime-readiness validation can run from `validate`, `run`, or `repair`. Revalidation
+  from a later stage resets later-stage state before recording the new validate
+  result; a pass returns the workflow to `run`, while a blocker keeps it at
+  `validate`.
+- A successfully applied repair completes `repair`, resets `validate` and `run`
+  to pending, and moves the workflow to `validate`. The repair does not itself
+  claim revalidation or rerun success.
+- A protected command outside its allowed source stage fails before runtime
+  resolution with `workflow.stage-out-of-order`.
+- An on-disk referenced WorkflowRun that cannot be decoded or validated, or an
+  ambiguous newest authority, fails closed with
+  `workflow.authority-invalid`; mutable use-case or rendered-state projections
+  are not used as fallback authority.
+
 ### Lazy legacy migration
 
-- Trigger: next workflow persistence for a use case with no loadable active
-  WorkflowRun.
-- Identity: deterministic run ID from alias plus migration timestamp/nonce using
-  existing safe-ID utilities; persist once and then reuse reference.
-- Stage inference: mark a stage completed only when its canonical durable stage
-  document exists and parses; choose the first incomplete stage as current.
+- Trigger: next workflow persistence when the authority loader finds no active
+  WorkflowRun after first attempting to recover a unique newest matching run.
+  An on-disk referenced WorkflowRun that exists but cannot be decoded or
+  validated, or ambiguous newest matching authorities, fail closed instead of
+  migrating from projections.
+- Identity: deterministic run ID from alias plus a fingerprint nonce derived
+  from the durable migration evidence using existing safe-ID utilities; persist
+  once and then reuse the reference.
+- Evidence: inspect valid canonical authored-stage documents; `plan.yaml` and
+  `tasks.yaml` only when each is a project-owned regular file with the exact
+  `verifysignal-spec-workflow-artifact-plan/v1` or
+  `verifysignal-spec-workflow-tasks/v1` schema and matching `useCaseAlias`;
+  compatible durable workflow references; and project-relative executable references (`runRequest`,
+  `mainSkill`, `skills`, and `sourceOnlySkills`) that resolve to actual regular,
+  non-symlink files. Executable references are implement-stage evidence; a path
+  string without an on-disk artifact is not evidence.
+- Stage inference: select the furthest authored stage supported by that durable
+  evidence, then backfill every earlier authored stage as completed. Do not stop
+  at an earlier documentation gap when a valid later artifact proves that the
+  legacy workflow had already advanced.
+- Terminal authoring state: after `implement` evidence, choose `run` only when a
+  current protected-operation readiness snapshot is valid; otherwise choose
+  `validate`. With no authored evidence, choose `understand`.
 - Target confirmation: copy an existing valid confirmation into the run.
 - Idempotence: a second transition loads the newly referenced run and creates no
   second migration run.
-- Non-goal: do not synthesize discover evidence or task completion absent from
-  durable documents.
+- Non-goal: migration creates WorkflowRun as the only new authority/entity, then
+  derives the use-case reference and rendered state projections from it. It does
+  not synthesize a browser run or RunHistory entry, Core execution result,
+  discover evidence, gate/evidence artifacts, task execution statuses, or
+  repair result.

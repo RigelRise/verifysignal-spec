@@ -22,9 +22,19 @@ advertised success schema before use.
 
 An absent schema, wrong schema version, non-mapping `data`, malformed envelope,
 or success schema belonging to another operation normalizes to
-`core.contract-invalid`. A valid run success also requires a non-empty path-safe
-`data.runId`; traversal, absolute, nested, empty, and overlong IDs are ineligible.
-Status alone never proves the response kind.
+`core.contract-invalid`. A valid run success also requires one unambiguous,
+non-empty, path-safe public run identity. Status alone never proves the response
+kind.
+
+### Public run identity
+
+- Current Core publishes the run identity at `data.summary.runId`.
+- `data.runId` remains accepted as a legacy compatibility location.
+- If both locations are present, both values MUST be path-safe and equal.
+- If either present value is empty, absolute, nested, traversal-shaped, hidden,
+  overlong, or otherwise path-unsafe, the whole response is contract-invalid.
+- Missing identities and conflicting current/legacy identities normalize to
+  `core.contract-invalid`; Spec does not guess which identity to persist.
 
 ## Error-code precedence
 
@@ -102,9 +112,10 @@ did not start, Spec records a redacted `lastCoreAttempt` with
 `executionState: unknown`. For write/external-notification use cases, the next
 rerun preflight consumes `afterUnknown`.
 
-## Non-run attempt persistence
+## Run-error attempt persistence
 
-On any protected Core error, update `UseCaseRecord.lastCoreAttempt`:
+When an invoked `run` returns a public Core error or an invalid public response,
+update `UseCaseRecord.lastCoreAttempt`:
 
 ```yaml
 lastCoreAttempt:
@@ -140,9 +151,10 @@ because it occurred in the same wall-clock second.
 | Normalized kind | Eligible | Permitted persistence |
 |---|---:|---|
 | Valid `run` success schema/version with mapping data and path-safe run ID, any public run status | Yes | Real run history, coverage, evidence/report references, first-run and repair projections |
-| Public Core error | No | `lastCoreAttempt`, protected readiness blocker, and derived active confirmation only |
-| Contract invalid | No | `lastCoreAttempt` with safe contract code and unknown execution, plus blocker |
-| Valid non-run operation response | No | Operation-specific readiness/workflow state only |
+| Public Core error returned by `run` | No | `lastCoreAttempt`, managed WorkflowRun `run`-stage blocker/projections, and derived active confirmation; prior readiness is unchanged |
+| Contract-invalid envelope returned by `run` | No | `lastCoreAttempt` with unknown execution and `errorCode: null`, plus the managed run-stage blocker/projections |
+| Core invocation exception before a classifiable public outcome | No | `lastCoreAttempt` with unknown execution and `errorCode: core.contract-invalid`, plus the managed run-stage blocker/projections |
+| Valid or blocked non-run operation response | No | Operation-specific validation/readiness/workflow state only; no `lastCoreAttempt` |
 
 ## Secret-safety allowlist
 

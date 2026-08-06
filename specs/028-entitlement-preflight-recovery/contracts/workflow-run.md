@@ -54,15 +54,55 @@ never reconstructs WorkflowRun from a stale projection.
 | Plan persisted | `plan` | `plan: completed` | `tasks / paused` |
 | Tasks persisted | `tasks` | `tasks: completed` | `implement / paused` |
 | Implementation persisted | `implement` | `implement: completed` | `validate / paused` |
-| Protected validation passed | `validate` | `validate: completed` | `run / paused` |
-| Protected validation blocked/error | `validate` | `validate: blocked` with normalized blockers | `validate / paused` |
+| Authoring-check passed without `--runtime-readiness` | `validate` | `validate` remains pending | `validate / paused` |
+| Runtime-readiness validation or revalidation passed | `validate`, `run`, or `repair` | `validate: completed`; later-stage state is reset when revalidating | `run / paused` |
+| Runtime-readiness validation blocked/error | `validate`, `run`, or `repair` | `validate: blocked` with normalized blockers; later-stage state is reset when revalidating | `validate / paused` |
 | Valid real run passed | `run` | `run: completed` | `run / completed` with `completedAt` |
 | Valid real run failed | `run` | `run: failed` | `repair / paused` |
 | Core error/invalid schema during run | `run` | `run: blocked` with normalized blockers; never executed/failed | `run / paused` |
-| Repair persisted and revalidation required | `repair` | repair outcome recorded | `validate / paused` |
+| Successfully applied repair persisted | `repair` | `repair: completed`; `validate` and `run` reset to pending | `validate / paused` |
 
-Earlier completed stages remain completed on every later transition. A blocked
-stage can be retried; success clears only that stage's active blockers.
+Earlier completed authored stages remain completed on every later transition.
+Revalidation deliberately resets states after `validate`; a successfully applied
+repair deliberately resets `validate` and `run` so neither result can be
+claimed from pre-repair evidence. A blocked stage can be retried; success clears
+that stage's active blockers.
+
+## Protected command stage guard
+
+Protected validation is allowed only when the current stage is `validate`,
+`run`, or `repair`. Run is allowed only at `run`. The guard is evaluated before
+runtime resolution, environment loading, prepared-request creation, or Core
+invocation. An active workflow reads that stage from WorkflowRun authority. A
+legacy staged use case with no WorkflowRun may derive only this pre-migration
+decision from the validated canonical documents, supported plan/task
+projections, compatible legacy workflow reference, and safe executable
+references described below; its next workflow persistence creates WorkflowRun.
+An on-disk referenced but invalid authority never receives this exception.
+
+An otherwise valid managed workflow at the wrong stage returns one structured
+blocker:
+
+```json
+{
+  "code": "workflow.stage-out-of-order",
+  "severity": "blocker",
+  "category": "workflow",
+  "message": "Workflow current stage is tasks; cannot execute run.",
+  "currentStage": "tasks",
+  "requestedStage": "run",
+  "recoveryCommand": "/verifysignal-tasks <alias>"
+}
+```
+
+If authority resolution is invalid because an on-disk referenced WorkflowRun
+cannot be decoded or validated, or because the newest matching authorities are
+ambiguous, the command fails closed with `workflow.authority-invalid`,
+`currentStage: unknown`, the requested stage, and a safe workflow
+status/list recovery command. It MUST NOT trust the mutable use-case reference or
+rendered state as fallback stage authority, and it performs zero Core resolution
+or invocation. A standalone pre-workflow use case with no WorkflowRun and no
+durable workflow evidence remains outside this managed-stage guard.
 
 ## Projection invariants
 
@@ -82,21 +122,40 @@ stage and alias must match the WorkflowRun.
 
 ## Lazy migration
 
-Migration occurs only on the next workflow persistence when no loadable active
-WorkflowRun exists.
+Migration occurs only on the next workflow persistence when the authority loader
+finds no active WorkflowRun. The loader first recovers a unique newest matching
+WorkflowRun when possible, including after a stale reference to a removed run.
+An on-disk referenced WorkflowRun that exists but cannot be decoded or validated
+or ambiguous newest matching authorities are errors, not permission to rebuild
+authority from projections.
 
-1. Create exactly one run and immediately link it from the use case.
-2. Inspect canonical stage documents in workflow order.
-3. Mark a stage completed only when its durable canonical document exists and
-   parses. Stop at the first missing/invalid stage; do not infer later completion.
-4. Use the first incomplete stage as `currentStage`; if all authored stages and
-   a valid readiness snapshot exist, choose `run`, otherwise choose `validate`
-   conservatively.
-5. Preserve a valid existing target confirmation by copying it into the run.
-6. Preserve use-case, run history, readiness, supersede reviews, and active
-   confirmation artifacts.
-7. Do not synthesize discover evidence, task execution statuses, run history, or
-   repair results.
+1. Collect durable authored-stage evidence:
+   - readable canonical authored-stage documents and durable `plan.yaml` /
+     `tasks.yaml` projections only when they are regular project-owned files,
+     declare the exact `verifysignal-spec-workflow-artifact-plan/v1` /
+     `verifysignal-spec-workflow-tasks/v1` schema respectively, and carry the
+     same `useCaseAlias` being migrated;
+   - a compatible legacy workflow reference whose current stage proves prior
+     authored stages; and
+   - project-relative `runRequest`, `mainSkill`, `skills`, or
+     `sourceOnlySkills` references only when each cited artifact resolves safely to
+     an actual regular, non-symlink file. Any valid executable reference is
+     implement-stage evidence; a path string alone is not.
+2. Select the furthest authored stage supported by the collected evidence and
+   backfill that stage and every earlier authored stage as completed. This
+   intentionally preserves legacy workspaces whose later durable artifacts
+   survived even when an earlier canonical stage document did not.
+3. With implement-stage evidence, set `currentStage: run` only when the
+   existing readiness snapshot proves a passed protected operation; otherwise
+   set `currentStage: validate`. With no authored evidence, begin at
+   `understand`.
+4. Create exactly one WorkflowRun, copy a valid existing direct target
+   confirmation, write the WorkflowRun as authority, and derive/link both
+   projections.
+5. Preserve use-case data, real run history, readiness, supersede reviews, and
+   active confirmation artifacts. Migration does not create a browser run or
+   RunHistory record, Core execution result, discover/gate/evidence artifacts,
+   task execution statuses, or repair result.
 
 A second write follows the linked run and creates no additional migration run.
 
@@ -104,8 +163,10 @@ A second write follows the linked run and creates no additional migration run.
 
 - A blocked run preflight does not transition the `run` stage to started,
   completed, or failed.
-- A Core error can update `lastCoreAttempt` and an active confirmation derived
-  from unknown write risk, but does not create a WorkflowRun browser-run event.
+- A Core error can update `lastCoreAttempt`, an active confirmation derived from
+  unknown write risk, and the managed WorkflowRun `run`-stage blocker plus its
+  projections, but does not create a WorkflowRun browser-run event or rewrite
+  the prior readiness snapshot.
 - A valid failed `verifysignal.run/v1` is a real run and therefore advances to
   repair even when evidence is partial.
 - Target confirmation remains scoped to the same WorkflowRun and is never
@@ -113,7 +174,9 @@ A second write follows the linked run and creates no additional migration run.
 
 ## Secret safety
 
-All three documents pass existing secret validation before each individual
-write. Healing copies only validated structured fields from WorkflowRun; it does
-not copy raw Core responses, environment values, receipt/key material, report
-contents, or stderr.
+WorkflowRun and rendered state pass existing secret validation before each
+individual write. The use-case workflow reference is derived from allowlisted
+WorkflowRun fields and uses the existing use-case writer; it is not a raw-result
+copy or a claim that the whole use-case record is rescanned at this boundary.
+Healing does not copy raw Core responses, environment values, receipt/key
+material, report contents, or stderr.

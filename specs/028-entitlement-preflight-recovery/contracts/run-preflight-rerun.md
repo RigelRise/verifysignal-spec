@@ -132,7 +132,8 @@ before Core. Cleanup never deletes:
 | Valid `verifysignal.run/v1`, failed | Persist real run | Persist diagnostic public projections | Clear after successful persistence | Advance to repair |
 | `verifysignal.error/v1`, explicitly not started | Unchanged | Unchanged | Record `not-started` | Keep `run` current and blocked; do not mark executed/failed |
 | `verifysignal.error/v1`, execution unknown | Unchanged | Unchanged | Record `unknown` | Keep `run` current and blocked; do not mark executed/failed |
-| Invalid schema | Unchanged | Unchanged | Record contract-invalid/unknown | Keep `run` current and blocked |
+| Malformed envelope returned by `run` | Unchanged | Unchanged | Record `unknown` with `errorCode: null`; expose `core.contract-invalid` only as the blocker | Keep `run` current and blocked |
+| Core invocation exception | Unchanged | Unchanged | Record `unknown` with `errorCode: core.contract-invalid` | Keep `run` current and blocked |
 
 Prior run history, evidence, lastRun, repair sessions, and supersede reviews are
 never deleted or rewritten by a Core error.

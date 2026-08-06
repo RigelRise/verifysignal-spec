@@ -170,7 +170,14 @@ reference and rendered projection. The three-file update is coordinated and
 healable, not transactionally atomic: the next mutating transition repairs
 projection drift from WorkflowRun, while read-only surfaces render from that
 authority without writes. Lazily create a missing WorkflowRun only on the next
-workflow write by inferring durable stage documents and preserving target confirmation.
+workflow write. Select the furthest authored stage supported by readable
+canonical stage documents, a compatible durable workflow reference, or
+project-relative executable references that resolve to actual regular,
+non-symlink files; then backfill earlier authored stages and preserve direct
+target confirmation. An unreadable on-disk referenced authority or ambiguous
+newest authorities fail closed instead of migrating from mutable projections.
+Migration creates no browser run, RunHistory, Core result, evidence, task
+execution status, or repair result.
 
 **Rationale**: Stage persistence currently constructs all-pending rendered
 state without updating the active run. WorkflowRun already has the richer stage

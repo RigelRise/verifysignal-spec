@@ -83,7 +83,7 @@ the exact layered readiness and normalized outcome defined by the contracts.
 
 ### Red tests for User Story 2
 
-- [X] T019 [P] [US2] Add failing operation/schema, top-level-code precedence, legacy fallback, and execution-metadata unit cases in `tests/unit/test_core_outcome_normalization.py`
+- [X] T019 [P] [US2] Add failing operation/schema, top-level-code precedence, execution-metadata, current `data.summary.runId`, legacy `data.runId`, and conflicting-identity unit cases in `tests/unit/test_core_outcome_normalization.py`
 - [X] T020 [P] [US2] Add failing layered readiness and legacy snapshot decoding cases in `tests/integration/test_protected_readiness_scope.py`
 - [X] T021 [P] [US2] Add failing public schema, additive field, and `core.contract-invalid` assertions in `tests/contract/test_entitlement_preflight_recovery_contract.py`
 - [X] T022 [P] [US2] Add failing normalized-output and readiness secret-canary cases in `tests/integration/test_runtime_secret_safety.py`
@@ -91,7 +91,7 @@ the exact layered readiness and normalized outcome defined by the contracts.
 
 ### Implementation for User Story 2
 
-- [X] T024 [US2] Implement the redacted operation-aware normalized outcome model and exact schema table in `src/verifysignal_spec/core/outcomes.py`
+- [X] T024 [US2] Implement the redacted operation-aware normalized outcome model, exact schema table, and unambiguous current/legacy run-identity parsing in `src/verifysignal_spec/core/outcomes.py`
 - [X] T025 [US2] Route top-level error codes first, retain findings fallback, and centralize safe blocker mapping in `src/verifysignal_spec/core/contracts.py`
 - [X] T026 [US2] Add readiness component fields with conservative legacy defaults in `src/verifysignal_spec/workspace/models.py` and `src/verifysignal_spec/workflows/models.py`
 - [X] T027 [US2] Populate command, trust, protected, and scope states during runtime resolution in `src/verifysignal_spec/runtime/resolver.py`
@@ -132,7 +132,7 @@ legacy error envelopes create no synthetic run or collateral file deletion.
 - [X] T041 [US3] Delegate workflow run checks to the shared preflight decision in `src/verifysignal_spec/workflows/prerequisites.py`
 - [X] T042 [US3] Classify newer non-run attempts and select exactly one rerun-policy branch in `src/verifysignal_spec/workflows/write_safety.py`
 - [X] T043 [US3] Reconcile create/replace/delete active gates exclusively from the authoritative decision in `src/verifysignal_spec/workspace/repository.py`
-- [X] T044 [US3] Invoke preflight before runtime/environment/preparation and normalize Core output before persistence in `src/verifysignal_spec/commands/run.py`
+- [X] T044 [US3] Invoke preflight before runtime/environment/preparation, normalize Core output before persistence, and consume only an unambiguous current `data.summary.runId` or compatible legacy `data.runId` in `src/verifysignal_spec/commands/run.py`
 - [X] T045 [US3] Persist/clear `lastCoreAttempt`, permit RunHistory only for valid `verifysignal.run/v1`, and preserve all prior real state in `src/verifysignal_spec/commands/run.py`
 - [X] T046 [US3] Return exact prepared-request ownership and delete only a newly created project-owned file on Core error in `src/verifysignal_spec/commands/run_request_preparation.py` and `src/verifysignal_spec/commands/run.py`
 - [X] T047 [US3] Project the authoritative rerun/confirmation decision in `src/verifysignal_spec/workspace/repository.py` without trusting stale files; retain `src/verifysignal_spec/commands/list.py` as the unchanged consumer
@@ -157,19 +157,19 @@ without losing completed stages or target confirmation.
 
 ### Red tests for User Story 4
 
-- [ ] T050 [P] [US4] Add failing authored-stage, validate-pass/block, real-run-pass/fail, and Core-error transition cases in `tests/integration/test_workflow_run_state_authority.py`
-- [ ] T051 [P] [US4] Add failing lazy migration, idempotence, target-confirmation preservation, and interrupted-projection healing cases in `tests/unit/test_workflow_repository.py`
-- [ ] T052 [US4] Run the US4 focused tests, confirm the all-pending/divergent-state red failures, and commit them before production edits in `tests/integration/test_workflow_run_state_authority.py`
+- [X] T050 [P] [US4] Add failing authored-stage, authoring-check-without-runtime-readiness, runtime-readiness pass/block and later-stage revalidation, applied-repair reset, real-run pass/fail, Core-error, and stage-guard transition cases in `tests/integration/test_workflow_run_state_authority.py` and `tests/integration/test_workflow_terminal_transition_ordering.py`
+- [X] T051 [P] [US4] Add failing lazy migration, canonical/dangling/symlink evidence, non-synthesis, idempotence, target-confirmation preservation, interrupted-projection healing, and invalid/ambiguous authority cases in `tests/unit/test_workflow_repository.py` and `tests/integration/test_workflow_terminal_transition_ordering.py`
+- [X] T052 [US4] Run the US4 focused tests, confirm the all-pending/divergent-state red failures, and commit them before production edits in `tests/integration/test_workflow_run_state_authority.py`
 
 ### Implementation for User Story 4
 
-- [ ] T053 [US4] Implement authoritative stage transitions, lazy migration, and projection healing in `src/verifysignal_spec/workflows/transitions.py`
-- [ ] T054 [US4] Render state only from a loaded/updated WorkflowRun and expose projection comparison helpers in `src/verifysignal_spec/workflows/repository.py`
-- [ ] T055 [US4] Route specify/clarify/plan/tasks/implement persistence through the transition boundary in `src/verifysignal_spec/workflows/stage_persistence.py`
-- [ ] T056 [US4] Route protected validation pass/block through WorkflowRun transitions in `src/verifysignal_spec/commands/validate.py`
-- [ ] T057 [US4] Route only valid real run pass/fail through executed-run transitions and keep Core errors at a blocked, unexecuted `run` stage in `src/verifysignal_spec/commands/run.py`
-- [ ] T058 [US4] Run US4 tests to green and retain red/green SHAs using `tests/integration/test_workflow_run_state_authority.py`
-- [ ] T059 [US4] Run canonical persistence, stage contract, target confirmation, repair, and agent handoff regressions in `tests/integration/test_workflow_canonical_persistence.py`, `tests/contract/test_workflow_stage_persistence_contract.py`, and `tests/integration/test_workflow_target_confirmation.py`
+- [X] T053 [US4] Implement authoritative stage transitions, later-stage resets, stage guards, canonical safe-file lazy migration, and projection healing in `src/verifysignal_spec/workflows/transitions.py`
+- [X] T054 [US4] Render state only from a loaded/updated WorkflowRun and expose projection comparison helpers in `src/verifysignal_spec/workflows/repository.py`
+- [X] T055 [US4] Route specify/clarify/plan/tasks/implement persistence through the transition boundary in `src/verifysignal_spec/workflows/stage_persistence.py`
+- [X] T056 [US4] Keep authoring-check without `--runtime-readiness` at `validate`, route runtime-readiness validation pass/block and later-stage revalidation through reset-aware WorkflowRun transitions, and apply stage/authority guards before Core in `src/verifysignal_spec/commands/validate.py`
+- [X] T057 [US4] Apply run stage/authority guards before Core, route only valid real run pass/fail through executed-run transitions, and keep Core errors at a blocked, unexecuted `run` stage in `src/verifysignal_spec/commands/run.py`
+- [X] T058 [US4] Run US4 tests to green and retain red/green SHAs using `tests/integration/test_workflow_run_state_authority.py`
+- [X] T059 [US4] Run canonical persistence, stage contract, target confirmation, applied-repair reset, terminal ordering, and agent handoff regressions in `tests/integration/test_workflow_canonical_persistence.py`, `tests/contract/test_workflow_stage_persistence_contract.py`, `tests/integration/test_workflow_target_confirmation.py`, `tests/integration/test_workflow_run_state_authority.py`, and `tests/integration/test_workflow_terminal_transition_ordering.py`
 
 **Checkpoint**: WorkflowRun is authoritative and projection recovery is
 explicitly healable, not falsely described as crash-atomic.
@@ -181,16 +181,16 @@ explicitly healable, not falsely described as crash-atomic.
 **Purpose**: Prove the two-repository recovery without hidden sibling selection,
 secret leakage, or platform regression.
 
-- [ ] T060 Run the complete local Spec suite with `python -m pytest -q` from the repository root
-- [ ] T061 [P] Run secret-canary, representative list-performance, and runtime-readiness performance regressions in `tests/integration/test_runtime_secret_safety.py`, `tests/integration/test_list_performance.py`, and `tests/integration/test_managed_runtime_performance.py`
+- [ ] T060 Run the complete local Spec suite with `.venv/bin/python -m pytest -q` from the repository root
+- [X] T061 [P] Run secret-canary, representative list-performance, exact missing-runtime blocker, automatic-source scan exclusion, and sub-second runtime-readiness regressions in `tests/integration/test_runtime_secret_safety.py`, `tests/integration/test_list_performance.py`, and `tests/integration/test_managed_runtime_performance.py`
+- [X] T068 Re-run `/speckit-analyze` and resolve all Critical/High findings in `specs/028-entitlement-preflight-recovery/`
+- [ ] T069 Rebase on current `origin/main` before T062-T066, establish the final repository tuple, rerun focused and full suites, and repeat all composed evidence if any later rebase changes HEAD; record the final base and tuple SHAs without making the reusable `specs/028-entitlement-preflight-recovery/quickstart.md` stale
 - [ ] T062 Execute every acceptance row and capture non-sensitive evidence using `specs/028-entitlement-preflight-recovery/quickstart.md`
-- [ ] T063 Run the Spec Docker suite with explicit Core, Spec, and backend pins using `scripts/verify-docker.sh`
+- [ ] T063 Run the Spec Docker suite with explicit Core, Spec, and backend pins, isolated Core dependencies, and the pinned `linux/amd64` platform using `scripts/verify-docker.sh`
 - [ ] T064 Run the companion Core Docker and full local gates using `../verifysignal-entitlement-preflight-recovery/scripts/verify-docker.sh`
 - [ ] T065 Run pinned browser smoke and customer-journey composition using `../verifysignal-entitlement-preflight-recovery/package.json`
-- [ ] T066 Re-run the localized-home positive path and current/legacy forced-error controls in an isolated Rigel Rise workspace using `specs/028-entitlement-preflight-recovery/quickstart.md`
-- [ ] T067 Confirm Windows remains a required green CI job in `.github/workflows/ci.yml`
-- [ ] T068 Re-run `/speckit-analyze` and resolve all Critical/High findings in `specs/028-entitlement-preflight-recovery/`
-- [ ] T069 Rebase on current `origin/main`, rerun focused and full suites, and record the final base SHA in the pull-request evidence without making the reusable `specs/028-entitlement-preflight-recovery/quickstart.md` stale
+- [ ] T066 Re-run the localized-home positive browser path in an isolated Rigel Rise workspace and separately run deterministic fake-Core current/legacy error-envelope controls using `specs/028-entitlement-preflight-recovery/quickstart.md`
+- [ ] T067 Confirm the stable protected `spec` CI gate requires both the Ubuntu Spec suite and the Windows installer journey in `.github/workflows/ci.yml`
 - [ ] T070 Open the cross-linked `fix: preserve protected preflight without synthetic runs` PR with red/green SHAs, test counts, compatibility matrix, and journey evidence using `.github/pull_request_template.md`
 
 ---
