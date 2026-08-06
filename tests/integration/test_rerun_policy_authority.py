@@ -131,6 +131,15 @@ def _attempt(
             "afterUnknown",
         ),
         (
+            "contradictory-not-started-still-has-risk",
+            "none",
+            None,
+            _attempt("not-started", side_effect_may_exist=True),
+            "requires-confirmation",
+            "unknown-write",
+            "afterUnknown",
+        ),
+        (
             "historical-write-after-current-none",
             "none",
             _real_run(

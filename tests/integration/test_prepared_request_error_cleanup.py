@@ -126,6 +126,29 @@ def test_exception_before_outcome_classification_releases_and_removes_the_owned_
     assert rerun["policyBranch"] == "afterUnknown"
 
 
+def test_write_ahead_marker_failure_cleans_owned_request_before_core(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    alias = _prepare_cleanup_workspace(tmp_path, monkeypatch)
+    transient = _run_dir(tmp_path, alias) / f"{alias}-20260805T010203Z.run-request.json"
+
+    def fail_marker(*_args, **_kwargs):
+        raise RuntimeError("forced marker persistence failure")
+
+    def forbid_core(*_args, **_kwargs):
+        raise AssertionError("Core must not run without durable write-ahead intent")
+
+    monkeypatch.setattr(run_command, "save_last_core_attempt", fail_marker)
+    monkeypatch.setattr(run_command.CoreAdapter, "run", forbid_core)
+
+    with pytest.raises(RuntimeError, match="marker persistence failure"):
+        run_command.run(tmp_path, alias, interactive=False, core_cmd=str(FAKE_CORE))
+
+    assert transient.exists() is False
+    assert list(_run_dir(tmp_path, alias).glob("*.run-request.json")) == []
+
+
 def test_preexisting_exact_prepared_path_is_never_overwritten_or_deleted(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

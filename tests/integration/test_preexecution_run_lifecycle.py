@@ -208,6 +208,27 @@ def test_valid_core_run_keeps_conservative_attempt_until_last_run_is_durable(
     assert decision["policyBranch"] == "afterUnknown"
 
 
+def test_successful_last_run_outranks_write_ahead_marker_when_clear_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    alias = _prepare_error_workspace(tmp_path, monkeypatch, mode="ok")
+
+    def fail_clear(*_args, **_kwargs):
+        raise RuntimeError("simulated marker clear failure")
+
+    monkeypatch.setattr(run_command, "clear_last_core_attempt", fail_clear)
+
+    with pytest.raises(RuntimeError, match="marker clear failure"):
+        run_command.run(tmp_path, alias, interactive=False, core_cmd=str(FAKE_CORE))
+
+    persisted = workspace_repository.load_use_case(tmp_path, alias)
+    assert persisted.lastRun is not None
+    assert persisted.lastCoreAttempt is not None
+    decision = evaluate_rerun_decision(persisted)
+    assert decision.get("sourceRunId") == persisted.lastRun["runId"]
+
+
 def _prepare_error_workspace(
     project: Path,
     monkeypatch: pytest.MonkeyPatch,
