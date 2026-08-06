@@ -401,6 +401,68 @@ def run(
         normalized_outcome = normalize_core_outcome("run", result)
     except BaseException:
         cleanup_owned_prepared_run_request(project, prepared_ownership)
+        attempt = LastCoreAttempt(
+            attemptedAt=core_attempt_iso(),
+            operation="run",
+            schema=None,
+            status="error",
+            errorCode="core.contract-invalid",
+            executionState="unknown",
+            sideEffectMayExist=None,
+        )
+        save_last_core_attempt(project, alias, attempt)
+        updated_use_case = load_use_case(project, alias)
+        updated_readiness = load_readiness_snapshot(project, alias)
+        attempt_preflight = build_run_preflight(
+            {
+                "confirmationRequirements": calculate_run_confirmation_requirements(
+                    project,
+                    updated_use_case,
+                ),
+                "confirmedRisks": [],
+                "readinessInvalidationReasons": (
+                    snapshot_invalidation_reasons(
+                        project,
+                        updated_use_case,
+                        updated_readiness,
+                    )
+                    if updated_readiness is not None
+                    else []
+                ),
+            },
+            updated_use_case,
+            updated_readiness,
+            {},
+            load_supersede_reviews(project, alias),
+        )
+        reconcile_active_confirmation(
+            project,
+            alias,
+            attempt_preflight.get("confirmation"),
+        )
+        if managed_workflow:
+            transition_workflow(
+                project,
+                alias,
+                stage="run",
+                outcome="blocked",
+                blockers=[
+                    {
+                        "code": "core.contract-invalid",
+                        "severity": "blocker",
+                        "category": "core-runtime",
+                        "message": (
+                            "Core invocation did not produce a classifiable "
+                            "public outcome; execution state is unknown."
+                        ),
+                        "recoveryCommand": "verifysignal core update --json",
+                    }
+                ],
+                handoff_summary=(
+                    "Core invocation produced no classifiable public outcome; "
+                    "browser execution remains unconfirmed."
+                ),
+            )
         raise
     if not normalized_outcome.eligibleForRunPersistence:
         cleanup_owned_prepared_run_request(project, prepared_ownership)
