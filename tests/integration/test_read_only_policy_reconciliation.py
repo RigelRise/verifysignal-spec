@@ -103,6 +103,9 @@ def test_explicit_policy_change_allows_one_new_run_and_requires_clean_evidence_f
     record.sideEffects = current_policy
     record.lastRun = {
         "runId": "previous-violation",
+        "status": "failed",
+        "startedAt": "2026-08-04T00:00:00.000000001Z",
+        "completedAt": "2026-08-04T00:00:00.000000002Z",
         "sideEffectPolicy": previous_policy,
         "sideEffects": {
             "violations": [

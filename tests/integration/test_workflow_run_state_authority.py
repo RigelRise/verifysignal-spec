@@ -437,6 +437,9 @@ def _place_run_at_stage(
         stage.status = "completed" if index < current_index else "pending"
         stage.completedAt = completed_at if index < current_index else None
         stage.blockers = []
+    if current_stage == "repair":
+        run_stage = _stage(run, "run")
+        run_stage.status = "failed"
     run.currentStage = current_stage
     run.status = "paused"
     run.completedAt = None
@@ -461,13 +464,12 @@ def _seed_stale_later_stage_state(
     project: Path,
     run: WorkflowRun,
 ) -> WorkflowRun:
-    for stage_name in ("run", "repair"):
-        stage = _stage(run, stage_name)
-        stage.status = "failed"
-        stage.startedAt = "2026-08-05T00:00:00Z"
-        stage.completedAt = "2026-08-05T00:01:00Z"
-        stage.blockers = [{"code": f"stale-{stage_name}-blocker"}]
-        stage.nextCommand = f"stale-{stage_name}-command"
+    stage = _stage(run, run.currentStage)
+    stage.status = "blocked"
+    stage.startedAt = "2026-08-05T00:00:00Z"
+    stage.completedAt = None
+    stage.blockers = [{"code": f"stale-{run.currentStage}-blocker"}]
+    stage.nextCommand = f"stale-{run.currentStage}-command"
     save_workflow_run(project, run)
     link_workflow_reference(project, run.useCaseAlias, run, run.status)
     save_workflow_state(

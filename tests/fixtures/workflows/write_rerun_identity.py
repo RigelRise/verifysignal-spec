@@ -108,6 +108,8 @@ def committed_last_run(*, value: str = "VerifySignal collab seed", run_id: str =
     return {
         "runId": run_id,
         "status": "passed",
+        "startedAt": "2026-08-04T00:00:00.000000001Z",
+        "completedAt": "2026-08-04T00:00:00.000000002Z",
         "coreStatus": "passed",
         "coverageStatus": "complete",
         "resolvedRuntimeInputs": [

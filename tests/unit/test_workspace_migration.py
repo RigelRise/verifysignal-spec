@@ -63,7 +63,9 @@ def test_apply_migration_projects_existing_canonical_run_authority(
     )
 
     assert result["status"] == "applied"
-    assert load_document(use_case_path)["lastCoreAttempt"] == attempt.to_dict()
+    assert LastCoreAttempt.from_dict(
+        load_document(use_case_path)["lastCoreAttempt"]
+    ) == attempt
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX symlink semantics")

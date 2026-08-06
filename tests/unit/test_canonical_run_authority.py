@@ -19,6 +19,7 @@ from verifysignal_spec.workspace.repository import (
     save_use_case,
 )
 from verifysignal_spec.workspace.validation import validate_workspace
+from verifysignal_spec.workflows.run_preflight import build_run_preflight
 
 
 ATTEMPTED_AT = "2026-08-05T00:00:00.000000001Z"
@@ -121,6 +122,29 @@ def test_record_run_rejects_summary_secret_before_writing_run_history(
     assert rejection is not None
     assert "secret" in str(rejection).lower()
     assert not history_path.exists()
+
+
+def test_record_run_rejects_missing_completion_before_authority_writes(
+    tmp_path: Path,
+) -> None:
+    record = _saved_record(tmp_path)
+    entry = _entry(record.alias)
+    entry.completedAt = None
+    history_path = layout.run_history_path(
+        tmp_path,
+        record.alias,
+        entry.runId,
+    )
+    authority_path = layout.run_authority_path(tmp_path, record.alias)
+    use_case_path = layout.use_case_path(tmp_path, record.alias)
+    base_before = use_case_path.read_bytes()
+
+    with pytest.raises(ValueError, match="(?i)(completed|completion|timestamp)"):
+        record_run(tmp_path, entry)
+
+    assert not history_path.exists()
+    assert not authority_path.exists()
+    assert use_case_path.read_bytes() == base_before
 
 
 def test_equal_time_matching_run_history_cannot_diverge_from_canonical_risk(
@@ -253,6 +277,109 @@ def test_first_sidecar_recovers_timestamp_less_legacy_run_from_history(
     assert recovered.lastRun["runId"] == history_entry.runId
     assert recovered.lastRun["startedAt"] == ATTEMPTED_AT
     assert recovered.lastRun["completedAt"] == COMPLETED_AT
+
+
+def test_sidecar_absent_preflight_uses_newer_risky_run_history(
+    tmp_path: Path,
+) -> None:
+    record = _saved_record(tmp_path)
+    record.lastRun = {
+        "runId": "older-safe-base-run",
+        "status": "passed",
+        "profile": "normal",
+        "startedAt": ATTEMPTED_AT,
+        "completedAt": COMPLETED_AT,
+        "postCommitInterpretation": {
+            "postCommit": False,
+            "sideEffectMayExist": False,
+        },
+    }
+    save_use_case(tmp_path, record)
+    newer_risky_history = RunHistoryEntry(
+        runId="newer-risky-history-run",
+        useCaseAlias=record.alias,
+        profile="normal",
+        status="passed",
+        startedAt="2026-08-05T00:00:00.000000003Z",
+        completedAt="2026-08-05T00:00:00.000000004Z",
+        postCommitInterpretation={
+            "postCommit": True,
+            "sideEffectMayExist": True,
+            "rerunRisk": "requires-confirmation",
+        },
+    )
+    save_document(
+        layout.run_history_path(
+            tmp_path,
+            record.alias,
+            newer_risky_history.runId,
+        ),
+        newer_risky_history.to_dict(),
+    )
+
+    assert not layout.run_authority_path(tmp_path, record.alias).exists()
+
+    loaded = load_use_case(tmp_path, record.alias)
+    preflight = build_run_preflight(None, loaded, None, None, None)
+
+    assert preflight["rerunDecision"]["outcomeClass"] == "commit"
+    assert preflight["rerunDecision"]["policyBranch"] == "afterCommit"
+    assert preflight["rerunDecision"]["sourceRunId"] == newer_risky_history.runId
+    assert not layout.run_authority_path(tmp_path, record.alias).exists()
+
+
+def test_timestamp_less_legacy_base_without_history_is_readable_but_first_marker_rejects(
+    tmp_path: Path,
+) -> None:
+    record = _saved_record(tmp_path)
+    legacy_last_run = {
+        "runId": "unproven-legacy-run",
+        "status": "passed",
+        "profile": "normal",
+    }
+    record.lastRun = legacy_last_run
+    save_use_case(tmp_path, record)
+
+    loaded = load_use_case(tmp_path, record.alias)
+
+    assert loaded.lastRun == legacy_last_run
+    assert not layout.run_authority_path(tmp_path, record.alias).exists()
+
+    with pytest.raises(ValueError, match="(?i)(legacy|history|timestamp|comparable)"):
+        save_last_core_attempt(tmp_path, record.alias, _attempt())
+
+    assert not layout.run_authority_path(tmp_path, record.alias).exists()
+
+
+def test_first_sidecar_rejects_timestamp_less_base_without_matching_history(
+    tmp_path: Path,
+) -> None:
+    record = _saved_record(tmp_path)
+    record.lastRun = {
+        "runId": "unproven-legacy-run",
+        "status": "passed",
+        "profile": "normal",
+    }
+    save_use_case(tmp_path, record)
+    unrelated_history = RunHistoryEntry(
+        runId="different-real-run",
+        useCaseAlias=record.alias,
+        profile="normal",
+        status="passed",
+        startedAt=ATTEMPTED_AT,
+        completedAt=COMPLETED_AT,
+    )
+    save_document(
+        layout.run_history_path(tmp_path, record.alias, unrelated_history.runId),
+        unrelated_history.to_dict(),
+    )
+    attempt = _attempt()
+    attempt.attemptedAt = "2026-08-05T00:00:00.000000003Z"
+
+    with pytest.raises(ValueError, match="(?i)(legacy|history|conflict|provenance)"):
+        save_last_core_attempt(tmp_path, record.alias, attempt)
+
+    assert not layout.run_authority_path(tmp_path, record.alias).exists()
 
 
 def test_first_sidecar_accepts_identical_equal_time_legacy_history(

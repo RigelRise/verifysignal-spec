@@ -9,6 +9,98 @@ import pytest
 from verifysignal_spec.commands import run_request_preparation as preparation
 
 
+def _read_windows_file_with_core_compatible_sharing(path: Path) -> bytes:
+    """Read through the same Windows share-mode contract used by Node/libuv."""
+    import ctypes
+    import msvcrt
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    create_file = kernel32.CreateFileW
+    create_file.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    ]
+    create_file.restype = wintypes.HANDLE
+    close_handle = kernel32.CloseHandle
+    close_handle.argtypes = [wintypes.HANDLE]
+    close_handle.restype = wintypes.BOOL
+
+    generic_read = 0x80000000
+    share_read_write_delete = 0x00000001 | 0x00000002 | 0x00000004
+    open_existing = 3
+    file_attribute_normal = 0x00000080
+    handle = create_file(
+        str(path),
+        generic_read,
+        share_read_write_delete,
+        None,
+        open_existing,
+        file_attribute_normal,
+        None,
+    )
+    invalid_handle_value = wintypes.HANDLE(-1).value
+    if handle in {None, invalid_handle_value}:
+        raise ctypes.WinError(ctypes.get_last_error())
+
+    numeric_handle = int(handle)
+    try:
+        descriptor = msvcrt.open_osfhandle(
+            numeric_handle,
+            os.O_RDONLY | getattr(os, "O_BINARY", 0),
+        )
+    except OSError:
+        close_handle(wintypes.HANDLE(numeric_handle))
+        raise
+
+    chunks: list[bytes] = []
+    try:
+        while chunk := os.read(descriptor, 8192):
+            chunks.append(chunk)
+    finally:
+        os.close(descriptor)
+    return b"".join(chunks)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Native Windows handle semantics")
+def test_windows_native_handle_create_read_and_cleanup(tmp_path: Path) -> None:
+    output_dir = tmp_path / ".verifysignal" / "runs" / "localized-home"
+
+    ownership = preparation.write_owned_prepared_run_request(
+        tmp_path,
+        output_dir,
+        "attempt",
+        {"safe": True},
+    )
+
+    try:
+        assert ownership.createdByThisInvocation is True
+        assert ownership.cleanupMode == "windows-handle"
+        assert ownership.fileFd is not None
+        assert ownership.windowsDirectoryHandles
+        # Node/libuv shares read, write, and delete access for ordinary file reads.
+        # Match that Core contract while Spec retains DELETE ownership of the file.
+        assert _read_windows_file_with_core_compatible_sharing(ownership.path) == (
+            b'{\n  "safe": true\n}\n'
+        )
+        removed = preparation.cleanup_owned_prepared_run_request(
+            tmp_path,
+            ownership,
+        )
+    finally:
+        preparation.release_prepared_run_request_ownership(ownership)
+
+    assert removed is True
+    assert ownership.fileFd is None
+    assert ownership.windowsDirectoryHandles == ()
+    assert ownership.path.exists() is False
+
+
 def test_missing_posix_primitives_dispatch_to_the_windows_anchored_writer(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -104,10 +196,10 @@ def test_windows_cleanup_uses_the_owned_handle_not_a_replacement_path(
     output_dir.mkdir(parents=True)
     expected = output_dir / "attempt.run-request.json"
     expected.write_text('{"owner":"invocation"}\n', encoding="utf-8")
-    descriptor = os.open(expected, os.O_RDONLY)
-    observed = os.fstat(descriptor)
     detached = output_dir / "detached.run-request.json"
     expected.rename(detached)
+    descriptor = os.open(detached, os.O_RDONLY)
+    observed = os.fstat(descriptor)
     expected.write_text('{"owner":"replacement"}\n', encoding="utf-8")
     replacement = expected.read_bytes()
     deleted_identities: list[tuple[int, int]] = []

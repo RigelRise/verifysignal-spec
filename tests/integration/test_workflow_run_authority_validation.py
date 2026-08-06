@@ -119,6 +119,7 @@ def test_equal_newest_authorities_remain_ambiguous_when_one_is_referenced(
 ) -> None:
     referenced = _create_runnable_workflow_authority(tmp_path)
     referenced_document = _run_document(tmp_path, referenced.runId)
+    referenced_document["startedAt"] = "2026-08-05T00:00:00.000000001Z"
     referenced_document["updatedAt"] = "2026-08-05T00:00:00.000000009Z"
     save_document(
         layout.workflow_run_path(tmp_path, referenced.runId),
@@ -337,11 +338,43 @@ def test_unstructured_unreferenced_candidate_is_ignored_but_referenced_one_block
         load_active_workflow_run(tmp_path, ALIAS)
 
 
+def test_malformed_unreferenced_yaml_candidate_is_ignored(
+    tmp_path: Path,
+) -> None:
+    valid = _create_runnable_workflow_authority(tmp_path)
+    malformed = layout.workflow_runs_dir(tmp_path) / "wf-unrelated-malformed.yaml"
+    malformed.write_text("not-workflow: [unterminated\n", encoding="utf-8")
+
+    authoritative = load_active_workflow_run(tmp_path, ALIAS)
+
+    assert authoritative is not None
+    assert authoritative.runId == valid.runId
+
+
+def test_alias_matching_incomplete_candidate_fails_authority_selection(
+    tmp_path: Path,
+) -> None:
+    _create_runnable_workflow_authority(tmp_path)
+    malformed_id = "wf-matching-incomplete"
+    save_document(
+        layout.workflow_run_path(tmp_path, malformed_id),
+        {
+            "runId": malformed_id,
+            "useCaseAlias": ALIAS,
+            "currentStage": "run",
+        },
+    )
+
+    with pytest.raises(ValueError, match="(?i)(schema|authority|workflow)"):
+        load_active_workflow_run(tmp_path, ALIAS)
+
+
 def test_newest_authority_ordering_preserves_nanosecond_precision(
     tmp_path: Path,
 ) -> None:
     older = _create_runnable_workflow_authority(tmp_path)
     older_document = _run_document(tmp_path, older.runId)
+    older_document["startedAt"] = "2026-08-05T00:00:00.000000001Z"
     older_document["updatedAt"] = "2026-08-05T00:00:00.000000001Z"
     save_document(
         layout.workflow_run_path(tmp_path, older.runId),

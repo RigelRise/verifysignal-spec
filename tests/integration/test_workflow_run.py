@@ -220,6 +220,8 @@ def test_second_run_after_post_commit_write_is_blocked_by_rerun_policy(tmp_path,
         lastRun={
             "runId": "previous-run",
             "status": "failed",
+            "startedAt": "2026-08-04T00:00:00.000000001Z",
+            "completedAt": "2026-08-04T00:00:00.000000002Z",
             "postCommitInterpretation": {
                 "postCommit": True,
                 "sideEffectMayExist": True,
@@ -267,6 +269,8 @@ def test_rerun_allowed_with_new_inputs_refreshes_declared_generated_value(tmp_pa
         lastRun={
             "runId": "previous-run",
             "status": "failed",
+            "startedAt": "2026-08-04T00:00:00.000000001Z",
+            "completedAt": "2026-08-04T00:00:00.000000002Z",
             "postCommitInterpretation": {
                 "postCommit": True,
                 "sideEffectMayExist": True,

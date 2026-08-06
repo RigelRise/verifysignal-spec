@@ -89,6 +89,7 @@ def test_windows_safety_job_executes_native_authority_primitives() -> None:
         "tests/unit/test_run_invocation_lock.py",
         "tests/unit/test_durable_run_persistence.py",
         "tests/unit/test_authority_path_safety.py",
+        "tests/unit/test_run_request_preparation.py",
     ):
         assert module in scripts
 

@@ -28,6 +28,7 @@ from verifysignal_spec.workspace.repository import (
 from verifysignal_spec.workflows.engine import create_workflow_run
 from verifysignal_spec.workflows.models import WORKFLOW_STAGES, WorkflowRun
 from verifysignal_spec.workflows.repository import (
+    create_stage_states,
     link_workflow_reference,
     load_workflow_run,
     save_workflow_run,
@@ -275,6 +276,9 @@ def _create_invalid_authority_workspace(project: Path, authority_kind: str) -> N
         raise ValueError(f"Unknown invalid-authority fixture: {authority_kind}")
     save_use_case(project, record)
     for run_id in ("wf-equal-profile-a", "wf-equal-profile-b"):
+        stage_states = create_stage_states(project, ALIAS)
+        for state in stage_states[: WORKFLOW_STAGES.index("tasks")]:
+            state.status = "completed"
         save_workflow_run(
             project,
             WorkflowRun(
@@ -282,6 +286,7 @@ def _create_invalid_authority_workspace(project: Path, authority_kind: str) -> N
                 useCaseAlias=ALIAS,
                 status="paused",
                 currentStage="tasks",
+                stageStates=stage_states,
             ),
         )
         path = layout.workflow_run_path(project, run_id)

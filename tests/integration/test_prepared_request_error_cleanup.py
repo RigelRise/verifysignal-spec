@@ -72,6 +72,7 @@ def test_core_error_removes_only_the_exact_new_prepared_request(
     assert_exact_workspace_file_changes(
         tmp_path,
         workspace_before,
+        created=[f"use-cases/{alias}.run-authority.json"],
         changed=[
             "registry.yaml",
             f"use-cases/{alias}.yaml",

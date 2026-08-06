@@ -84,7 +84,26 @@ def test_legacy_core_error_preserves_every_prior_real_run_projection(
     history_path = layout.run_history_path(tmp_path, alias, "prior-real-run")
     evidence_path = _history_dir(tmp_path, alias) / "prior-real-run" / "evidence" / "page.txt"
     repair_path = layout.repair_path(tmp_path, "prior-repair")
-    save_document(history_path, {"runId": "prior-real-run", "sentinel": "history-preserved"})
+    save_document(
+        history_path,
+        {
+            "runId": "prior-real-run",
+            "useCaseAlias": alias,
+            "profile": "normal",
+            "status": "failed",
+            "startedAt": "2026-08-04T19:59:59Z",
+            "completedAt": "2026-08-04T20:00:00Z",
+            "coreStatus": "failed",
+            "coverageStatus": "incomplete",
+            "gateCoverage": [{"gateId": "page-visible", "status": "passed"}],
+            "reportPath": previous_last_run["reportPath"],
+            "evidenceDir": previous_last_run["evidenceDir"],
+            "postCommitInterpretation": previous_last_run[
+                "postCommitInterpretation"
+            ],
+            "sentinel": "history-preserved",
+        },
+    )
     evidence_path.parent.mkdir(parents=True, exist_ok=True)
     evidence_path.write_text("evidence-preserved\n", encoding="utf-8")
     save_document(repair_path, {"repairId": "prior-repair", "sentinel": "repair-preserved"})
@@ -99,7 +118,10 @@ def test_legacy_core_error_preserves_every_prior_real_run_projection(
     assert result["status"] == "blocked"
     assert _blocker_codes(result) == ["entitlement.unverifiable"]
     updated = load_document(use_case_path)
-    assert updated["lastRun"] == previous_last_run
+    assert all(
+        updated["lastRun"].get(key) == value
+        for key, value in previous_last_run.items()
+    )
     assert updated["repair"] == {"repairId": "prior-repair", "status": "proposed"}
     assert sorted(path.name for path in _history_dir(tmp_path, alias).glob("*.yaml")) == [
         "prior-real-run.yaml"
@@ -169,8 +191,8 @@ def test_attempt_marker_is_not_cleared_when_valid_run_persistence_fails_late(
         useCaseAlias=alias,
         profile="normal",
         status="passed",
-        startedAt="2026-08-05T02:00:00Z",
-        completedAt="2026-08-05T02:01:00Z",
+        startedAt="2026-08-05T01:00:00.000000001Z",
+        completedAt="2026-08-05T01:01:00Z",
     )
 
     with pytest.raises(RuntimeError, match="late persistence failure"):

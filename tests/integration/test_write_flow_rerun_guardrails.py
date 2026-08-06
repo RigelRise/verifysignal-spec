@@ -117,6 +117,8 @@ def _write_record(*, after_commit: str, refresh_inputs: list[str] | None = None,
         lastRun={
             "runId": "previous-run",
             "status": "failed",
+            "startedAt": "2026-08-04T00:00:00.000000001Z",
+            "completedAt": "2026-08-04T00:00:00.000000002Z",
             "postCommitInterpretation": {
                 "postCommit": True,
                 "sideEffectMayExist": True,

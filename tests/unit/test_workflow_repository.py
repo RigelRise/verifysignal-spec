@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import time
 
@@ -21,8 +22,10 @@ from verifysignal_spec.workspace.repository import (
     save_document,
     save_use_case,
 )
+from verifysignal_spec.workspace.time_ordering import parse_utc_iso_ns
 from verifysignal_spec.workflows.models import (
     WORKFLOW_ARTIFACT_PLAN_SCHEMA,
+    WORKFLOW_STAGES,
     WORKFLOW_TASK_SET_SCHEMA,
     WorkflowRun,
 )
@@ -442,6 +445,9 @@ def test_next_transition_recovers_unreferenced_matching_workflow_run(
         "now_iso",
         lambda: "2026-08-05T00:01:00Z",
     )
+    other_stage_states = create_stage_states(tmp_path, "other-alias")
+    for state in other_stage_states[: WORKFLOW_STAGES.index("repair")]:
+        state.status = "failed" if state.stage == "run" else "completed"
     save_workflow_run(
         tmp_path,
         WorkflowRun(
@@ -449,7 +455,7 @@ def test_next_transition_recovers_unreferenced_matching_workflow_run(
             useCaseAlias="other-alias",
             status="paused",
             currentStage="repair",
-            stageStates=create_stage_states(tmp_path, "other-alias"),
+            stageStates=other_stage_states,
         ),
     )
 
@@ -593,6 +599,152 @@ def test_workflow_run_writes_use_strict_high_resolution_ordering(
     assert first.updatedAt < second.updatedAt
 
 
+def test_workflow_run_save_orders_update_after_all_workflow_timestamps(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    init_workspace(tmp_path)
+    stage_states = create_stage_states(tmp_path, ALIAS)
+    run_index = WORKFLOW_STAGES.index("run")
+    for stage in stage_states[: run_index + 1]:
+        stage.status = "completed"
+    run = WorkflowRun(
+        runId="wf-clock-rollback",
+        useCaseAlias=ALIAS,
+        status="completed",
+        currentStage="run",
+        startedAt="2026-08-05T00:00:00.000000001Z",
+        updatedAt="2026-08-05T00:00:00.000000002Z",
+        completedAt="2026-08-05T00:00:00.000000009Z",
+        stageStates=stage_states,
+    )
+    monkeypatch.setattr(workflow_repository.time, "time_ns", lambda: 1)
+
+    save_workflow_run(tmp_path, run)
+
+    updated_ns = parse_utc_iso_ns(run.updatedAt)
+    assert updated_ns is not None
+    for value in (run.startedAt, "2026-08-05T00:00:00.000000002Z", run.completedAt):
+        compared = parse_utc_iso_ns(value)
+        assert compared is not None
+        assert updated_ns > compared
+
+
+@pytest.mark.parametrize("later_field", ["startedAt", "completedAt"])
+def test_workflow_run_load_rejects_update_before_workflow_timestamp(
+    tmp_path: Path,
+    later_field: str,
+) -> None:
+    init_workspace(tmp_path)
+    stage_states = create_stage_states(tmp_path, ALIAS)
+    run_index = WORKFLOW_STAGES.index("run")
+    for stage in stage_states[: run_index + 1]:
+        stage.status = "completed"
+    run = WorkflowRun(
+        runId=f"wf-update-before-{later_field.lower()}",
+        useCaseAlias=ALIAS,
+        status="completed",
+        currentStage="run",
+        startedAt="2026-08-05T00:00:00.000000001Z",
+        completedAt="2026-08-05T00:00:00.000000002Z",
+        stageStates=stage_states,
+    )
+    save_workflow_run(tmp_path, run)
+    path = layout.workflow_run_path(tmp_path, run.runId)
+    document = load_document(path)
+    document["updatedAt"] = "2026-08-05T00:00:00.000000001Z"
+    document[later_field] = "2026-08-05T00:00:00.000000002Z"
+    save_document(path, document)
+
+    with pytest.raises(ValueError, match="(?i)(updated|start|completion|timestamp)"):
+        load_workflow_run(tmp_path, run.runId)
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="POSIX FIFO semantics")
+def test_workflow_candidate_and_update_scans_never_open_fifo(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    init_workspace(tmp_path)
+    save_use_case(
+        tmp_path,
+        create_default_use_case(tmp_path, ALIAS, "Validate login."),
+    )
+    first = WorkflowRun(runId="wf-regular-a", useCaseAlias=ALIAS)
+    save_workflow_run(tmp_path, first)
+    fifo = layout.workflow_runs_dir(tmp_path) / "wf-never-open.yaml"
+    os.mkfifo(fifo)
+    original_load_document = workflow_repository.load_document
+
+    def guarded_load_document(path: Path, *args: object, **kwargs: object) -> object:
+        if path == fifo:
+            raise AssertionError("Workflow candidate scan attempted to open a FIFO.")
+        return original_load_document(path, *args, **kwargs)
+
+    monkeypatch.setattr(workflow_repository, "load_document", guarded_load_document)
+    second = WorkflowRun(runId="wf-regular-b", useCaseAlias=ALIAS)
+
+    save_workflow_run(tmp_path, second)
+    active = load_active_workflow_run(tmp_path, ALIAS)
+
+    assert active is not None
+    assert active.runId == second.runId
+
+
+@pytest.mark.parametrize(
+    "projection_kind",
+    [
+        "bare",
+        "foreign-workflow-dir",
+        "missing-status",
+        "invalid-status",
+        "invalid-run-id-shape",
+        "invalid-update-shape",
+    ],
+)
+def test_incompatible_legacy_workflow_projection_does_not_advance_migration(
+    tmp_path: Path,
+    projection_kind: str,
+) -> None:
+    _create_reference_only_legacy_use_case(
+        tmp_path,
+        ".verifysignal/run-requests/login.yaml",
+    )
+    record = load_use_case(tmp_path, ALIAS)
+    projection: dict[str, object] = {
+        "workflowDir": workflow_dir_rel(tmp_path, ALIAS),
+        "currentStage": "implement",
+        "workflowStatus": "paused",
+    }
+    if projection_kind == "bare":
+        projection = {"currentStage": "implement"}
+    elif projection_kind == "foreign-workflow-dir":
+        projection["workflowDir"] = ".verifysignal/workflows/use-cases/different"
+    elif projection_kind == "missing-status":
+        projection.pop("workflowStatus")
+    elif projection_kind == "invalid-status":
+        projection["workflowStatus"] = "teleported"
+    elif projection_kind == "invalid-run-id-shape":
+        projection["lastWorkflowRunId"] = 123
+    elif projection_kind == "invalid-update-shape":
+        projection["lastUpdatedAt"] = "not-a-timestamp"
+    record.workflow = projection
+    save_use_case(tmp_path, record)
+
+    result = transition_workflow(
+        tmp_path,
+        ALIAS,
+        stage="understand",
+        outcome="completed",
+    )
+
+    assert result.migrated is True
+    assert result.run.currentStage == "specify"
+    assert _stage_status(result.run, "understand") == "completed"
+    for stage in ("specify", "clarify", "plan", "tasks", "implement"):
+        assert _stage_status(result.run, stage) == "pending"
+
+
 def test_core_attempt_completion_is_strictly_later_when_clock_moves_back(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -627,6 +779,7 @@ def test_equal_timestamp_without_reference_is_rejected_as_ambiguous(
             / f"{run_id}.yaml"
         )
         data = load_document(path)
+        data["startedAt"] = "2026-08-05T00:00:00Z"
         data["updatedAt"] = "2026-08-05T00:00:00Z"
         save_document(path, data)
 
