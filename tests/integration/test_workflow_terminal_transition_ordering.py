@@ -17,7 +17,14 @@ from verifysignal_spec.runtime.models import (
     ManagedRuntimeReadinessResult,
     RuntimeSetupBlocker,
 )
-from verifysignal_spec.workspace.repository import now_iso
+from verifysignal_spec.workspace import layout
+from verifysignal_spec.workspace.repository import (
+    load_document,
+    load_use_case,
+    now_iso,
+    save_document,
+    save_use_case,
+)
 from verifysignal_spec.workflows.engine import create_workflow_run
 from verifysignal_spec.workflows.models import WORKFLOW_STAGES, WorkflowRun
 from verifysignal_spec.workflows.repository import (
@@ -96,6 +103,72 @@ def test_terminal_stage_blocker_is_identical_for_check_and_direct_and_byte_stabl
     assert _project_file_bytes(tmp_path) == before
 
 
+@pytest.mark.parametrize(
+    ("authority_kind", "expected_recovery"),
+    [
+        (
+            "unreadable-referenced",
+            "verifysignal workflow status wf-future-profile-view-unauth --json",
+        ),
+        ("ambiguous-newest", "verifysignal workflow list --json"),
+    ],
+)
+@pytest.mark.parametrize("command", ["validate", "run"])
+def test_invalid_workflow_authority_blocks_check_and_direct_before_core_without_mutation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    authority_kind: str,
+    expected_recovery: str,
+    command: str,
+) -> None:
+    _create_invalid_authority_workspace(tmp_path, authority_kind)
+    calls = {"runtimeResolution": 0, "coreAdapter": 0}
+
+    def unexpected_runtime(*_args: object, **_kwargs: object) -> object:
+        calls["runtimeResolution"] += 1
+        raise AssertionError("invalid workflow authority must not resolve Core")
+
+    def unexpected_core_adapter(*_args: object, **_kwargs: object) -> object:
+        calls["coreAdapter"] += 1
+        raise AssertionError("invalid workflow authority must not invoke Core")
+
+    for module in (run_command, validate_command):
+        monkeypatch.setattr(module, "ensure_core_runtime", unexpected_runtime)
+        monkeypatch.setattr(module, "CoreAdapter", unexpected_core_adapter)
+    before = _project_file_bytes(tmp_path)
+
+    checked = workflow_command.check(tmp_path, command, alias=ALIAS)
+    assert _project_file_bytes(tmp_path) == before
+
+    if command == "validate":
+        direct = validate_command.run(
+            tmp_path,
+            ALIAS,
+            runtime_readiness=True,
+            core_cmd=str(FAKE_CORE),
+        )
+    else:
+        direct = run_command.run(
+            tmp_path,
+            ALIAS,
+            interactive=False,
+            core_cmd=str(FAKE_CORE),
+        )
+
+    assert checked["status"] == "blocked"
+    assert direct["status"] == "blocked"
+    assert checked["blockers"][0] == direct["blockers"][0]
+    blocker = direct["blockers"][0]
+    assert blocker["code"] == "workflow.authority-invalid"
+    assert blocker["currentStage"] == "unknown"
+    assert blocker["requestedStage"] == command
+    assert blocker["recoveryCommand"] == expected_recovery
+    assert checked["nextCommand"] == expected_recovery
+    assert direct["nextAction"] == expected_recovery
+    assert calls == {"runtimeResolution": 0, "coreAdapter": 0}
+    assert _project_file_bytes(tmp_path) == before
+
+
 def test_blocked_run_preflight_does_not_transition_the_run_stage(
     tmp_path: Path,
 ) -> None:
@@ -161,6 +234,60 @@ def test_managed_runtime_preflight_block_returns_without_transitioning_run(
     assert unchanged.status == "paused"
     assert _stage(unchanged, "run").status == "pending"
     assert _stage(unchanged, "run").blockers == []
+
+
+def _create_invalid_authority_workspace(project: Path, authority_kind: str) -> None:
+    create_main_skill_coverage_workspace(project, protected_ready=True)
+    record = load_use_case(project, ALIAS)
+    record.workflow = {
+        "workflowDir": f".verifysignal/workflows/use-cases/{ALIAS}",
+        "currentStage": "run",
+        "workflowStatus": "paused",
+    }
+    save_document(
+        layout.workflow_state_path(project, ALIAS),
+        {
+            "schemaVersion": "verifysignal-spec-workflow-state/v1",
+            "alias": ALIAS,
+            "currentStage": "run",
+            "status": "paused",
+            "stageStates": [],
+        },
+    )
+
+    if authority_kind == "unreadable-referenced":
+        run_id = "wf-future-profile-view-unauth"
+        record.workflow["lastWorkflowRunId"] = run_id
+        save_use_case(project, record)
+        save_document(
+            layout.workflow_run_path(project, run_id),
+            {
+                "schemaVersion": "verifysignal-spec-workflow-run/v2",
+                "runId": run_id,
+                "useCaseAlias": ALIAS,
+                "status": "paused",
+                "currentStage": "validate",
+            },
+        )
+        return
+
+    if authority_kind != "ambiguous-newest":
+        raise ValueError(f"Unknown invalid-authority fixture: {authority_kind}")
+    save_use_case(project, record)
+    for run_id in ("wf-equal-profile-a", "wf-equal-profile-b"):
+        save_workflow_run(
+            project,
+            WorkflowRun(
+                runId=run_id,
+                useCaseAlias=ALIAS,
+                status="paused",
+                currentStage="tasks",
+            ),
+        )
+        path = layout.workflow_run_path(project, run_id)
+        document = load_document(path)
+        document["updatedAt"] = "2026-08-05T00:00:00Z"
+        save_document(path, document)
 
 
 def _place_run_at_stage(

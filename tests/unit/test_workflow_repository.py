@@ -10,7 +10,7 @@ from tests.fixtures.workflows.entitlement_preflight_recovery import (
 )
 from tests.fixtures.workflows.guardrails import stage_payload
 from verifysignal_spec.workspace import layout
-from verifysignal_spec.workspace.models import AuthoringQuestion
+from verifysignal_spec.workspace.models import ArtifactReference, AuthoringQuestion
 from verifysignal_spec.workspace.repository import (
     create_default_use_case,
     init_workspace,
@@ -167,6 +167,116 @@ def test_legacy_executable_references_infer_implement_before_one_lazy_migration(
     assert runs[0].currentStage == "validate"
     for stage in ("understand", "specify", "clarify", "plan", "tasks", "implement"):
         assert _stage_status(runs[0], stage) == "completed"
+
+
+def test_dangling_legacy_executable_reference_does_not_infer_implement(
+    tmp_path: Path,
+) -> None:
+    _create_reference_only_legacy_use_case(
+        tmp_path,
+        ".verifysignal/run-requests/login.yaml",
+    )
+
+    result = transition_workflow(
+        tmp_path,
+        ALIAS,
+        stage="understand",
+        outcome="completed",
+    )
+
+    assert result.migrated is True
+    assert result.run.currentStage == "specify"
+    assert _stage_status(result.run, "understand") == "completed"
+    for stage in ("specify", "clarify", "plan", "tasks", "implement"):
+        assert _stage_status(result.run, stage) == "pending"
+
+
+def test_noncanonical_authored_stage_document_does_not_advance_migration(
+    tmp_path: Path,
+) -> None:
+    _create_reference_only_legacy_use_case(
+        tmp_path,
+        ".verifysignal/run-requests/login.yaml",
+    )
+    noncanonical = layout.workflow_stage_document_path(tmp_path, ALIAS, "tasks")
+    noncanonical.parent.mkdir(parents=True, exist_ok=True)
+    noncanonical.write_text(
+        "# Unrelated Notes\n\nThis is not an authored task-set document.\n",
+        encoding="utf-8",
+    )
+
+    result = transition_workflow(
+        tmp_path,
+        ALIAS,
+        stage="understand",
+        outcome="completed",
+    )
+
+    assert result.migrated is True
+    assert result.run.currentStage == "specify"
+    assert _stage_status(result.run, "understand") == "completed"
+    for stage in ("specify", "clarify", "plan", "tasks", "implement"):
+        assert _stage_status(result.run, stage) == "pending"
+
+
+def test_symlinked_legacy_executable_reference_does_not_infer_implement(
+    tmp_path: Path,
+) -> None:
+    reference = ".verifysignal/run-requests/login.yaml"
+    _create_reference_only_legacy_use_case(tmp_path, reference)
+    target = tmp_path / "legacy-request-target.yaml"
+    target.write_text("schemaVersion: qa-run-request/v1\n", encoding="utf-8")
+    linked_request = tmp_path / reference
+    linked_request.symlink_to(target)
+
+    result = transition_workflow(
+        tmp_path,
+        ALIAS,
+        stage="understand",
+        outcome="completed",
+    )
+
+    assert result.migrated is True
+    assert result.run.currentStage == "specify"
+    assert _stage_status(result.run, "understand") == "completed"
+    for stage in ("specify", "clarify", "plan", "tasks", "implement"):
+        assert _stage_status(result.run, stage) == "pending"
+    assert linked_request.is_symlink()
+
+
+def test_lazy_workflow_migration_does_not_synthesize_execution_artifacts(
+    tmp_path: Path,
+) -> None:
+    _create_legacy_use_case_without_run(tmp_path)
+
+    result = _persist_legacy_specification(tmp_path)
+
+    assert result["status"] == "persisted"
+    runs = list_workflow_runs(tmp_path)
+    assert len(runs) == 1
+    migrated = runs[0]
+    record = load_use_case(tmp_path, ALIAS)
+    assert record.lastRun is None
+    assert record.lastCoreAttempt is None
+    assert record.repair is None
+    assert record.validation == {"status": "unknown"}
+    assert migrated.gateDecisions == []
+    for stage in ("clarify", "plan", "tasks", "implement", "validate", "run", "repair"):
+        assert _stage_status(migrated, stage) == "pending"
+
+    workspace = layout.workspace_root(tmp_path)
+    for directory_name in (layout.RUNS_DIR, layout.REPAIRS_DIR):
+        assert [
+            path.relative_to(workspace).as_posix()
+            for path in (workspace / directory_name).rglob("*")
+            if path.is_file()
+        ] == []
+    assert not any(
+        part in {"discover", "evidence", "gate-coverage", "gates"}
+        for path in workspace.rglob("*")
+        if path.is_file()
+        for part in path.relative_to(workspace).parts
+    )
 
 
 def test_next_mutating_transition_heals_interrupted_projections_from_workflow_run(
@@ -536,6 +646,21 @@ def _create_legacy_use_case_without_run(project: Path) -> None:
     }
     save_use_case(project, record)
     initialize_understanding(project, alias=ALIAS, goal="Validate login.")
+
+
+def _create_reference_only_legacy_use_case(
+    project: Path,
+    reference_path: str,
+) -> None:
+    init_workspace(project)
+    record = create_default_use_case(project, ALIAS, "Validate login.")
+    record.runRequest = ArtifactReference(
+        path=reference_path,
+        kind="run-request",
+        id="request.login",
+        version="1.0.0",
+    )
+    save_use_case(project, record)
 
 
 def _persist_legacy_specification(project: Path) -> dict:

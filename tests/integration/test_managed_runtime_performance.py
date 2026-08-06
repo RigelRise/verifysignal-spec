@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import time
 
@@ -16,9 +17,20 @@ class ManagedRuntimePerformanceTests(CliTestCase):
         os.environ["VERIFYSIGNAL_RUNTIME_CACHE_DIR"] = str(self.project / "empty-cache")
 
         start = time.monotonic()
-        code, _out, _err = self.cli(["check", "--project", str(self.project), "--json"])
+        code, out, err = self.cli(["check", "--project", str(self.project), "--json"])
         elapsed = time.monotonic() - start
 
-        assert code == 2
+        assert code == 2, err
+        payload = json.loads(out)
+        readiness = payload["managedRuntimeReadiness"]
+        assert readiness["status"] == "blocked"
+        assert readiness["source"] == "none"
+        assert readiness["cache"]["status"] == "miss"
+        assert [blocker["code"] for blocker in readiness["blockers"]] == [
+            "entitlement.unlock-required"
+        ]
+        assert readiness["attempts"][-1]["source"] == "managed-download"
+        assert readiness["attempts"][-1]["blockerCode"] == (
+            "entitlement.unlock-required"
+        )
         assert elapsed < 1
-

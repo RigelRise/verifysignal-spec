@@ -143,6 +143,7 @@ def test_protected_revalidation_can_recover_from_documented_later_stages(
     source_stage: str,
 ) -> None:
     run = _create_executable_workflow(tmp_path, current_stage=source_stage)
+    run = _seed_stale_later_stage_state(tmp_path, run)
     monkeypatch.setenv("FAKE_VERIFYSIGNAL_MODE", "full-coverage")
 
     result = validate_command.run(
@@ -157,6 +158,49 @@ def test_protected_revalidation_can_recover_from_documented_later_stages(
     assert recovered.currentStage == "run"
     assert recovered.status == "paused"
     assert _stage(recovered, "validate").status == "completed"
+    for stage_name in ("run", "repair"):
+        stage = _stage(recovered, stage_name)
+        assert stage.status == "pending"
+        assert stage.startedAt is None
+        assert stage.completedAt is None
+        assert stage.blockers == []
+        assert stage.nextCommand is None
+
+
+@pytest.mark.parametrize("source_stage", ["run", "repair"])
+def test_blocked_protected_revalidation_resets_stale_later_stage_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    source_stage: str,
+) -> None:
+    run = _create_executable_workflow(tmp_path, current_stage=source_stage)
+    run = _seed_stale_later_stage_state(tmp_path, run)
+    monkeypatch.setenv("FAKE_VERIFYSIGNAL_MODE", "current-entitlement-error")
+
+    result = validate_command.run(
+        tmp_path,
+        ALIAS,
+        runtime_readiness=True,
+        core_cmd=str(FAKE_CORE),
+    )
+
+    assert result["status"] == "blocked"
+    recovered = _assert_authoritative_projections(tmp_path, ALIAS, run.runId)
+    assert recovered.currentStage == "validate"
+    assert recovered.status == "paused"
+    validate_stage = _stage(recovered, "validate")
+    assert validate_stage.status == "blocked"
+    assert validate_stage.completedAt is None
+    assert {blocker["code"] for blocker in validate_stage.blockers} == {
+        "entitlement.unverifiable"
+    }
+    for stage_name in ("run", "repair"):
+        stage = _stage(recovered, stage_name)
+        assert stage.status == "pending"
+        assert stage.startedAt is None
+        assert stage.completedAt is None
+        assert stage.blockers == []
+        assert stage.nextCommand is None
 
 
 @pytest.mark.parametrize(
@@ -296,7 +340,13 @@ def test_applied_repair_advances_the_authoritative_run_to_protected_validation(
     assert updated.currentStage == "validate"
     assert updated.status == "paused"
     assert _stage(updated, "repair").status == "completed"
-    assert _stage(updated, "validate").status == "pending"
+    for stage_name in ("validate", "run"):
+        stage = _stage(updated, stage_name)
+        assert stage.status == "pending"
+        assert stage.startedAt is None
+        assert stage.completedAt is None
+        assert stage.blockers == []
+        assert stage.nextCommand is None
 
 
 def test_read_only_status_and_show_render_from_run_without_healing_disk(
@@ -391,6 +441,33 @@ def _place_run_at_stage(
     run.status = "paused"
     run.completedAt = None
     run.nextCommand = f"/verifysignal-{current_stage} {run.useCaseAlias}"
+    save_workflow_run(project, run)
+    link_workflow_reference(project, run.useCaseAlias, run, run.status)
+    save_workflow_state(
+        project,
+        run.useCaseAlias,
+        state_document(
+            project,
+            run.useCaseAlias,
+            run,
+            current_stage=run.currentStage,
+            status=run.status,
+        ),
+    )
+    return run
+
+
+def _seed_stale_later_stage_state(
+    project: Path,
+    run: WorkflowRun,
+) -> WorkflowRun:
+    for stage_name in ("run", "repair"):
+        stage = _stage(run, stage_name)
+        stage.status = "failed"
+        stage.startedAt = "2026-08-05T00:00:00Z"
+        stage.completedAt = "2026-08-05T00:01:00Z"
+        stage.blockers = [{"code": f"stale-{stage_name}-blocker"}]
+        stage.nextCommand = f"stale-{stage_name}-command"
     save_workflow_run(project, run)
     link_workflow_reference(project, run.useCaseAlias, run, run.status)
     save_workflow_state(
