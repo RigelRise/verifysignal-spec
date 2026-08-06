@@ -42,6 +42,7 @@ from .models import (
     native_invocation,
 )
 from .repository import load_workflow_run
+from .transitions import managed_workflow_stage_decision
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,6 +81,19 @@ def check_prerequisites(
     rule = STAGE_PREREQUISITE_RULES[stage]
     project = project.resolve()
     resolved_alias = _resolve_alias(project, stage, alias, rule)
+    if isinstance(resolved_alias, str) and stage in {"validate", "run"}:
+        stage_decision = managed_workflow_stage_decision(
+            project,
+            resolved_alias,
+            stage,
+        )
+        stage_blocker = stage_decision.get("blocker")
+        if isinstance(stage_blocker, dict):
+            return stage_position_blocked_check_result(
+                stage,
+                resolved_alias,
+                stage_blocker,
+            )
     authoritative_run_preflight: dict[str, Any] | None = None
     if stage == "run" and isinstance(resolved_alias, str):
         try:
@@ -299,6 +313,22 @@ def _loaded_run_preflight(project: Path, alias: str) -> dict[str, Any]:
         readiness,
         {},
         reviews,
+    )
+
+
+def stage_position_blocked_check_result(
+    stage: str,
+    alias: str,
+    blocker: dict[str, Any],
+) -> dict[str, Any]:
+    return _result(
+        stage,
+        alias,
+        "blocked",
+        can_proceed=False,
+        recommended_action="resume-current-stage",
+        next_command=str(blocker["recoveryCommand"]),
+        blockers=[blocker],
     )
 
 

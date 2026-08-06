@@ -38,6 +38,10 @@ from verifysignal_spec.workflows.repair_recommendations import recommend_repairs
 from verifysignal_spec.workflows.readiness import executable_contract_blockers, legacy_executable_artifact_blockers, managed_runtime_contract_blockers
 from verifysignal_spec.workflows.stage_cards import run_result_card
 from verifysignal_spec.workflows.target_confirmation import target_confirmation_blocker
+from verifysignal_spec.workflows.transitions import (
+    managed_workflow_stage_decision,
+    transition_workflow,
+)
 from verifysignal_spec.workflows.repository import load_artifact_plan
 from verifysignal_spec.workspace.models import ArtifactReference, LastCoreAttempt, RerunPolicy, RunHistoryEntry
 from verifysignal_spec.workspace import layout
@@ -86,6 +90,30 @@ def run(
     replay: str | Path | None = None,
     env_file: Path | None = None,
 ) -> dict[str, Any]:
+    stage_decision = managed_workflow_stage_decision(
+        project,
+        alias,
+        "run",
+    )
+    stage_blocker = stage_decision.get("blocker")
+    if isinstance(stage_blocker, dict):
+        return {
+            "alias": alias,
+            "status": "blocked",
+            "canProceed": False,
+            "coreStatus": "not-run",
+            "coverageStatus": "not-run",
+            "coreBrowserStatus": "blocked",
+            "specCoverageStatus": "not-run",
+            "profile": profile_name,
+            "requiresConfirmation": False,
+            "confirmation": None,
+            "blockers": [stage_blocker],
+            "reason": stage_blocker["message"],
+            "recommendedAction": "resume-current-stage",
+            "nextAction": stage_blocker["recoveryCommand"],
+        }
+    managed_workflow = bool(stage_decision["managed"])
     # The loaded use case is `use_case`, not `record`: `record` is the --record flag, and this module
     # also imports `record_run`. The overloaded name is not cosmetic — a local `record` holding the
     # (always truthy) use case silently shadowed this flag and made EVERY run pass --record to Core.
@@ -420,7 +448,7 @@ def run(
             if blocker_code in {"entitlement.unverifiable", "core.contract-invalid", "core.incompatible"}
             else f"verifysignal workflow check run --alias {alias} --json"
         )
-        return {
+        blocked_result = {
             "alias": alias,
             "status": "blocked",
             "coreStatus": "not-started" if explicitly_not_started else "execution-unknown",
@@ -445,6 +473,19 @@ def run(
             "reason": reason,
             "nextAction": next_action,
         }
+        if managed_workflow:
+            transition_workflow(
+                project,
+                alias,
+                stage="run",
+                outcome="blocked",
+                blockers=blocked_result["blockers"],
+                handoff_summary=(
+                    "Core did not produce a schema-valid real run result; "
+                    "browser execution remains unconfirmed."
+                ),
+            )
+        return blocked_result
     release_prepared_run_request_ownership(prepared_ownership)
     data = result["data"]
     run_id = str(data["runId"])
@@ -591,6 +632,31 @@ def run(
         load_supersede_reviews(project, alias),
     )
     reconcile_active_confirmation(project, alias, completed_preflight.get("confirmation"))
+    if managed_workflow:
+        transition_workflow(
+            project,
+            alias,
+            stage="run",
+            outcome="completed" if entry.status == "passed" else "failed",
+            blockers=(
+                []
+                if entry.status == "passed"
+                else [
+                    {
+                        "code": "run.real-execution-failed",
+                        "severity": "blocker",
+                        "category": "execution",
+                        "message": reason,
+                        "recoveryCommand": next_action,
+                    }
+                ]
+            ),
+            handoff_summary=(
+                "The real browser run passed and completed the workflow."
+                if entry.status == "passed"
+                else "The real browser run failed and requires repair."
+            ),
+        )
     send_usage_ping("run", ping_outcome(entry.status), api_base_url=api_base_url)
     return {
         **({"credentialWarnings": environment_warnings} if environment_warnings else {}),

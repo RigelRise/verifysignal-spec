@@ -32,6 +32,10 @@ from verifysignal_spec.workflows.readiness import (
     validation_readiness,
 )
 from verifysignal_spec.workflows.runtime_readiness import evaluate_runtime_readiness
+from verifysignal_spec.workflows.transitions import (
+    managed_workflow_stage_decision,
+    transition_workflow,
+)
 from verifysignal_spec.workspace.repository import create_readiness_snapshot_from_validation, load_supersede_reviews, load_use_case, resolve_artifacts, update_validation
 from verifysignal_spec.workspace.validation import validate_side_effect_declaration
 
@@ -62,11 +66,30 @@ def run(
     api_base_url: str | None = None,
     env_file: Path | None = None,
 ) -> dict[str, Any]:
+    stage_decision = managed_workflow_stage_decision(
+        project,
+        alias,
+        "validate",
+    )
+    stage_blocker = stage_decision.get("blocker")
+    if isinstance(stage_blocker, dict):
+        return {
+            "schemaVersion": WORKFLOW_VALIDATION_READINESS_SCHEMA,
+            "stage": "validate",
+            "alias": alias,
+            "status": "blocked",
+            "canProceed": False,
+            "runtimeReadinessStatus": "not-run",
+            "blockers": [stage_blocker],
+            "recommendedAction": "resume-current-stage",
+            "nextAction": stage_blocker["recoveryCommand"],
+        }
+    managed_workflow = bool(stage_decision["managed"]) and runtime_readiness
     structural = structural_validation(project, alias=alias)
     if structural.status == "blocked":
         structural_dict = structural.to_dict()
         detailed_blockers = _structural_guided_blockers(structural_dict.get("findings", []), alias)
-        return {
+        result = {
             "schemaVersion": WORKFLOW_VALIDATION_READINESS_SCHEMA,
             "alias": alias,
             "status": "blocked",
@@ -81,6 +104,12 @@ def run(
             ]
             + detailed_blockers,
         }
+        return _transition_validation_result(
+            project,
+            alias,
+            result,
+            managed_workflow=managed_workflow,
+        )
     environment_values: dict[str, str] = {}
     environment_warnings: list[dict[str, str]] = []
     if env_file:
@@ -93,13 +122,19 @@ def run(
             )
             environment_warnings = git_exposure_warnings(project, env_file_path)
         except EnvironmentFileError as exc:
-            return {
+            result = {
                 "schemaVersion": WORKFLOW_VALIDATION_READINESS_SCHEMA,
                 "alias": alias,
                 "status": "blocked",
                 "blockers": [exc.blocker()],
                 "valuesIncluded": False,
             }
+            return _transition_validation_result(
+                project,
+                alias,
+                result,
+                managed_workflow=managed_workflow,
+            )
     managed_runtime = ensure_core_runtime(project, explicit_core_cmd=core_cmd, api_base_url=api_base_url, context="validate")
     if managed_runtime.status != "ready":
         contract_blockers = managed_runtime_contract_blockers(managed_runtime)
@@ -130,7 +165,12 @@ def run(
         }
         update_validation(project, alias, result)
         _persist_readiness_snapshot(project, alias, result)
-        return result
+        return _transition_validation_result(
+            project,
+            alias,
+            result,
+            managed_workflow=managed_workflow,
+        )
     core_contract = _core_contract_for_coherence(project, managed_runtime.runtimeCommand)
     record, run_request, main_skill, skills = resolve_artifacts(project, alias, core_contract=core_contract)
     contract_blockers = [
@@ -148,7 +188,12 @@ def run(
         }
         update_validation(project, alias, result)
         _persist_readiness_snapshot(project, alias, result)
-        return result
+        return _transition_validation_result(
+            project,
+            alias,
+            result,
+            managed_workflow=managed_workflow,
+        )
     coherence = evaluate_persisted_coherence(
         project,
         alias,
@@ -172,7 +217,12 @@ def run(
         }
         update_validation(project, alias, result)
         _persist_readiness_snapshot(project, alias, result)
-        return result
+        return _transition_validation_result(
+            project,
+            alias,
+            result,
+            managed_workflow=managed_workflow,
+        )
     side_effect_findings = validate_side_effect_declaration(
         record.sideEffects,
         record.rerunPolicy,
@@ -208,7 +258,12 @@ def run(
         }
         update_validation(project, alias, result)
         _persist_readiness_snapshot(project, alias, result)
-        return result
+        return _transition_validation_result(
+            project,
+            alias,
+            result,
+            managed_workflow=managed_workflow,
+        )
     validation_runtime_values = _validation_runtime_values(record, run_request, alias)
     prepared_document, confirmation_findings, prepared_changed = prepare_run_request_document(
         run_request,
@@ -241,7 +296,12 @@ def run(
         }
         update_validation(project, alias, result)
         _persist_readiness_snapshot(project, alias, result)
-        return result
+        return _transition_validation_result(
+            project,
+            alias,
+            result,
+            managed_workflow=managed_workflow,
+        )
     authoring_run_request = (
         write_prepared_run_request(project / ".verifysignal" / "readiness" / alias, f"{alias}-validation", prepared_document)
         if prepared_changed and prepared_document is not None
@@ -348,7 +408,71 @@ def run(
     if guided_stage:
         wrapped["guidedFirstRunState"] = guided_stage
     _persist_readiness_snapshot(project, alias, wrapped)
-    return wrapped
+    return _transition_validation_result(
+        project,
+        alias,
+        wrapped,
+        managed_workflow=managed_workflow,
+    )
+
+
+def _transition_validation_result(
+    project: Path,
+    alias: str,
+    result: dict[str, Any],
+    *,
+    managed_workflow: bool,
+) -> dict[str, Any]:
+    if not managed_workflow:
+        return result
+    passed = result.get("status") == "passed"
+    blockers = [] if passed else _workflow_transition_blockers(result)
+    transition_workflow(
+        project,
+        alias,
+        stage="validate",
+        outcome="completed" if passed else "blocked",
+        blockers=blockers,
+        handoff_summary=(
+            "Protected validation passed; browser execution is ready."
+            if passed
+            else "Protected validation is blocked and must be retried."
+        ),
+    )
+    return result
+
+
+def _workflow_transition_blockers(result: dict[str, Any]) -> list[dict[str, Any]]:
+    blockers: list[dict[str, Any]] = []
+    for item in result.get("blockers", []):
+        if not isinstance(item, dict) or not item.get("code"):
+            continue
+        blockers.append(
+            {
+                key: item[key]
+                for key in (
+                    "code",
+                    "severity",
+                    "category",
+                    "message",
+                    "recoveryCommand",
+                )
+                if item.get(key) is not None
+            }
+        )
+    if blockers:
+        return blockers
+    return [
+        {
+            "code": "validation.protected-blocked",
+            "severity": "blocker",
+            "category": "validation",
+            "message": "Protected validation did not pass.",
+            "recoveryCommand": (
+                f"verifysignal workflow check validate --alias {result.get('alias', '')} --json"
+            ),
+        }
+    ]
 
 
 def _normalized_outcome_blocker(

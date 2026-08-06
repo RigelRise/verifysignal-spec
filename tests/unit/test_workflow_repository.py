@@ -139,6 +139,7 @@ def test_legacy_executable_references_infer_implement_before_one_lazy_migration(
 
     monkeypatch.setenv("VERIFYSIGNAL_CORE_CMD", str(FAKE_CORE))
     create_real_run_guardrail_workspace(tmp_path)
+    init_workspace(tmp_path, core_cmd=str(FAKE_CORE))
 
     result = persist_stage(
         tmp_path,

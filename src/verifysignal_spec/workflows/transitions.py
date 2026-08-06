@@ -73,19 +73,101 @@ def validate_workflow_stage_position(
     alias = layout.ensure_path_safe_alias(alias)
     try:
         run = load_active_workflow_run(project, alias)
-    except FileNotFoundError as exc:
+    except FileNotFoundError:
+        run = None
+    if run is None:
+        # The first mutating persistence is the lazy-migration boundary. Legacy
+        # workspaces are intentionally allowed to reach transition_workflow(),
+        # which infers one authoritative run from the artifacts just persisted.
+        return
+    if run.currentStage != stage:
         raise ValueError(
-            f"No staged workflow exists for {alias}; start the workflow first."
-        ) from exc
+            f"Workflow current stage is {run.currentStage}; cannot persist {stage}."
+        )
+
+
+def managed_workflow_stage_decision(
+    project: Path,
+    alias: str,
+    requested_stage: str,
+) -> dict[str, Any]:
+    """Return a pure stage-position decision for protected public commands."""
+
+    project = project.resolve()
+    alias = layout.ensure_path_safe_alias(alias)
+    record_path = layout.use_case_path(project, alias)
+    if not record_path.is_file() or record_path.is_symlink():
+        return {"managed": False, "blocker": None}
+    record = load_use_case(project, alias)
+    run = load_active_workflow_run(project, alias)
+    if run is None and not _has_legacy_workflow_evidence(
+        project,
+        alias,
+        record,
+    ):
+        return {"managed": False, "blocker": None}
+
     current_stage = (
         run.currentStage
         if run is not None
-        else _legacy_current_stage(project, alias)
+        else _legacy_current_stage(project, alias, record)
     )
-    if current_stage != stage:
+    allowed_sources = (
+        {"validate", "run", "repair"}
+        if requested_stage == "validate"
+        else {requested_stage}
+    )
+    if current_stage in allowed_sources:
+        return {
+            "managed": True,
+            "currentStage": current_stage,
+            "requestedStage": requested_stage,
+            "blocker": None,
+        }
+
+    integration = run.integration if run is not None else project_integration(project)
+    recovery_command = _next_command(current_stage, alias, integration)
+    blocker = {
+        "code": "workflow.stage-out-of-order",
+        "severity": "blocker",
+        "category": "workflow",
+        "message": (
+            f"Workflow current stage is {current_stage}; "
+            f"cannot execute {requested_stage}."
+        ),
+        "currentStage": current_stage,
+        "requestedStage": requested_stage,
+        "recoveryCommand": recovery_command,
+    }
+    return {
+        "managed": True,
+        "currentStage": current_stage,
+        "requestedStage": requested_stage,
+        "blocker": blocker,
+    }
+
+
+def validate_managed_workflow_stage_position(
+    project: Path,
+    alias: str,
+    stage: str,
+) -> bool:
+    """Validate an active/legacy staged workflow without claiming standalone use cases.
+
+    Direct ``author`` use cases predate staged workflows and intentionally have
+    neither a WorkflowRun nor durable workflow documents. Protected commands
+    remain available for those records. Once any staged-workflow authority or
+    durable projection exists, however, terminal commands must obey the same
+    exact source-stage rule as authored-stage persistence.
+    """
+
+    decision = managed_workflow_stage_decision(project, alias, stage)
+    blocker = decision.get("blocker")
+    if isinstance(blocker, dict):
         raise ValueError(
-            f"Workflow current stage is {current_stage}; cannot persist {stage}."
+            str(blocker["message"])
         )
+    return bool(decision["managed"])
 
 
 def transition_workflow(
@@ -125,7 +207,11 @@ def transition_workflow(
     )
     if not migrated and workflow_projection_differences(project, run):
         save_workflow_projections(project, run)
+    source_stage = run.currentStage
     stage_state = _stage_state(run, stage)
+
+    if stage == "validate" and source_stage in {"run", "repair"}:
+        _reset_stages_after_validation(run)
 
     stage_state.status = outcome
     if outcome == "completed":
@@ -206,23 +292,27 @@ def _migrate_legacy_workflow(project: Path, alias: str) -> WorkflowRun:
     integration = project_integration(project)
     stage_states = create_stage_states(project, alias)
     durable_fingerprint_parts = [alias]
-    first_incomplete = "understand"
-    all_authored_complete = True
-    for stage_name in _MIGRATABLE_AUTHORED_STAGES:
-        path = layout.workflow_stage_document_path(project, alias, stage_name)
-        content = _durable_stage_document(path)
-        if content is None:
-            first_incomplete = stage_name
-            all_authored_complete = False
+    furthest_stage, evidence = _legacy_furthest_authored_stage(
+        project,
+        alias,
+        record,
+    )
+    furthest_index = (
+        _MIGRATABLE_AUTHORED_STAGES.index(furthest_stage)
+        if furthest_stage is not None
+        else -1
+    )
+    for index, stage_name in enumerate(_MIGRATABLE_AUTHORED_STAGES):
+        if index > furthest_index:
             break
         state = next(item for item in stage_states if item.stage == stage_name)
         state.status = "completed"
         state.startedAt = now
         state.completedAt = now
-        state.handoffSummary = "Migrated from the durable stage document."
-        durable_fingerprint_parts.extend([stage_name, content])
+        state.handoffSummary = "Migrated from durable workflow evidence."
+        durable_fingerprint_parts.extend([stage_name, evidence.get(stage_name, "inferred")])
 
-    if all_authored_complete:
+    if furthest_index == len(_MIGRATABLE_AUTHORED_STAGES) - 1:
         snapshot = load_readiness_snapshot(project, alias)
         if _protected_readiness_is_valid(snapshot):
             validation = next(
@@ -238,7 +328,7 @@ def _migrate_legacy_workflow(project: Path, alias: str) -> WorkflowRun:
         else:
             current_stage = "validate"
     else:
-        current_stage = first_incomplete
+        current_stage = _MIGRATABLE_AUTHORED_STAGES[furthest_index + 1]
 
     nonce = fingerprint_text("\n".join(durable_fingerprint_parts))[:12]
     run_id = layout.ensure_path_safe_id(
@@ -260,13 +350,116 @@ def _migrate_legacy_workflow(project: Path, alias: str) -> WorkflowRun:
     )
 
 
-def _legacy_current_stage(project: Path, alias: str) -> str:
-    for stage_name in _MIGRATABLE_AUTHORED_STAGES:
-        path = layout.workflow_stage_document_path(project, alias, stage_name)
-        if _durable_stage_document(path) is None:
-            return stage_name
+def _legacy_current_stage(project: Path, alias: str, record: Any | None = None) -> str:
+    record = record or load_use_case(project, alias)
+    furthest_stage, _evidence = _legacy_furthest_authored_stage(
+        project,
+        alias,
+        record,
+    )
+    if furthest_stage != "implement":
+        if furthest_stage is None:
+            return "understand"
+        return _MIGRATABLE_AUTHORED_STAGES[
+            _MIGRATABLE_AUTHORED_STAGES.index(furthest_stage) + 1
+        ]
     snapshot = load_readiness_snapshot(project, alias)
     return "run" if _protected_readiness_is_valid(snapshot) else "validate"
+
+
+def _has_legacy_workflow_evidence(
+    project: Path,
+    alias: str,
+    record: Any,
+) -> bool:
+    workflow_reference = getattr(record, "workflow", None)
+    if isinstance(workflow_reference, dict) and workflow_reference:
+        return True
+    state_path = layout.workflow_state_path(project, alias)
+    if state_path.is_file() and not state_path.is_symlink():
+        return True
+    if any(
+        (path := layout.workflow_stage_document_path(project, alias, stage)).is_file()
+        and not path.is_symlink()
+        for stage in _MIGRATABLE_AUTHORED_STAGES
+    ):
+        return True
+    references = [
+        getattr(record, "runRequest", None),
+        getattr(record, "mainSkill", None),
+        *list(getattr(record, "skills", []) or []),
+        *list(getattr(record, "sourceOnlySkills", []) or []),
+    ]
+    return any(
+        _durable_artifact_reference(project, reference)
+        for reference in references
+    )
+
+
+def _legacy_furthest_authored_stage(
+    project: Path,
+    alias: str,
+    record: Any,
+) -> tuple[str | None, dict[str, str]]:
+    evidence: dict[str, str] = {}
+    for stage_name in _MIGRATABLE_AUTHORED_STAGES:
+        path = layout.workflow_stage_document_path(project, alias, stage_name)
+        content = _durable_stage_document(path)
+        if content is not None:
+            evidence[stage_name] = content
+
+    workflow_reference = getattr(record, "workflow", None)
+    if isinstance(workflow_reference, dict):
+        current_stage = str(workflow_reference.get("currentStage") or "")
+        if current_stage in WORKFLOW_STAGES:
+            current_index = WORKFLOW_STAGES.index(current_stage)
+            completed_index = min(
+                current_index - 1,
+                len(_MIGRATABLE_AUTHORED_STAGES) - 1,
+            )
+            if completed_index >= 0:
+                stage_name = _MIGRATABLE_AUTHORED_STAGES[completed_index]
+                evidence.setdefault(stage_name, f"workflow:{current_stage}")
+
+    plan_yaml = layout.workflow_stage_document_path(project, alias, "plan").with_suffix(".yaml")
+    if plan_yaml.is_file() and not plan_yaml.is_symlink():
+        evidence.setdefault("plan", str(plan_yaml.relative_to(project)))
+    tasks_yaml = layout.workflow_stage_document_path(project, alias, "tasks").with_suffix(".yaml")
+    if tasks_yaml.is_file() and not tasks_yaml.is_symlink():
+        evidence.setdefault("tasks", str(tasks_yaml.relative_to(project)))
+
+    executable_references = [
+        getattr(record, "runRequest", None),
+        getattr(record, "mainSkill", None),
+        *list(getattr(record, "skills", []) or []),
+        *list(getattr(record, "sourceOnlySkills", []) or []),
+    ]
+    if any(
+        _durable_artifact_reference(project, reference)
+        for reference in executable_references
+    ):
+        evidence.setdefault("implement", "use-case:executable-references")
+
+    furthest_stage = next(
+        (
+            stage_name
+            for stage_name in reversed(_MIGRATABLE_AUTHORED_STAGES)
+            if stage_name in evidence
+        ),
+        None,
+    )
+    return furthest_stage, evidence
+
+
+def _durable_artifact_reference(project: Path, reference: Any) -> bool:
+    raw_path = getattr(reference, "path", None)
+    if not isinstance(raw_path, str) or not raw_path.strip():
+        return False
+    try:
+        path = layout.project_relative_path(project, raw_path)
+    except (TypeError, ValueError):
+        return False
+    return path.is_file() and not path.is_symlink()
 
 
 def _durable_stage_document(path: Path) -> str | None:
@@ -340,6 +533,8 @@ def _validate_transition_position(
 ) -> None:
     if run.currentStage == stage:
         return
+    if stage == "validate" and run.currentStage in {"run", "repair"}:
+        return
     state = _stage_state(run, stage)
     migration_includes_current_write = bool(
         migrated
@@ -352,6 +547,16 @@ def _validate_transition_position(
     raise ValueError(
         f"Workflow current stage is {run.currentStage}; cannot transition {stage}."
     )
+
+
+def _reset_stages_after_validation(run: WorkflowRun) -> None:
+    validate_index = WORKFLOW_STAGES.index("validate")
+    for state in run.stageStates[validate_index + 1 :]:
+        state.status = "pending"
+        state.startedAt = None
+        state.completedAt = None
+        state.blockers = []
+        state.nextCommand = None
 
 
 def _normalized_blockers(
