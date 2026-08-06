@@ -350,10 +350,10 @@ def main() -> int:
                     "operation": "run",
                     "status": run_status,
                     "data": {
-                        "runId": "fake-run-1",
                         "reportPath": ".verifysignal/runs/login/fake-run-1/report.json",
                         "evidencePath": ".verifysignal/runs/login/fake-run-1/evidence",
                         "summary": {
+                            "runId": "fake-run-1",
                             "title": "Fake run",
                             "status": run_status,
                             "failedStepId": "scroll-to-activity" if mode == "aborted-activity-wait" else None,
