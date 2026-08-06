@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from unittest.mock import patch
 
-from helpers import CliTestCase
+from helpers import FAKE_CORE, CliTestCase
 
 
 class WorkflowCliContractTests(CliTestCase):
@@ -145,7 +145,17 @@ class WorkflowCliContractTests(CliTestCase):
         self.assertIn("/verifysignal-specify", run_path.read_text(encoding="utf-8"))
 
     def test_workflow_validate_contract_uses_existing_core_adapter(self) -> None:
-        self.cli(["init", str(self.project), "--integration", "codex", "--json"])
+        self.cli(
+            [
+                "init",
+                str(self.project),
+                "--integration",
+                "codex",
+                "--core-cmd",
+                str(FAKE_CORE),
+                "--json",
+            ]
+        )
         self.cli(["author", "login", "Validate login.", "--project", str(self.project), "--json"])
         code, out, err = self.cli(["validate", "login", "--project", str(self.project), "--json"])
         self.assertEqual(code, 0, err)

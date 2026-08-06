@@ -23,7 +23,11 @@ from verifysignal_spec.commands.run_request_preparation import (
     write_owned_prepared_run_request,
 )
 from verifysignal_spec.workspace import layout
+from verifysignal_spec.workspace import repository as workspace_repository
 from verifysignal_spec.workspace.repository import now_iso, save_document, save_use_case
+from verifysignal_spec.workflows.engine import create_workflow_run
+from verifysignal_spec.workflows.repository import load_active_workflow_run
+from verifysignal_spec.workflows.transitions import transition_workflow
 
 
 FIXED_NOW = "2026-08-05T01:02:03Z"
@@ -42,7 +46,14 @@ def test_core_error_removes_only_the_exact_new_prepared_request(
     before = {neighbor: neighbor.read_bytes(), canonical: canonical.read_bytes()}
     workspace_before = workspace_file_snapshot(tmp_path)
     transient = run_dir / f"{alias}-20260805T010203Z.run-request.json"
+    workflow_run = load_active_workflow_run(tmp_path, alias)
+    assert workflow_run is not None
 
+    monkeypatch.setattr(
+        workspace_repository,
+        "now_iso",
+        lambda: "2026-08-05T01:02:04Z",
+    )
     result = run_command.run(tmp_path, alias, interactive=False, core_cmd=str(FAKE_CORE))
 
     assert result["status"] == "blocked"
@@ -54,7 +65,12 @@ def test_core_error_removes_only_the_exact_new_prepared_request(
     assert_exact_workspace_file_changes(
         tmp_path,
         workspace_before,
-        changed=[f"use-cases/{alias}.yaml"],
+        changed=[
+            "registry.yaml",
+            f"use-cases/{alias}.yaml",
+            f"workflows/runs/{workflow_run.runId}.yaml",
+            f"workflows/use-cases/{alias}/state.yaml",
+        ],
     )
 
 
@@ -364,6 +380,20 @@ def _prepare_cleanup_workspace(
         "afterUnknown": "requires-confirmation",
     }
     save_use_case(project, record)
+    create_workflow_run(
+        project,
+        "Validate a write-capable collaboration flow.",
+        alias=record.alias,
+        integration="codex",
+    )
+    for stage in ("specify", "clarify", "plan", "tasks", "implement", "validate"):
+        transition_workflow(
+            project,
+            record.alias,
+            stage=stage,
+            outcome="completed",
+            handoff_summary="Canonical prepared-request fixture setup.",
+        )
     readiness = build_protected_readiness_snapshot(
         record.alias,
         status="ready",

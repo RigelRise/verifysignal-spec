@@ -6,8 +6,10 @@ from typing import Any
 
 from verifysignal_spec.workspace.models import ArtifactReference, UseCaseRecord
 from verifysignal_spec.workspace.repository import init_workspace, save_use_case
+from verifysignal_spec.workflows.engine import create_workflow_run
 from verifysignal_spec.workflows.models import ArtifactPlan
 from verifysignal_spec.workflows.repository import save_artifact_plan
+from verifysignal_spec.workflows.transitions import transition_workflow
 
 
 ALIAS = "brands-search-authenticated"
@@ -123,6 +125,20 @@ def create_planned_workspace(project: Path, *, core_cmd: str | None = None) -> N
             ],
         ),
     )
+    create_workflow_run(
+        project,
+        "Validate authenticated brands search.",
+        alias=ALIAS,
+        integration="codex",
+    )
+    for stage in ("specify", "clarify", "plan", "tasks"):
+        transition_workflow(
+            project,
+            ALIAS,
+            stage=stage,
+            outcome="completed",
+            handoff_summary="Canonical skill-boundary fixture setup.",
+        )
 
 
 def load_json(path: Path) -> dict[str, Any]:

@@ -190,6 +190,7 @@ def test_run_missing_core_stderr_points_to_setup(tmp_path) -> None:
     create_main_skill_coverage_workspace(
         tmp_path,
         core_cmd="missing-verifysignal-core-run",
+        protected_ready=True,
     )
 
     code, _out, err = _cli([

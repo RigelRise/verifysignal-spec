@@ -3,17 +3,62 @@ from __future__ import annotations
 import json
 import os
 
-from helpers import CliTestCase, assert_no_core_contract_snapshots
+from helpers import FAKE_CORE, CliTestCase, assert_no_core_contract_snapshots
 
 from tests.fixtures.workflows.main_skill_run_coverage import HELPER_SKILL_PATH, MAIN_SKILL_PATH, create_main_skill_coverage_workspace
 from tests.fixtures.workflows.guardrails import stage_payload, write_payload
 from tests.fixtures.workflows.prerequisites import create_current_understanding_workspace
+from verifysignal_spec.workflows.engine import create_workflow_run
+from verifysignal_spec.workflows.transitions import transition_workflow
 from verifysignal_spec.workspace.repository import load_document, load_refresh_impact
 
 
 class WorkflowStagePersistenceContractTests(CliTestCase):
+    def _start_workflow(self, alias: str, goal: str) -> None:
+        code, _out, err = self.cli(
+            [
+                "workflow",
+                "run",
+                "verifysignal-use-case",
+                "--goal",
+                goal,
+                "--alias",
+                alias,
+                "--project",
+                str(self.project),
+                "--json",
+            ]
+        )
+        self.assertEqual(code, 0, err)
+
+    def _advance_fixture_to_implement(self, alias: str) -> None:
+        create_workflow_run(
+            self.project,
+            goal=f"Implement {alias}.",
+            alias=alias,
+            integration="codex",
+        )
+        for stage in ("specify", "clarify", "plan", "tasks"):
+            transition_workflow(
+                self.project,
+                alias,
+                stage=stage,
+                outcome="completed",
+                handoff_summary="Canonical contract fixture setup.",
+            )
+
     def test_workflow_info_defaults_to_current_workflow_and_includes_browser_authoring_contract(self) -> None:
-        self.cli(["init", str(self.project), "--integration", "codex", "--json"])
+        self.cli(
+            [
+                "init",
+                str(self.project),
+                "--integration",
+                "codex",
+                "--core-cmd",
+                str(FAKE_CORE),
+                "--json",
+            ]
+        )
 
         code, out, err = self.cli(["workflow", "info", "--project", str(self.project), "--json"])
 
@@ -64,7 +109,17 @@ class WorkflowStagePersistenceContractTests(CliTestCase):
 
     def test_workflow_info_projects_current_core_contract_shape(self) -> None:
         os.environ["FAKE_VERIFYSIGNAL_MODE"] = "current-contract"
-        self.cli(["init", str(self.project), "--integration", "codex", "--json"])
+        self.cli(
+            [
+                "init",
+                str(self.project),
+                "--integration",
+                "codex",
+                "--core-cmd",
+                str(FAKE_CORE),
+                "--json",
+            ]
+        )
 
         code, out, err = self.cli(["workflow", "info", "--project", str(self.project), "--json"])
 
@@ -77,7 +132,17 @@ class WorkflowStagePersistenceContractTests(CliTestCase):
 
     def test_workflow_info_projects_current_field_schema_and_credential_metadata(self) -> None:
         os.environ["FAKE_VERIFYSIGNAL_MODE"] = "current-contract"
-        self.cli(["init", str(self.project), "--integration", "codex", "--json"])
+        self.cli(
+            [
+                "init",
+                str(self.project),
+                "--integration",
+                "codex",
+                "--core-cmd",
+                str(FAKE_CORE),
+                "--json",
+            ]
+        )
 
         code, out, err = self.cli(["workflow", "info", "--project", str(self.project), "--json"])
 
@@ -93,7 +158,17 @@ class WorkflowStagePersistenceContractTests(CliTestCase):
 
     def test_workflow_info_does_not_persist_core_contract_projection_cache(self) -> None:
         os.environ["FAKE_VERIFYSIGNAL_MODE"] = "current-contract"
-        self.cli(["init", str(self.project), "--integration", "codex", "--json"])
+        self.cli(
+            [
+                "init",
+                str(self.project),
+                "--integration",
+                "codex",
+                "--core-cmd",
+                str(FAKE_CORE),
+                "--json",
+            ]
+        )
 
         code, _out, err = self.cli(["workflow", "info", "--project", str(self.project), "--json"])
 
@@ -166,8 +241,9 @@ class WorkflowStagePersistenceContractTests(CliTestCase):
         self.assertEqual(impact.status, "unaffected")
         self.assertEqual(impact.recommendedAction, "none")
 
-    def test_plan_blocks_unresolved_environment_dependent_clarification(self) -> None:
+    def test_clarify_blocks_unresolved_environment_dependent_question(self) -> None:
         self.cli(["init", str(self.project), "--integration", "codex", "--json"])
+        self._start_workflow("login", "Validate login.")
         specify_payload = stage_payload(
             "specify",
             payload={
@@ -213,7 +289,7 @@ class WorkflowStagePersistenceContractTests(CliTestCase):
                 "blockingQuestionsResolved": False,
             },
         )
-        self.cli([
+        code, out, err = self.cli([
             "workflow",
             "persist",
             "clarify",
@@ -225,36 +301,40 @@ class WorkflowStagePersistenceContractTests(CliTestCase):
             str(write_payload(self.project, "clarify", clarify_payload)),
             "--json",
         ])
-
-        plan_payload = stage_payload(
-            "plan",
-            payload={
-                "alias": "login",
-                "runRequest": ".verifysignal/run-requests/login.yaml",
-                "reusableSkills": [".verifysignal/skills/login.browser.md"],
-                "runtimeInputs": [],
-                "unresolvedBlockingClarifications": [{"id": "q1"}],
-            },
-        )
-        code, out, err = self.cli([
-            "workflow",
-            "persist",
-            "plan",
-            "--alias",
-            "login",
-            "--project",
-            str(self.project),
-            "--payload",
-            str(write_payload(self.project, "plan", plan_payload)),
-            "--json",
-        ])
-        self.assertEqual(code, 2, err)
+        self.assertEqual(code, 0, f"{err}\n{out}")
         result = json.loads(out)
-        self.assertEqual(result["status"], "blocked")
-        self.assertEqual(result["blockers"][0]["code"], "clarification.unresolved-blocking")
+        self.assertEqual(result["status"], "persisted")
+        self.assertIn(
+            "Blocking environment-dependent questions remain unresolved.",
+            result["warnings"],
+        )
+        code, out, err = self.cli(
+            [
+                "workflow",
+                "status",
+                "--alias",
+                "login",
+                "--project",
+                str(self.project),
+                "--json",
+            ]
+        )
+        self.assertEqual(code, 0, err)
+        status = json.loads(out)
+        self.assertEqual(status["currentStage"], "clarify")
+        clarify = next(
+            item for item in status["state"]["stageStates"]
+            if item["stage"] == "clarify"
+        )
+        self.assertEqual(clarify["status"], "blocked")
+        self.assertEqual(
+            clarify["blockers"][0]["code"],
+            "clarification.unresolved-blocking",
+        )
 
     def test_resolved_browser_target_is_preserved_from_clarify_to_plan(self) -> None:
         create_current_understanding_workspace(self.project)
+        self._start_workflow("profile", "Validate profile.")
         specify_payload = stage_payload(
             "specify",
             payload={
@@ -333,6 +413,7 @@ class WorkflowStagePersistenceContractTests(CliTestCase):
 
     def test_workflow_show_and_status_alias_read_persisted_use_case_context(self) -> None:
         self.cli(["init", str(self.project), "--integration", "codex", "--json"])
+        self._start_workflow("login", "Validate login.")
         specify_payload = stage_payload(
             "specify",
             payload={
@@ -376,7 +457,11 @@ class WorkflowStagePersistenceContractTests(CliTestCase):
         self.assertEqual(json.loads(out)["useCaseAlias"], "login")
 
     def test_implement_blocks_when_planned_main_skill_is_missing(self) -> None:
-        create_main_skill_coverage_workspace(self.project)
+        create_main_skill_coverage_workspace(
+            self.project,
+            core_cmd=str(FAKE_CORE),
+        )
+        self._advance_fixture_to_implement("profile-view-unauth")
         payload = stage_payload(
             "implement",
             payload={
@@ -400,13 +485,17 @@ class WorkflowStagePersistenceContractTests(CliTestCase):
             ]
         )
 
-        self.assertEqual(code, 2, err)
+        self.assertEqual(code, 2, f"{err}\n{out}")
         result = json.loads(out)
         self.assertEqual(result["status"], "blocked")
         self.assertIn(MAIN_SKILL_PATH, result["blockers"][0]["message"])
 
     def test_implement_reorders_helper_first_payload_to_planned_main_skill(self) -> None:
-        create_main_skill_coverage_workspace(self.project)
+        create_main_skill_coverage_workspace(
+            self.project,
+            core_cmd=str(FAKE_CORE),
+        )
+        self._advance_fixture_to_implement("profile-view-unauth")
         payload = stage_payload(
             "implement",
             payload={
@@ -448,14 +537,18 @@ class WorkflowStagePersistenceContractTests(CliTestCase):
 
         self.assertEqual(code, 0, err)
         result = json.loads(out)
-        self.assertEqual(result["status"], "persisted")
+        self.assertEqual(result["status"], "persisted", out)
         record = json.loads((self.project / ".verifysignal/use-cases/profile-view-unauth.yaml").read_text(encoding="utf-8"))
         self.assertEqual(record["mainSkill"]["path"], MAIN_SKILL_PATH)
         self.assertEqual(record["skills"][0]["path"], MAIN_SKILL_PATH)
         self.assertEqual(record["mainSkill"]["version"], "3.0.0")
 
     def test_implement_preserves_run_request_content_parameters(self) -> None:
-        create_main_skill_coverage_workspace(self.project)
+        create_main_skill_coverage_workspace(
+            self.project,
+            core_cmd=str(FAKE_CORE),
+        )
+        self._advance_fixture_to_implement("profile-view-unauth")
         payload = stage_payload(
             "implement",
             payload={

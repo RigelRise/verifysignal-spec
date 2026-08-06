@@ -174,6 +174,14 @@ def test_probe_and_run_block_before_core_when_current_workflow_target_is_unconfi
         alias="create-project",
         payload=_specification("http://127.0.0.1:4100"),
     )
+    for stage in ("clarify", "plan", "tasks", "implement", "validate"):
+        transition_workflow(
+            tmp_path,
+            "create-project",
+            stage=stage,
+            outcome="completed",
+            handoff_summary="Canonical unconfirmed-target fixture setup.",
+        )
     record = load_use_case(tmp_path, "create-project")
     record.runRequest = ArtifactReference(
         path=".verifysignal/run-requests/create-project.yaml",

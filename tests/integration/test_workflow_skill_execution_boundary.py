@@ -15,7 +15,7 @@ def test_source_only_not_in_run_request(tmp_path, monkeypatch) -> None:
     from tests.helpers import FAKE_CORE
 
     monkeypatch.setenv("VERIFYSIGNAL_CORE_CMD", str(FAKE_CORE))
-    create_planned_workspace(tmp_path)
+    create_planned_workspace(tmp_path, core_cmd=str(FAKE_CORE))
 
     result = persist_stage(tmp_path, "implement", alias=ALIAS, payload=implementation_payload(composed_main=True))
 
@@ -31,7 +31,7 @@ def test_compose_login_into_main(tmp_path, monkeypatch) -> None:
     from tests.helpers import FAKE_CORE
 
     monkeypatch.setenv("VERIFYSIGNAL_CORE_CMD", str(FAKE_CORE))
-    create_planned_workspace(tmp_path)
+    create_planned_workspace(tmp_path, core_cmd=str(FAKE_CORE))
 
     result = persist_stage(tmp_path, "implement", alias=ALIAS, payload=implementation_payload(composed_main=False))
 
@@ -49,7 +49,7 @@ def test_source_skill_gate_evidence_does_not_satisfy_required_gate_without_main_
     from tests.helpers import FAKE_CORE
 
     monkeypatch.setenv("VERIFYSIGNAL_CORE_CMD", str(FAKE_CORE))
-    create_planned_workspace(tmp_path)
+    create_planned_workspace(tmp_path, core_cmd=str(FAKE_CORE))
     payload = implementation_payload(composed_main=False)
     payload["skills"][0]["browser"]["assertions"] = [
         assertion

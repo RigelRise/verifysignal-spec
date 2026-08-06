@@ -15,6 +15,8 @@ from verifysignal_spec.commands import run as run_command
 from verifysignal_spec.workspace import layout, repository as workspace_repository
 from verifysignal_spec.workspace.models import LastCoreAttempt, RunHistoryEntry
 from verifysignal_spec.workspace.repository import load_document, now_iso, save_document, save_use_case
+from verifysignal_spec.workflows.engine import create_workflow_run
+from verifysignal_spec.workflows.transitions import transition_workflow
 
 
 def test_current_preexecution_core_error_records_a_safe_non_run_attempt(
@@ -200,6 +202,20 @@ def _prepare_error_workspace(
         "afterUnknown": "requires-confirmation",
     }
     save_use_case(project, record)
+    create_workflow_run(
+        project,
+        "Validate a write-capable collaboration flow.",
+        alias=record.alias,
+        integration="codex",
+    )
+    for stage in ("specify", "clarify", "plan", "tasks", "implement", "validate"):
+        transition_workflow(
+            project,
+            record.alias,
+            stage=stage,
+            outcome="completed",
+            handoff_summary="Canonical pre-execution fixture setup.",
+        )
     readiness = build_protected_readiness_snapshot(
         record.alias,
         status="ready",
