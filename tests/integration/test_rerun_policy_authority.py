@@ -296,6 +296,110 @@ def test_legacy_write_interpretation_remains_write_evidence_after_current_class_
     assert decision["policyBranch"] == "afterCommit"
 
 
+def test_policy_change_does_not_override_confirmed_commit(
+    tmp_path: Path,
+) -> None:
+    previous_policy = {
+        "class": "write",
+        "mode": "enforce",
+        "commitStepId": "submit",
+        "allowed": [],
+        "forbidden": [],
+    }
+    current_policy = {
+        **previous_policy,
+        "allowed": [
+            {"method": "POST", "url": "https://example.test/items"},
+        ],
+    }
+    last_run = {
+        "runId": "violation-run",
+        "startedAt": "2026-08-04T14:26:35Z",
+        "completedAt": "2026-08-04T14:26:36Z",
+        "status": "failed",
+        "sideEffectPolicy": previous_policy,
+        "sideEffects": {
+            "class": "write",
+            "commitStep": {"reached": True},
+            "violations": [{"code": "unexpected-write"}],
+        },
+        "postCommitInterpretation": {
+            "postCommit": True,
+            "sideEffectMayExist": True,
+            "sideEffectStatus": "committed-confirmed",
+            "rerunRisk": "blocked",
+        },
+    }
+    record = _record_for_case(
+        tmp_path,
+        side_effect_class="write",
+        last_run=last_run,
+        last_attempt=None,
+    )
+    record.sideEffects = current_policy
+
+    decision = evaluate_rerun_decision(record)
+
+    assert decision["decision"] == "blocked"
+    assert decision["outcomeClass"] == "commit"
+    assert decision["policyBranch"] == "afterCommit"
+
+
+def test_policy_change_does_not_override_newer_unknown_attempt(
+    tmp_path: Path,
+) -> None:
+    previous_policy = {
+        "class": "write",
+        "mode": "enforce",
+        "commitStepId": "submit",
+        "allowed": [],
+        "forbidden": [],
+    }
+    current_policy = {
+        **previous_policy,
+        "allowed": [
+            {"method": "POST", "url": "https://example.test/items"},
+        ],
+    }
+    last_run = {
+        "runId": "violation-run",
+        "startedAt": "2026-08-04T14:26:35Z",
+        "completedAt": "2026-08-04T14:26:36Z",
+        "status": "failed",
+        "sideEffectPolicy": previous_policy,
+        "sideEffects": {
+            "class": "write",
+            "commitStep": {"reached": True},
+            "violations": [{"code": "unexpected-write"}],
+        },
+        "postCommitInterpretation": {
+            "postCommit": True,
+            "sideEffectMayExist": True,
+            "sideEffectStatus": "committed-confirmed",
+            "rerunRisk": "blocked",
+        },
+    }
+    record = _record_for_case(
+        tmp_path,
+        side_effect_class="write",
+        last_run=last_run,
+        last_attempt={
+            "attemptedAt": "2026-08-04T14:27:00Z",
+            "operation": "run",
+            "status": "failed",
+            "executionState": "unknown",
+            "sideEffectMayExist": True,
+        },
+    )
+    record.sideEffects = current_policy
+
+    decision = evaluate_rerun_decision(record)
+
+    assert decision["decision"] == "requires-confirmation"
+    assert decision["outcomeClass"] == "unknown-write"
+    assert decision["policyBranch"] == "afterUnknown"
+
+
 def test_equal_timestamp_attempt_does_not_override_the_real_run(tmp_path: Path) -> None:
     record = _record_for_case(
         tmp_path,

@@ -210,6 +210,117 @@ def test_secret_scanner_rejects_secret_locator_embedded_in_prose(
 
 
 @pytest.mark.parametrize(
+    "locator",
+    [
+        "mailto:qa@example.com?token=abc123abc123abc123",
+        "Email mailto:qa@example.com?token=abc123abc123abc123 for help",
+        "<https://user:pass@example.com/app>",
+        "<https://example.com?token=abc123abc123abc123>",
+        "https://example.test/login?redirect=https%3A%2F%2Fuser%3Apass%40private.test%2Fapp",
+        "https://example.test/login?next=//user:pass@private.test/app",
+        "Retry callback?token=abc123abc123abc123 after login",
+        "The URL is ?token=abc123abc123abc123 here",
+    ],
+    ids=[
+        "mailto-token-query",
+        "mailto-token-query-in-prose",
+        "markdown-autolink-userinfo",
+        "markdown-autolink-token-query",
+        "encoded-nested-userinfo-url",
+        "protocol-relative-nested-userinfo-url",
+        "bare-relative-token-query-in-prose",
+        "query-only-token-in-prose",
+    ],
+)
+def test_secret_scanner_rejects_additional_embedded_secret_uri_forms(
+    locator: str,
+) -> None:
+    assert validate_no_secret_values({"reportPath": locator})
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected_path"),
+    [
+        ({"password": "<actual-secret>"}, "password"),
+        (
+            {"reportPath": "<https://user:hunter2@example.com>"},
+            "reportPath",
+        ),
+        (
+            {"reportPath": "${PUBLIC} Bearer abcdefghijklmnop"},
+            "reportPath",
+        ),
+        (
+            {"reportPath": "https://user:hunter2@["},
+            "reportPath",
+        ),
+    ],
+    ids=[
+        "angle-bracket-secret-field",
+        "angle-bracket-userinfo-url",
+        "placeholder-prefix-with-bearer",
+        "malformed-userinfo-url",
+    ],
+)
+def test_secret_scanner_rejects_placeholder_shaped_and_malformed_secret_values(
+    payload: dict[str, object],
+    expected_path: str,
+) -> None:
+    findings = validate_no_secret_values(payload)
+
+    assert any(
+        finding["severity"] == "blocking"
+        and finding["code"] == "secret-looking-value"
+        and finding["path"] == expected_path
+        for finding in findings
+    )
+
+
+@pytest.mark.parametrize(
+    "locator",
+    [
+        "C:reports@2026.json",
+        "D:user:notes@example.txt",
+        "https://example.test/posts?author=thiago",
+        "https://example.test/docs?authority=public",
+        "/search?authors=alice",
+        "https://example.test/docs#author-bio",
+    ],
+    ids=[
+        "windows-drive-relative-at-sign",
+        "windows-drive-relative-colon-at-sign",
+        "author-query",
+        "authority-query",
+        "authors-query",
+        "author-fragment",
+    ],
+)
+def test_secret_scanner_preserves_public_uri_and_windows_path_boundaries(
+    locator: str,
+) -> None:
+    assert validate_no_secret_values({"reportPath": locator}) == []
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"targets": {"currentPasswordInput": {"testId": "current-password-input"}}},
+        {"targets": {"apiTokenField": {"testId": "api-token-field"}}},
+        {"controls": {"resetPasswordButton": {"role": "button"}}},
+    ],
+    ids=[
+        "password-input-target",
+        "api-token-field-target",
+        "reset-password-control",
+    ],
+)
+def test_selector_alias_containers_do_not_propagate_secret_context(
+    payload: dict[str, object],
+) -> None:
+    assert validate_no_secret_values(payload) == []
+
+
+@pytest.mark.parametrize(
     "path",
     [
         "/callback?view=summary",

@@ -263,6 +263,39 @@ def test_malformed_execution_metadata_remains_unknown_as_a_complete_unit() -> No
     assert outcome["sideEffectMayExist"] is None
 
 
+@pytest.mark.parametrize(
+    ("error_code", "phase"),
+    [
+        ("execution-error", "pre-execution"),
+        ("entitlement.key-unknown", "post-execution"),
+    ],
+)
+def test_only_entitlement_preexecution_errors_can_prove_execution_not_started(
+    error_code: str,
+    phase: str,
+) -> None:
+    outcome = _normalize(
+        "run",
+        {
+            "schema": "verifysignal.error/v1",
+            "schemaVersion": 1,
+            "operation": "run",
+            "status": "error",
+            "error": {"code": error_code},
+            "execution": {
+                "started": False,
+                "phase": phase,
+                "sideEffectMayExist": False,
+            },
+        },
+    )
+
+    assert outcome["executionKnown"] is False
+    assert outcome["executionStarted"] is None
+    assert outcome["executionPhase"] is None
+    assert outcome["sideEffectMayExist"] is None
+
+
 def test_error_operation_mismatch_is_contract_invalid() -> None:
     outcome = _normalize(
         "run",

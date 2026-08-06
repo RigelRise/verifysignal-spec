@@ -388,6 +388,68 @@ def test_cross_mapping_commit_step_outweighs_safe_interpretation(
     assert decision["policyBranch"] == "afterCommit"
 
 
+def test_record_run_rejects_cross_mapping_raw_violated_status(
+    tmp_path: Path,
+) -> None:
+    record = _saved_record(tmp_path)
+    entry = _entry(record.alias)
+    entry.sideEffects = {
+        "class": "write",
+        "status": "violated",
+        "commitStep": {"reached": False},
+    }
+    entry.postCommitInterpretation = {
+        "postCommit": False,
+        "sideEffectMayExist": False,
+        "sideEffectStatus": "not-committed",
+        "rerunRisk": "safe",
+    }
+    history_path = layout.run_history_path(
+        tmp_path,
+        record.alias,
+        entry.runId,
+    )
+
+    with pytest.raises(ValueError, match="(?i)(contradict|risk|violat|commit)"):
+        record_run(tmp_path, entry)
+
+    assert not history_path.exists()
+
+
+def test_raw_violated_status_outweighs_safe_interpretation_in_evaluator(
+    tmp_path: Path,
+) -> None:
+    record = _saved_record(tmp_path)
+    record.lastRun = {
+        "runId": "raw-status",
+        "startedAt": "2026-08-04T14:26:35Z",
+        "completedAt": "2026-08-04T14:26:36Z",
+        "status": "failed",
+        "sideEffects": {
+            "class": "write",
+            "status": "violated",
+            "commitStep": {"reached": False},
+        },
+        "postCommitInterpretation": {
+            "postCommit": False,
+            "sideEffectMayExist": False,
+            "sideEffectStatus": "not-committed",
+            "rerunRisk": "safe",
+        },
+    }
+    record.rerunPolicy = {
+        "afterNoCommit": "allowed",
+        "afterCommit": "blocked",
+        "afterUnknown": "requires-confirmation",
+    }
+
+    decision = evaluate_rerun_decision(record)
+
+    assert decision["decision"] == "blocked"
+    assert decision["outcomeClass"] == "commit"
+    assert decision["policyBranch"] == "afterCommit"
+
+
 @pytest.mark.parametrize(
     "side_effect_status",
     [

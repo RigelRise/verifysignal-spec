@@ -161,3 +161,45 @@ class CoreAdapterTests(CliTestCase):
             )
 
         self.assertIn("VERIFYSIGNAL_ENTITLEMENT_PUBLIC_KEYS_JSON", captured[0])
+
+    def test_source_runtime_reads_cached_keys_from_the_selected_entitlement_endpoint(self) -> None:
+        endpoint = "https://custom.example.test/api"
+        adapter = CoreAdapter(executable=str(FAKE_CORE), cwd=self.project)
+        compatibility = adapter.check_compatibility()
+        captured: list[dict[str, str]] = []
+        adapter.require_compatible = lambda: compatibility  # type: ignore[method-assign]
+        adapter._run = lambda args, env=None: captured.append(env or {}) or {"status": "passed"}  # type: ignore[method-assign]
+
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("VERIFYSIGNAL_RUNTIME_CACHE_DIR", None)
+            os.environ.pop("VERIFYSIGNAL_API_BASE_URL", None)
+            os.environ.pop("VERIFYSIGNAL_ENTITLEMENT_PUBLIC_KEYS_JSON", None)
+            with patch(
+                "verifysignal_spec.runtime.cache.Path.home",
+                return_value=self.project / "isolated-home",
+            ):
+                save_verification_keys(
+                    {
+                        "schema": "verifysignal.entitlement-keys/v1",
+                        "schemaVersion": 1,
+                        "keys": [
+                            {
+                                "keyId": "custom-endpoint-key",
+                                "algorithm": "ed25519",
+                                "publicKeyPem": "public-only-test-material",
+                                "status": "active",
+                            }
+                        ],
+                    },
+                    source_api_base_url=endpoint,
+                )
+                adapter.authoring_check(
+                    Path("request.yaml"),
+                    Path("main.browser.md"),
+                    [Path("main.browser.md")],
+                    runtime_readiness=True,
+                    entitlement_receipt=Path("receipt.json"),
+                    entitlement_api_base_url=endpoint,
+                )
+
+        self.assertIn("custom-endpoint-key", captured[0]["VERIFYSIGNAL_ENTITLEMENT_PUBLIC_KEYS_JSON"])
