@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from verifysignal_spec.workspace import layout
 from verifysignal_spec.workspace.repository import init_workspace
 from verifysignal_spec.workspace.repository import load_document
 from verifysignal_spec.workspace.validation import validate_use_case
@@ -269,6 +270,34 @@ def test_public_path_field_exemptions_do_not_allow_secret_content(value: str) ->
 
     assert findings
     assert findings[0]["path"] == "reportPath"
+
+
+@pytest.mark.parametrize(
+    "secret_payload",
+    [
+        {"apiKey": {"value": "short-live-key"}},
+        {"reportPath": "Bearer abc123abc123abc123abc123"},
+    ],
+    ids=["secret-named-container", "exempt-field-secret-content"],
+)
+def test_workflow_state_rejects_nested_secret_before_any_state_write(
+    tmp_path,
+    secret_payload: dict[str, object],
+) -> None:
+    init_workspace(tmp_path)
+    state_path = layout.workflow_state_path(tmp_path, "login")
+
+    with pytest.raises(ValueError):
+        save_workflow_state(
+            tmp_path,
+            "login",
+            {
+                "schemaVersion": "verifysignal-spec-workflow-state/v1",
+                **secret_payload,
+            },
+        )
+
+    assert not state_path.exists()
 
 
 def test_credential_refs_allow_env_key_names_but_reject_values() -> None:

@@ -106,6 +106,11 @@ def test_attempt_and_real_run_authority_use_durable_document_writes(
         "durable_atomic_write_text_lf",
         observe_durable_write,
     )
+    monkeypatch.setattr(
+        workspace_repository,
+        "durable_create_text_lf",
+        observe_durable_write,
+    )
     attempt = LastCoreAttempt(
         attemptedAt="2026-08-05T00:00:00.000000001Z",
         operation="run",
