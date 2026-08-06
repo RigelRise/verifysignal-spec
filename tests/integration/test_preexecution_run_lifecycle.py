@@ -360,6 +360,73 @@ def test_successful_last_run_outranks_write_ahead_marker_when_clear_fails(
     assert decision.get("sourceRunId") == persisted.lastRun["runId"]
 
 
+@pytest.mark.parametrize("risk_location", ["execution", "side-effects"])
+def test_valid_run_preserves_explicit_runtime_write_risk_for_authored_none(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    risk_location: str,
+) -> None:
+    alias = _prepare_error_workspace(tmp_path, monkeypatch, mode="ok")
+    record = workspace_repository.load_use_case(tmp_path, alias)
+    record.sideEffects = {
+        "class": "none",
+        "mode": "observe",
+        "allowed": [],
+        "forbidden": [],
+    }
+    record.rerunPolicy = {
+        "afterNoCommit": "allowed",
+        "afterCommit": "blocked",
+        "afterUnknown": "requires-confirmation",
+    }
+    save_use_case(tmp_path, record)
+    original_run = run_command.CoreAdapter.run
+
+    def return_explicit_runtime_write_risk(adapter, *args, **kwargs):
+        response = original_run(adapter, *args, **kwargs)
+        if risk_location == "execution":
+            response["execution"] = {
+                "started": True,
+                "phase": "browser",
+                "sideEffectMayExist": True,
+            }
+        else:
+            response["data"]["sideEffects"] = {
+                "policy": {"class": "none", "mode": "observe"},
+                "commitStep": {"reached": False},
+                "status": "not-observed",
+                "sideEffectMayExist": True,
+            }
+        return response
+
+    monkeypatch.setattr(
+        run_command.CoreAdapter,
+        "run",
+        return_explicit_runtime_write_risk,
+    )
+
+    result = run_command.run(
+        tmp_path,
+        alias,
+        interactive=False,
+        core_cmd=str(FAKE_CORE),
+    )
+
+    assert result["status"] != "blocked"
+    persisted = workspace_repository.load_use_case(tmp_path, alias)
+    assert persisted.lastRun is not None
+    assert persisted.lastRun["sideEffectPolicy"]["class"] == "none"
+    assert persisted.lastRun["postCommitInterpretation"]["sideEffectMayExist"] is True
+    history = load_document(
+        layout.run_history_path(tmp_path, alias, persisted.lastRun["runId"])
+    )
+    assert history["postCommitInterpretation"]["sideEffectMayExist"] is True
+    decision = evaluate_rerun_decision(persisted)
+    assert decision["decision"] == "blocked"
+    assert decision["outcomeClass"] == "commit"
+    assert decision["policyBranch"] == "afterCommit"
+
+
 def test_successful_run_never_clears_a_marker_owned_by_another_attempt(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
