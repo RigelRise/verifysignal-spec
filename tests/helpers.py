@@ -33,12 +33,15 @@ class CliTestCase(unittest.TestCase):
         self.old_core = os.environ.get("VERIFYSIGNAL_CORE_CMD")
         self.old_mode = os.environ.get("FAKE_VERIFYSIGNAL_MODE")
         self.old_runtime_cache = os.environ.get("VERIFYSIGNAL_RUNTIME_CACHE_DIR")
+        self.addCleanup(self._restore_environment)
         os.environ["VERIFYSIGNAL_CORE_CMD"] = str(FAKE_CORE)
         os.environ["VERIFYSIGNAL_RUNTIME_CACHE_DIR"] = str(self.project / "runtime-cache")
         os.environ.pop("FAKE_VERIFYSIGNAL_MODE", None)
 
     def tearDown(self) -> None:
         self.tmp.cleanup()
+
+    def _restore_environment(self) -> None:
         if self.old_core is None:
             os.environ.pop("VERIFYSIGNAL_CORE_CMD", None)
         else:
