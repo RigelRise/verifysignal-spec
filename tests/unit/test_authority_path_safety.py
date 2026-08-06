@@ -9,8 +9,10 @@ from verifysignal_spec.workspace.repository import (
     create_default_use_case,
     load_use_case,
     save_document,
+    save_last_core_attempt,
     save_use_case,
 )
+from verifysignal_spec.workspace.models import LastCoreAttempt
 from verifysignal_spec.workflows.models import WorkflowRun
 from verifysignal_spec.workflows.repository import (
     create_stage_states,
@@ -128,3 +130,29 @@ def test_use_case_save_rejects_symlinked_use_cases_ancestor_without_external_wri
         save_use_case(project, record)
 
     assert outside_path.read_bytes() == outside_before
+
+
+def test_use_case_document_alias_must_match_requested_filename_without_wrong_sidecar(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "project"
+    record = create_default_use_case(project, "localized-home", "Localized home")
+    save_use_case(project, record)
+    document = record.to_dict()
+    document["alias"] = "different-alias"
+    save_document(layout.use_case_path(project, record.alias), document)
+    attempt = LastCoreAttempt(
+        attemptedAt="2026-08-05T00:00:00.000000001Z",
+        operation="run",
+        status="unknown",
+        executionState="unknown",
+        sideEffectMayExist=True,
+    )
+
+    with pytest.raises(ValueError, match=r"(?i)(alias|identity|filename)"):
+        load_use_case(project, record.alias)
+    with pytest.raises(ValueError, match=r"(?i)(alias|identity|filename)"):
+        save_last_core_attempt(project, record.alias, attempt)
+
+    assert not layout.run_authority_path(project, record.alias).exists()
+    assert not layout.run_authority_path(project, "different-alias").exists()

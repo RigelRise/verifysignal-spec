@@ -158,6 +158,56 @@ def test_run_stage_authority_rejects_pending_prior_stage_states(
         load_active_workflow_run(tmp_path, ALIAS)
 
 
+def test_completed_workflow_authority_rejects_pending_current_run_state(
+    tmp_path: Path,
+) -> None:
+    run = _create_runnable_workflow_authority(tmp_path)
+    document = _run_document(tmp_path, run.runId)
+    run_state = next(
+        state for state in document["stageStates"] if state["stage"] == "run"
+    )
+    assert run_state["status"] == "pending"
+    document["status"] = "completed"
+    document["completedAt"] = "2026-08-05T00:00:00.000000009Z"
+    save_document(layout.workflow_run_path(tmp_path, run.runId), document)
+
+    with pytest.raises(ValueError):
+        load_active_workflow_run(tmp_path, ALIAS)
+
+
+def test_non_completed_workflow_authority_rejects_completion_timestamp(
+    tmp_path: Path,
+) -> None:
+    run = _create_runnable_workflow_authority(tmp_path)
+    document = _run_document(tmp_path, run.runId)
+    assert document["status"] == "paused"
+    document["completedAt"] = "2026-08-05T00:00:00.000000009Z"
+    save_document(layout.workflow_run_path(tmp_path, run.runId), document)
+
+    with pytest.raises(ValueError):
+        load_active_workflow_run(tmp_path, ALIAS)
+
+
+def test_validate_stage_authority_rejects_pending_predecessor(
+    tmp_path: Path,
+) -> None:
+    run = _create_runnable_workflow_authority(tmp_path)
+    document = _run_document(tmp_path, run.runId)
+    document["currentStage"] = "validate"
+    implement_state = next(
+        state
+        for state in document["stageStates"]
+        if state["stage"] == "implement"
+    )
+    implement_state["status"] = "pending"
+    implement_state.pop("startedAt", None)
+    implement_state.pop("completedAt", None)
+    save_document(layout.workflow_run_path(tmp_path, run.runId), document)
+
+    with pytest.raises(ValueError):
+        load_active_workflow_run(tmp_path, ALIAS)
+
+
 def test_corrupt_different_alias_candidate_does_not_block_valid_authority(
     tmp_path: Path,
 ) -> None:
