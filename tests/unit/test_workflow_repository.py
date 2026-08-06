@@ -20,7 +20,11 @@ from verifysignal_spec.workspace.repository import (
     save_document,
     save_use_case,
 )
-from verifysignal_spec.workflows.models import WorkflowRun
+from verifysignal_spec.workflows.models import (
+    WORKFLOW_ARTIFACT_PLAN_SCHEMA,
+    WORKFLOW_TASK_SET_SCHEMA,
+    WorkflowRun,
+)
 from verifysignal_spec.workflows import repository as workflow_repository
 from verifysignal_spec.workflows.repository import (
     create_stage_states,
@@ -217,6 +221,83 @@ def test_noncanonical_authored_stage_document_does_not_advance_migration(
     assert _stage_status(result.run, "understand") == "completed"
     for stage in ("specify", "clarify", "plan", "tasks", "implement"):
         assert _stage_status(result.run, stage) == "pending"
+
+
+def test_invalid_stage_projections_do_not_advance_migration(
+    tmp_path: Path,
+) -> None:
+    _create_reference_only_legacy_use_case(
+        tmp_path,
+        ".verifysignal/run-requests/login.yaml",
+    )
+    plan_path = layout.workflow_stage_document_path(
+        tmp_path,
+        ALIAS,
+        "plan",
+    ).with_suffix(".yaml")
+    plan_path.parent.mkdir(parents=True, exist_ok=True)
+    plan_path.write_text("schemaVersion: [unterminated\n", encoding="utf-8")
+    save_document(
+        layout.workflow_stage_document_path(
+            tmp_path,
+            ALIAS,
+            "tasks",
+        ).with_suffix(".yaml"),
+        {
+            "schemaVersion": WORKFLOW_TASK_SET_SCHEMA,
+            "useCaseAlias": "different-alias",
+        },
+    )
+
+    result = transition_workflow(
+        tmp_path,
+        ALIAS,
+        stage="understand",
+        outcome="completed",
+    )
+
+    assert result.migrated is True
+    assert result.run.currentStage == "specify"
+    assert _stage_status(result.run, "understand") == "completed"
+    for stage in ("specify", "clarify", "plan", "tasks", "implement"):
+        assert _stage_status(result.run, stage) == "pending"
+
+
+def test_supported_stage_projections_are_durable_migration_evidence(
+    tmp_path: Path,
+) -> None:
+    _create_reference_only_legacy_use_case(
+        tmp_path,
+        ".verifysignal/run-requests/login.yaml",
+    )
+    root = layout.workflow_use_case_dir(tmp_path, ALIAS)
+    save_document(
+        root / "plan.yaml",
+        {
+            "schemaVersion": WORKFLOW_ARTIFACT_PLAN_SCHEMA,
+            "useCaseAlias": ALIAS,
+        },
+    )
+    save_document(
+        root / "tasks.yaml",
+        {
+            "schemaVersion": WORKFLOW_TASK_SET_SCHEMA,
+            "useCaseAlias": ALIAS,
+        },
+    )
+
+    result = transition_workflow(
+        tmp_path,
+        ALIAS,
+        stage="tasks",
+        outcome="completed",
+    )
+
+    assert result.migrated is True
+    assert result.run.currentStage == "implement"
+    for stage in ("understand", "specify", "clarify", "plan", "tasks"):
+        assert _stage_status(result.run, stage) == "completed"
+    assert _stage_status(result.run, "implement") == "pending"
 
 
 def test_symlinked_legacy_executable_reference_does_not_infer_implement(
