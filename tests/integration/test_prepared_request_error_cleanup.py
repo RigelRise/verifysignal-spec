@@ -119,7 +119,7 @@ def test_exception_before_outcome_classification_releases_and_removes_the_owned_
     assert attempt.operation == "run"
     assert attempt.status == "error"
     assert attempt.executionState == "unknown"
-    assert attempt.sideEffectMayExist is None
+    assert attempt.sideEffectMayExist is True
     rerun = evaluate_rerun_decision(load_use_case(tmp_path, alias))
     assert rerun["decision"] == "requires-confirmation"
     assert rerun["outcomeClass"] == "unknown-write"
