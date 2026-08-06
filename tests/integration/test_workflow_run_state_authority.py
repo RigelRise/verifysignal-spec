@@ -113,6 +113,51 @@ def test_protected_validation_transitions_the_authoritative_run(
         assert "entitlement.unverifiable" in blocker_codes
 
 
+def test_authoring_only_validation_does_not_advance_the_protected_stage(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = _create_executable_workflow(tmp_path, current_stage="validate")
+    monkeypatch.setenv("FAKE_VERIFYSIGNAL_MODE", "full-coverage")
+
+    result = validate_command.run(
+        tmp_path,
+        ALIAS,
+        runtime_readiness=False,
+        core_cmd=str(FAKE_CORE),
+    )
+
+    assert result["status"] == "passed"
+    assert result["runtimeReadinessStatus"] == "not-run"
+    unchanged = load_workflow_run(tmp_path, run.runId)
+    assert unchanged.currentStage == "validate"
+    assert unchanged.status == "paused"
+    assert _stage(unchanged, "validate").status == "pending"
+
+
+@pytest.mark.parametrize("source_stage", ["run", "repair"])
+def test_protected_revalidation_can_recover_from_documented_later_stages(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    source_stage: str,
+) -> None:
+    run = _create_executable_workflow(tmp_path, current_stage=source_stage)
+    monkeypatch.setenv("FAKE_VERIFYSIGNAL_MODE", "full-coverage")
+
+    result = validate_command.run(
+        tmp_path,
+        ALIAS,
+        runtime_readiness=True,
+        core_cmd=str(FAKE_CORE),
+    )
+
+    assert result["status"] == "passed"
+    recovered = _assert_authoritative_projections(tmp_path, ALIAS, run.runId)
+    assert recovered.currentStage == "run"
+    assert recovered.status == "paused"
+    assert _stage(recovered, "validate").status == "completed"
+
+
 @pytest.mark.parametrize(
     (
         "core_mode",
