@@ -15,6 +15,7 @@ from verifysignal_spec.workspace.repository import (
     load_readiness_snapshot,
     save_document,
 )
+from verifysignal_spec.workflows.transitions import transition_workflow
 
 
 def _assert_layered_readiness(
@@ -103,6 +104,16 @@ def test_authoring_only_validation_cannot_mint_protected_readiness_or_authorize_
     assert snapshot.trustMaterialStatus == "ready"
     assert snapshot.protectedOperationStatus == "not-checked"
     assert snapshot.readinessScope == "command-and-trust-inputs"
+
+    # Isolate the readiness gate from terminal stage ordering: even when an
+    # authoritative fixture is positioned at run, authoring-only evidence is
+    # insufficient to authorize browser execution.
+    transition_workflow(
+        tmp_path,
+        ALIAS,
+        stage="validate",
+        outcome="completed",
+    )
 
     run = execute_run(
         tmp_path,

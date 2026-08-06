@@ -851,18 +851,41 @@ def load_capability_policy(project: Path, capability: str) -> ArtifactCapability
     return ArtifactCapabilityPolicy.from_dict(data) if isinstance(data, dict) else None
 
 
-def create_readiness_snapshot_from_validation(project: Path, alias: str, result: dict[str, Any]) -> ReadinessSnapshot:
+def create_readiness_snapshot_from_validation(
+    project: Path,
+    alias: str,
+    result: dict[str, Any],
+    *,
+    protected_operation_attempted: bool = False,
+) -> ReadinessSnapshot:
     record = load_use_case(project, alias)
     managed = result.get("managedRuntimeReadiness") if isinstance(result.get("managedRuntimeReadiness"), dict) else {}
     runtime = result.get("runtimeReadiness") if isinstance(result.get("runtimeReadiness"), dict) else {}
     outcome = result.get("coreOutcome") if isinstance(result.get("coreOutcome"), dict) else {}
     command_status = str(runtime.get("commandCompatibilityStatus") or managed.get("commandCompatibilityStatus") or "not-checked")
     trust_status = str(runtime.get("trustMaterialStatus") or managed.get("trustMaterialStatus") or "not-checked")
-    protected_status = str(
-        runtime.get("protectedOperationStatus")
-        or ("passed" if outcome.get("kind") == "success" and outcome.get("status") == "passed" else "blocked" if outcome else "not-checked")
+    protected_status = (
+        str(
+            runtime.get("protectedOperationStatus")
+            or (
+                "passed"
+                if outcome.get("kind") == "success" and outcome.get("status") == "passed"
+                else "blocked"
+                if outcome
+                else "not-checked"
+            )
+        )
+        if protected_operation_attempted
+        else "not-checked"
     )
-    readiness_scope = str(runtime.get("readinessScope") or ("protected-operation" if outcome else "command-and-trust-inputs"))
+    readiness_scope = (
+        str(
+            runtime.get("readinessScope")
+            or ("protected-operation" if outcome else "command-and-trust-inputs")
+        )
+        if protected_operation_attempted
+        else "command-and-trust-inputs"
+    )
     status = (
         "ready"
         if result.get("status") == "passed"

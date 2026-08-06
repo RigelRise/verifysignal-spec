@@ -164,7 +164,12 @@ def run(
             ],
         }
         update_validation(project, alias, result)
-        _persist_readiness_snapshot(project, alias, result)
+        _persist_readiness_snapshot(
+            project,
+            alias,
+            result,
+            protected_operation_attempted=runtime_readiness,
+        )
         return _transition_validation_result(
             project,
             alias,
@@ -187,7 +192,12 @@ def run(
             "blockers": [blocker.to_dict() for blocker in contract_blockers],
         }
         update_validation(project, alias, result)
-        _persist_readiness_snapshot(project, alias, result)
+        _persist_readiness_snapshot(
+            project,
+            alias,
+            result,
+            protected_operation_attempted=runtime_readiness,
+        )
         return _transition_validation_result(
             project,
             alias,
@@ -216,7 +226,12 @@ def run(
             ],
         }
         update_validation(project, alias, result)
-        _persist_readiness_snapshot(project, alias, result)
+        _persist_readiness_snapshot(
+            project,
+            alias,
+            result,
+            protected_operation_attempted=runtime_readiness,
+        )
         return _transition_validation_result(
             project,
             alias,
@@ -257,7 +272,12 @@ def run(
             ],
         }
         update_validation(project, alias, result)
-        _persist_readiness_snapshot(project, alias, result)
+        _persist_readiness_snapshot(
+            project,
+            alias,
+            result,
+            protected_operation_attempted=runtime_readiness,
+        )
         return _transition_validation_result(
             project,
             alias,
@@ -295,7 +315,12 @@ def run(
             "blockers": blockers,
         }
         update_validation(project, alias, result)
-        _persist_readiness_snapshot(project, alias, result)
+        _persist_readiness_snapshot(
+            project,
+            alias,
+            result,
+            protected_operation_attempted=runtime_readiness,
+        )
         return _transition_validation_result(
             project,
             alias,
@@ -407,7 +432,12 @@ def run(
         )
     if guided_stage:
         wrapped["guidedFirstRunState"] = guided_stage
-    _persist_readiness_snapshot(project, alias, wrapped)
+    _persist_readiness_snapshot(
+        project,
+        alias,
+        wrapped,
+        protected_operation_attempted=runtime_readiness,
+    )
     return _transition_validation_result(
         project,
         alias,
@@ -502,9 +532,20 @@ def _normalized_outcome_blocker(
     )
 
 
-def _persist_readiness_snapshot(project: Path, alias: str, result: dict[str, Any]) -> None:
+def _persist_readiness_snapshot(
+    project: Path,
+    alias: str,
+    result: dict[str, Any],
+    *,
+    protected_operation_attempted: bool,
+) -> None:
     try:
-        create_readiness_snapshot_from_validation(project, alias, result)
+        create_readiness_snapshot_from_validation(
+            project,
+            alias,
+            result,
+            protected_operation_attempted=protected_operation_attempted,
+        )
     except Exception:
         # Readiness snapshots are advisory local metadata; validation output remains authoritative.
         pass
