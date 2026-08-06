@@ -203,6 +203,7 @@ def main() -> int:
         )
         return 0
     if args and args[0] == "run":
+        run_id = os.environ.get("FAKE_VERIFYSIGNAL_RUN_ID", "fake-run-1")
         headed = "--headed" in args
         record = "--record" in args
         replay = None
@@ -353,7 +354,7 @@ def main() -> int:
                         "reportPath": ".verifysignal/runs/login/fake-run-1/report.json",
                         "evidencePath": ".verifysignal/runs/login/fake-run-1/evidence",
                         "summary": {
-                            "runId": "fake-run-1",
+                            "runId": run_id,
                             "title": "Fake run",
                             "status": run_status,
                             "failedStepId": "scroll-to-activity" if mode == "aborted-activity-wait" else None,

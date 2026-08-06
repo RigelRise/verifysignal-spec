@@ -68,6 +68,7 @@ class GuidedFirstRunFlowIntegrationTests(CliTestCase):
         import os
 
         old_mode = os.environ.get("FAKE_VERIFYSIGNAL_MODE")
+        old_run_id = os.environ.get("FAKE_VERIFYSIGNAL_RUN_ID")
         os.environ["FAKE_VERIFYSIGNAL_MODE"] = "full-coverage-side-effect-violation"
         try:
             code, out, err = self.cli(["run", PUBLIC_ALIAS, "--project", str(self.project), "--profile", "normal", "--json"])
@@ -128,6 +129,7 @@ class GuidedFirstRunFlowIntegrationTests(CliTestCase):
             save_use_case(self.project, record)
             save_protected_ready_snapshot(self.project, PUBLIC_ALIAS)
             os.environ["FAKE_VERIFYSIGNAL_MODE"] = "full-coverage-clean-side-effects"
+            os.environ["FAKE_VERIFYSIGNAL_RUN_ID"] = "fake-run-2"
             clean_code, clean_out, clean_err = self.cli(
                 ["run", PUBLIC_ALIAS, "--project", str(self.project), "--profile", "normal", "--json"]
             )
@@ -140,3 +142,7 @@ class GuidedFirstRunFlowIntegrationTests(CliTestCase):
                 os.environ.pop("FAKE_VERIFYSIGNAL_MODE", None)
             else:
                 os.environ["FAKE_VERIFYSIGNAL_MODE"] = old_mode
+            if old_run_id is None:
+                os.environ.pop("FAKE_VERIFYSIGNAL_RUN_ID", None)
+            else:
+                os.environ["FAKE_VERIFYSIGNAL_RUN_ID"] = old_run_id
