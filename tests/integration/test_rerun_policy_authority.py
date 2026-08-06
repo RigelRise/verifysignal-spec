@@ -122,6 +122,15 @@ def _attempt(
             "afterNoCommit",
         ),
         (
+            "explicit-runtime-risk-overrides-none",
+            "none",
+            None,
+            _attempt("unknown", side_effect_may_exist=True),
+            "requires-confirmation",
+            "unknown-write",
+            "afterUnknown",
+        ),
+        (
             "historical-write-after-current-none",
             "none",
             _real_run(

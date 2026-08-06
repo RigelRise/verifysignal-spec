@@ -17,6 +17,7 @@ from verifysignal_spec.workspace.models import LastCoreAttempt, RunHistoryEntry
 from verifysignal_spec.workspace.repository import load_document, now_iso, save_document, save_use_case
 from verifysignal_spec.workflows.engine import create_workflow_run
 from verifysignal_spec.workflows.transitions import transition_workflow
+from verifysignal_spec.workflows.write_safety import evaluate_rerun_decision
 
 
 def test_current_preexecution_core_error_records_a_safe_non_run_attempt(
@@ -173,6 +174,38 @@ def test_attempt_marker_is_not_cleared_when_valid_run_persistence_fails_late(
     persisted = workspace_repository.load_use_case(tmp_path, alias)
     assert persisted.lastCoreAttempt is not None
     assert persisted.lastCoreAttempt.attemptedAt == "2026-08-05T01:00:00.000000001Z"
+
+
+@pytest.mark.parametrize("failure_point", ["result-interpretation", "record-run"])
+def test_valid_core_run_keeps_conservative_attempt_until_last_run_is_durable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_point: str,
+) -> None:
+    alias = _prepare_error_workspace(tmp_path, monkeypatch, mode="ok")
+
+    def fail_after_core(*_args, **_kwargs):
+        raise RuntimeError(f"simulated {failure_point} failure")
+
+    if failure_point == "result-interpretation":
+        monkeypatch.setattr(run_command, "_result_with_public_report", fail_after_core)
+    else:
+        monkeypatch.setattr(run_command, "record_run", fail_after_core)
+
+    with pytest.raises(RuntimeError, match=failure_point):
+        run_command.run(tmp_path, alias, interactive=False, core_cmd=str(FAKE_CORE))
+
+    persisted = workspace_repository.load_use_case(tmp_path, alias)
+    assert persisted.lastRun is None
+    assert persisted.lastCoreAttempt is not None
+    assert persisted.lastCoreAttempt.operation == "run"
+    assert persisted.lastCoreAttempt.status == "unknown"
+    assert persisted.lastCoreAttempt.executionState == "unknown"
+    assert persisted.lastCoreAttempt.sideEffectMayExist is True
+    decision = evaluate_rerun_decision(persisted)
+    assert decision["decision"] == "requires-confirmation"
+    assert decision["outcomeClass"] == "unknown-write"
+    assert decision["policyBranch"] == "afterUnknown"
 
 
 def _prepare_error_workspace(
