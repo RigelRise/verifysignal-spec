@@ -112,6 +112,55 @@ def test_lazy_workflow_migration_preserves_direct_target_confirmation(
     assert workflow["stageHandoffDecisions"][0]["valueSummary"] == TARGET_URL
 
 
+def test_fresh_specification_persistence_bootstraps_one_authoritative_run(
+    tmp_path: Path,
+) -> None:
+    init_workspace(tmp_path)
+
+    result = _persist_legacy_specification(tmp_path)
+
+    assert result["status"] == "persisted"
+    runs = list_workflow_runs(tmp_path)
+    assert len(runs) == 1
+    assert runs[0].currentStage == "clarify"
+    _assert_projections_match_run(tmp_path, runs[0])
+
+
+def test_legacy_executable_references_infer_implement_before_one_lazy_migration(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tests.fixtures.workflows.real_run_guardrails import (
+        coherent_profile_skill,
+        create_real_run_guardrail_workspace,
+        run_request_payload,
+    )
+    from tests.helpers import FAKE_CORE
+
+    monkeypatch.setenv("VERIFYSIGNAL_CORE_CMD", str(FAKE_CORE))
+    create_real_run_guardrail_workspace(tmp_path)
+
+    result = persist_stage(
+        tmp_path,
+        "implement",
+        alias="profile-view-unauth",
+        payload={
+            "runRequest": run_request_payload(),
+            "skills": [coherent_profile_skill()],
+            "runtimeInputs": [
+                {"name": "baseUrl", "default": "https://app.example.test"}
+            ],
+        },
+    )
+
+    assert result["status"] == "persisted"
+    runs = list_workflow_runs(tmp_path)
+    assert len(runs) == 1
+    assert runs[0].currentStage == "validate"
+    for stage in ("understand", "specify", "clarify", "plan", "tasks", "implement"):
+        assert _stage_status(runs[0], stage) == "completed"
+
+
 def test_next_mutating_transition_heals_interrupted_projections_from_workflow_run(
     tmp_path: Path,
 ) -> None:

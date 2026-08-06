@@ -11,6 +11,7 @@ from tests.fixtures.workflows.main_skill_run_coverage import (
 from tests.helpers import FAKE_CORE
 from verifysignal_spec.commands import run as run_command
 from verifysignal_spec.commands import validate as validate_command
+from verifysignal_spec.commands import workflow as workflow_command
 from verifysignal_spec.runtime.models import (
     ManagedRuntimeReadinessResult,
     RuntimeSetupBlocker,
@@ -34,7 +35,7 @@ from verifysignal_spec.workflows.repository import (
         ("run", "validate", True),
     ],
 )
-def test_terminal_command_rejects_out_of_order_stage_before_project_mutation(
+def test_terminal_stage_blocker_is_identical_for_check_and_direct_and_byte_stable(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     command: str,
@@ -52,25 +53,45 @@ def test_terminal_command_rejects_out_of_order_stage_before_project_mutation(
         integration="codex",
     )
     _place_run_at_stage(tmp_path, run, current_stage)
-    monkeypatch.setenv("FAKE_VERIFYSIGNAL_MODE", "full-coverage")
+    calls = {"runtimeResolution": 0}
+
+    def unexpected_runtime(*_args: object, **_kwargs: object) -> object:
+        calls["runtimeResolution"] += 1
+        raise AssertionError("out-of-order terminal commands must not resolve Core")
+
+    monkeypatch.setattr(run_command, "ensure_core_runtime", unexpected_runtime)
+    monkeypatch.setattr(validate_command, "ensure_core_runtime", unexpected_runtime)
     before = _project_file_bytes(tmp_path)
 
-    with pytest.raises(ValueError, match="Workflow current stage"):
-        if command == "validate":
-            validate_command.run(
-                tmp_path,
-                ALIAS,
-                runtime_readiness=True,
-                core_cmd=str(FAKE_CORE),
-            )
-        else:
-            run_command.run(
-                tmp_path,
-                ALIAS,
-                interactive=False,
-                core_cmd=str(FAKE_CORE),
-            )
+    checked = workflow_command.check(tmp_path, command, alias=ALIAS)
+    assert _project_file_bytes(tmp_path) == before
 
+    if command == "validate":
+        direct = validate_command.run(
+            tmp_path,
+            ALIAS,
+            runtime_readiness=True,
+            core_cmd=str(FAKE_CORE),
+        )
+    else:
+        direct = run_command.run(
+            tmp_path,
+            ALIAS,
+            interactive=False,
+            core_cmd=str(FAKE_CORE),
+        )
+
+    assert checked["status"] == "blocked"
+    assert checked["canProceed"] is False
+    assert direct["status"] == "blocked"
+    assert checked["blockers"][0] == direct["blockers"][0]
+    blocker = direct["blockers"][0]
+    assert blocker["code"] == "workflow.stage-out-of-order"
+    assert blocker["currentStage"] == current_stage
+    assert blocker["requestedStage"] == command
+    assert checked["nextCommand"] == blocker["recoveryCommand"]
+    assert direct["nextAction"] == blocker["recoveryCommand"]
+    assert calls == {"runtimeResolution": 0}
     assert _project_file_bytes(tmp_path) == before
 
 
