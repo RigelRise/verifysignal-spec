@@ -5,7 +5,11 @@ import time
 
 import pytest
 
+from tests.fixtures.workflows.entitlement_preflight_recovery import (
+    save_protected_ready_snapshot,
+)
 from tests.fixtures.workflows.guardrails import stage_payload
+from verifysignal_spec.workspace import layout
 from verifysignal_spec.workspace.models import AuthoringQuestion
 from verifysignal_spec.workspace.repository import (
     create_default_use_case,
@@ -32,7 +36,10 @@ from verifysignal_spec.workflows.repository import (
 )
 from verifysignal_spec.workflows.stage_persistence import persist_stage
 from verifysignal_spec.workflows.stages import initialize_understanding
-from verifysignal_spec.workflows.transitions import transition_workflow
+from verifysignal_spec.workflows.transitions import (
+    managed_workflow_stage_decision,
+    transition_workflow,
+)
 
 
 ALIAS = "login"
@@ -424,6 +431,40 @@ def test_equal_timestamp_without_reference_is_rejected_as_ambiguous(
 
     with pytest.raises(ValueError, match="ambiguous"):
         load_active_workflow_run(tmp_path, ALIAS)
+
+
+def test_unreadable_referenced_workflow_run_fails_closed_before_execution(
+    tmp_path: Path,
+) -> None:
+    init_workspace(tmp_path)
+    record = create_default_use_case(tmp_path, ALIAS, "Validate login.")
+    record.workflow = {
+        "lastWorkflowRunId": "wf-future-login",
+        "currentStage": "run",
+        "workflowStatus": "paused",
+    }
+    save_use_case(tmp_path, record)
+    save_document(
+        layout.workflow_run_path(tmp_path, "wf-future-login"),
+        {
+            "schemaVersion": "verifysignal-spec-workflow-run/v2",
+            "runId": "wf-future-login",
+            "useCaseAlias": ALIAS,
+            "status": "paused",
+            "currentStage": "validate",
+        },
+    )
+    save_protected_ready_snapshot(tmp_path, ALIAS)
+
+    decision = managed_workflow_stage_decision(tmp_path, ALIAS, "run")
+
+    assert decision["managed"] is True
+    assert decision["currentStage"] == "unknown"
+    assert decision["requestedStage"] == "run"
+    assert decision["blocker"]["code"] == "workflow.authority-invalid"
+    assert decision["blocker"]["recoveryCommand"] == (
+        "verifysignal workflow status wf-future-login --json"
+    )
 
 
 def test_blocked_current_stage_can_be_retried_successfully(tmp_path: Path) -> None:
