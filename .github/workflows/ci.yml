@@ -8,7 +8,7 @@ on:
   pull_request:
 
 jobs:
-  spec:
+  spec-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -74,3 +74,19 @@ jobs:
         run: verifysignal integration setup-playwright-mcp --json
         env:
           VERIFYSIGNAL_PLAYWRIGHT_MCP_CACHE_DIR: ${{ runner.temp }}\verifysignal-playwright-mcp
+
+  # Branch protection requires the stable `spec` context. Keep the expensive
+  # Ubuntu and Windows customer-path legs parallel, then make that protected
+  # context fail unless both platform results are green.
+  spec:
+    if: ${{ always() }}
+    needs: [spec-tests, windows-install]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require Ubuntu and Windows gates
+        env:
+          SPEC_TESTS_RESULT: ${{ needs.spec-tests.result }}
+          WINDOWS_INSTALL_RESULT: ${{ needs.windows-install.result }}
+        run: |
+          test "$SPEC_TESTS_RESULT" = success
+          test "$WINDOWS_INSTALL_RESULT" = success

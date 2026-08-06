@@ -9,8 +9,35 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 parent="$(dirname "$repo_root")"
 repo_name="$(basename "$repo_root")"
 image="verifysignal-spec-verify"
+docker_platform="linux/amd64"
+container_core_dir="${VERIFYSIGNAL_CORE_DIR:-/w/verifysignal}"
+container_spec_dir="${VERIFYSIGNAL_SPEC_DIR:-/w/$repo_name}"
+container_core_node_modules="$(mktemp -d "${TMPDIR:-/tmp}/verifysignal-spec-core-node-modules.XXXXXX")"
+trap 'rm -rf -- "$container_core_node_modules"' EXIT
 
-docker build -q -t "$image" -f "$repo_root/Dockerfile.verify" "$repo_root" >/dev/null
+case "$container_core_dir" in
+  /w/*) ;;
+  *)
+    echo "VERIFYSIGNAL_CORE_DIR must be a direct /w sibling path inside the verifier container." >&2
+    exit 2
+    ;;
+esac
+core_repo_name="${container_core_dir#/w/}"
+case "$core_repo_name" in
+  ""|*/*|.|..)
+    echo "VERIFYSIGNAL_CORE_DIR must identify one direct sibling checkout under /w." >&2
+    exit 2
+    ;;
+esac
+if [ ! -f "$parent/$core_repo_name/package-lock.json" ]; then
+  echo "Pinned Core checkout is unavailable at $parent/$core_repo_name." >&2
+  exit 2
+fi
+
+export VERIFYSIGNAL_CORE_DIR="$container_core_dir"
+export VERIFYSIGNAL_SPEC_DIR="$container_spec_dir"
+
+docker build --platform "$docker_platform" -q -t "$image" -f "$repo_root/Dockerfile.verify" "$repo_root" >/dev/null
 
 # Mounting the PARENT is deliberate: tests/integration/test_authenticated_project_dogfood.py and the
 # real-artifact install resolve the Core checkout by identity, and they SKIP when it is absent. A
@@ -27,12 +54,13 @@ for var in VERIFYSIGNAL_CORE_DIR VERIFYSIGNAL_SPEC_DIR VERIFYSIGNAL_BACKEND_DIR;
   if [ -n "${!var:-}" ]; then pins+=(-e "$var=${!var}"); fi
 done
 
-exec docker run --rm \
+docker run --rm --platform "$docker_platform" \
   --user "$(id -u):$(id -g)" \
   -e HOME=/tmp \
   -e PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
   "${pins[@]}" \
   -v "$parent":/w \
+  -v "$container_core_node_modules:$VERIFYSIGNAL_CORE_DIR/node_modules" \
   -w "/w/$repo_name" \
   "$image" \
-  sh -c 'python3 -m venv /tmp/v && /tmp/v/bin/pip install -q -e ".[dev]" && exec /tmp/v/bin/python -m pytest "$@"' -- "$@"
+  sh -c 'npm ci --prefix "$VERIFYSIGNAL_CORE_DIR" --no-audit --no-fund --silent && python3 -m venv /tmp/v && /tmp/v/bin/pip install -q -e ".[dev]" && exec /tmp/v/bin/python -m pytest "$@"' -- "$@"
