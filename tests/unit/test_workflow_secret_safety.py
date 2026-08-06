@@ -235,6 +235,42 @@ def test_secret_named_fields_still_reject_real_secret_values() -> None:
     assert validate_no_secret_values(unsafe)
 
 
+@pytest.mark.parametrize(
+    ("payload", "expected_path"),
+    [
+        ({"apiKey": {"value": "short-live-key"}}, "apiKey.value"),
+        (
+            {"authorization": [{"value": "short-live-authorization"}]},
+            "authorization[0].value",
+        ),
+    ],
+    ids=["mapping", "nested-list"],
+)
+def test_secret_named_containers_keep_secret_field_context(
+    payload: dict[str, object],
+    expected_path: str,
+) -> None:
+    findings = validate_no_secret_values(payload)
+
+    assert findings
+    assert any(finding["path"] == expected_path for finding in findings)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "Bearer abc123abc123abc123abc123",
+        "0123456789abcdefghijklmnopqrstuvwxyzABCD",
+    ],
+    ids=["bearer", "high-entropy"],
+)
+def test_public_path_field_exemptions_do_not_allow_secret_content(value: str) -> None:
+    findings = validate_no_secret_values({"reportPath": value})
+
+    assert findings
+    assert findings[0]["path"] == "reportPath"
+
+
 def test_credential_refs_allow_env_key_names_but_reject_values() -> None:
     safe = {
         "credentialRefs": {
