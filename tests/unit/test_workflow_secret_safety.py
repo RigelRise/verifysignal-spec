@@ -508,6 +508,107 @@ def test_secret_scanner_residual_returns_blocker_for_depth_overflow() -> None:
     _assert_blocking_secret_safety_finding(findings)
 
 
+def test_secret_scanner_final_balances_opaque_tokens_and_public_identifiers() -> None:
+    safe_payloads = [
+        {"branch": "feature/entitlementpreflightrecovery"},
+        {
+            "candidateAlias": (
+                "localized-home-across-locales-20260804T142635Z"
+            )
+        },
+        {"path": "/workspace/.verifysignal/runs/localized-home/report.json"},
+    ]
+    for payload in safe_payloads:
+        assert validate_no_secret_values(payload) == []
+
+    opaque_secrets = [
+        "prod-live-a1B2c3D4e5F6g7H8i9J0k1L2m3N4",
+        "/wECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJw==",
+    ]
+    for value in opaque_secrets:
+        findings = validate_no_secret_values({"summary": value})
+        _assert_blocking_secret_safety_finding(findings, path="summary")
+
+
+def test_secret_scanner_final_rejects_compound_and_structured_token_query_keys() -> None:
+    assert (
+        validate_no_secret_values(
+            {"reportPath": "https://example.test/?session=overview&author=thiago"}
+        )
+        == []
+    )
+
+    secret_queries = [
+        "session_token=short-real-secret",
+        "csrf_token=short-real-secret",
+        "reset_token=short-real-secret",
+        "X-Amz-Credential[]=AKIAREALVALUE",
+    ]
+    for query in secret_queries:
+        findings = validate_no_secret_values(
+            {"reportPath": f"https://example.test/callback?{query}"}
+        )
+        _assert_blocking_secret_safety_finding(findings, path="reportPath")
+
+
+def test_secret_scanner_final_windows_path_does_not_hide_punctuated_userinfo() -> None:
+    assert validate_no_secret_values({"reportPath": "C:reports@2026.json"}) == []
+
+    findings = validate_no_secret_values(
+        {"reportPath": "C:notes;user:pass@private.test"}
+    )
+
+    _assert_blocking_secret_safety_finding(findings, path="reportPath")
+
+
+def test_secret_scanner_final_selector_requires_exactly_one_primary_signal() -> None:
+    documented_selector = {
+        "targets": {
+            "apiTokenField": {
+                "role": "textbox",
+                "name": "API token",
+                "exact": True,
+                "nth": 0,
+            }
+        }
+    }
+    assert validate_no_secret_values(documented_selector) == []
+
+    findings = validate_no_secret_values(
+        {
+            "targets": {
+                "apiTokenField": {
+                    "testId": "short-real-secret",
+                    "css": "#safe-public-selector",
+                }
+            }
+        }
+    )
+
+    _assert_blocking_secret_safety_finding(findings)
+
+
+def test_secret_scanner_final_malformed_token_policy_returns_blocking_finding() -> None:
+    documented_policy = {
+        "tokenPolicy": {
+            "policyId": "public-free",
+            "policyVersion": 1,
+            "refresh": "silent-credential",
+            "validationMode": "happy-path-only",
+        }
+    }
+    assert validate_no_secret_values(documented_policy) == []
+
+    malformed_policies = [
+        {"refresh": {"value": "short-real-secret"}},
+        {"policyId": ["short-real-secret"]},
+        {"validationMode": {"value": "short-real-secret"}},
+    ]
+    for token_policy in malformed_policies:
+        findings = validate_no_secret_values({"tokenPolicy": token_policy})
+        _assert_blocking_secret_safety_finding(findings)
+
+
 @pytest.mark.parametrize(
     "payload",
     [
