@@ -15,6 +15,7 @@ from verifysignal_spec.commands import run as run_command
 from verifysignal_spec.workspace import layout, repository as workspace_repository
 from verifysignal_spec.workspace.models import LastCoreAttempt, RunHistoryEntry
 from verifysignal_spec.workspace.repository import load_document, now_iso, save_document, save_use_case
+from verifysignal_spec.workflows import run_lock as run_lock_module
 from verifysignal_spec.workflows.engine import create_workflow_run
 from verifysignal_spec.workflows.prerequisites import check_prerequisites
 from verifysignal_spec.workflows.run_lock import acquire_run_invocation_lease
@@ -266,6 +267,52 @@ def test_concurrent_run_and_workflow_check_fail_closed_without_invoking_core(
     persisted = workspace_repository.load_use_case(tmp_path, alias)
     assert persisted.lastCoreAttempt is None
     assert persisted.lastRun is None
+
+
+def test_unavailable_run_lock_fails_workflow_check_and_direct_run_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    alias = _prepare_error_workspace(tmp_path, monkeypatch, mode="ok")
+    runtime_calls = {"resolution": 0, "core": 0}
+
+    def unavailable_lock(*_args, **_kwargs):
+        raise OSError("simulated trustworthy lock primitive failure")
+
+    def forbid_runtime(*_args, **_kwargs):
+        runtime_calls["resolution"] += 1
+        raise AssertionError("Runtime resolution must not follow lock failure")
+
+    def forbid_core(*_args, **_kwargs):
+        runtime_calls["core"] += 1
+        raise AssertionError("Core must not run when the lease is unavailable")
+
+    backend = (
+        "_acquire_windows_mutex"
+        if run_lock_module.os.name == "nt"
+        else "_acquire_posix_lock"
+    )
+    monkeypatch.setattr(run_lock_module, backend, unavailable_lock)
+    monkeypatch.setattr(run_command, "ensure_core_runtime", forbid_runtime)
+    monkeypatch.setattr(run_command.CoreAdapter, "run", forbid_core)
+
+    checked = check_prerequisites(tmp_path, "run", alias)
+    result = run_command.run(
+        tmp_path,
+        alias,
+        interactive=False,
+        core_cmd=str(FAKE_CORE),
+    )
+
+    assert runtime_calls == {"resolution": 0, "core": 0}
+    assert checked["canProceed"] is False
+    assert result["canProceed"] is False
+    assert checked["blockers"] == result["blockers"]
+    assert _blocker_codes(checked) == ["runtime.run-lock-unavailable"]
+    persisted = workspace_repository.load_use_case(tmp_path, alias)
+    assert persisted.lastCoreAttempt is None
+    assert persisted.lastRun is None
+    assert list(_history_dir(tmp_path, alias).glob("*.yaml")) == []
 
 
 def test_successful_last_run_outranks_write_ahead_marker_when_clear_fails(

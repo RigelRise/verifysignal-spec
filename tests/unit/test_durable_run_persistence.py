@@ -49,6 +49,46 @@ def test_durable_atomic_write_fsyncs_file_and_directory_around_replace(
     assert events == ["fsync-file", "replace", "fsync-directory"]
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX directory fsync durability")
+def test_durable_atomic_write_fsyncs_parent_entry_for_new_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = tmp_path / "new-authority-directory" / "authority.yaml"
+    directory_descriptors: dict[int, Path] = {}
+    synced_directories: list[Path] = []
+    original_open = os.open
+    original_fsync = os.fsync
+
+    def observe_open(
+        path: str | bytes,
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        kwargs = {} if dir_fd is None else {"dir_fd": dir_fd}
+        descriptor = original_open(path, flags, mode, **kwargs)
+        if dir_fd is None and stat.S_ISDIR(os.fstat(descriptor).st_mode):
+            directory_descriptors[descriptor] = Path(os.fsdecode(path)).resolve()
+        return descriptor
+
+    def observe_fsync(descriptor: int) -> None:
+        directory = directory_descriptors.get(descriptor)
+        if directory is not None:
+            synced_directories.append(directory)
+        original_fsync(descriptor)
+
+    monkeypatch.setattr(os, "open", observe_open)
+    monkeypatch.setattr(os, "fsync", observe_fsync)
+
+    durable_atomic_write_text_lf(target, "authority\n")
+
+    assert target.read_bytes() == b"authority\n"
+    assert target.parent.resolve() in synced_directories
+    assert target.parent.parent.resolve() in synced_directories
+
+
 def test_attempt_and_real_run_authority_use_durable_document_writes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

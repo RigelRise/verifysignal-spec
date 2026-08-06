@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -54,6 +55,8 @@ from verifysignal_spec.workflows.repository import (
         "missing-stage-state",
         "duplicate-stage-state",
         "invalid-stage-status",
+        "malformed-stage-blocker",
+        "malformed-gate-decision",
         "invalid-confirmation",
         "secret-confirmation",
     ],
@@ -269,6 +272,40 @@ def test_invalid_authority_blocks_protected_check_and_direct_run_before_core(
     assert blocker["requestedStage"] == "run"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX symlink semantics")
+def test_referenced_symlink_workflow_authority_blocks_before_core(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = _create_runnable_workflow_authority(tmp_path)
+    authority_path = layout.workflow_run_path(tmp_path, run.runId)
+    outside_authority = tmp_path / "outside-workflow-run.yaml"
+    outside_authority.write_bytes(authority_path.read_bytes())
+    authority_path.unlink()
+    authority_path.symlink_to(outside_authority)
+    calls = {"runtimeResolution": 0, "coreAdapter": 0}
+
+    def unexpected_runtime(*_args: object, **_kwargs: object) -> object:
+        calls["runtimeResolution"] += 1
+        raise AssertionError("Symlink authority must block runtime resolution.")
+
+    def unexpected_core_adapter(*_args: object, **_kwargs: object) -> object:
+        calls["coreAdapter"] += 1
+        raise AssertionError("Symlink authority must not invoke Core.")
+
+    monkeypatch.setattr(run_command, "ensure_core_runtime", unexpected_runtime)
+    monkeypatch.setattr(run_command, "CoreAdapter", unexpected_core_adapter)
+
+    checked = workflow_command.check(tmp_path, "run", alias=ALIAS)
+    executed = run_command.run(tmp_path, ALIAS, interactive=False)
+
+    assert calls == {"runtimeResolution": 0, "coreAdapter": 0}
+    assert checked["status"] == "blocked"
+    assert executed["status"] == "blocked"
+    assert checked["blockers"][0] == executed["blockers"][0]
+    assert checked["blockers"][0]["code"] == "workflow.authority-invalid"
+
+
 def _create_runnable_workflow_authority(project: Path) -> WorkflowRun:
     create_main_skill_coverage_workspace(project)
     run = create_workflow_run(
@@ -364,6 +401,27 @@ def _corrupt_workflow_run(document: dict[str, Any], corruption: str) -> None:
         stage_states = document["stageStates"]
         assert isinstance(stage_states, list) and stage_states
         stage_states[0]["status"] = "teleported"
+        return
+    if corruption == "malformed-stage-blocker":
+        stage_states = document["stageStates"]
+        assert isinstance(stage_states, list) and stage_states
+        stage_states[0]["blockers"] = [
+            {
+                "code": "workflow.fixture-blocked",
+                "severity": ["blocker"],
+            }
+        ]
+        return
+    if corruption == "malformed-gate-decision":
+        document["gateDecisions"] = [
+            {
+                "gateId": "review-plan",
+                "stageBefore": "plan",
+                "decision": "approved",
+                "decidedAt": document["updatedAt"],
+                "reason": {"unexpected": "mapping"},
+            }
+        ]
         return
     if corruption == "invalid-confirmation":
         document["targetEnvironmentConfirmation"]["source"] = "repo-inferred"
