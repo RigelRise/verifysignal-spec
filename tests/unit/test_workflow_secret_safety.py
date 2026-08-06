@@ -350,6 +350,164 @@ def test_secret_scanner_rejects_adversarial_secret_boundaries(
     assert validate_no_secret_values(payload)
 
 
+def _assert_blocking_secret_safety_finding(
+    findings: list[dict[str, str]],
+    *,
+    path: str | None = None,
+) -> None:
+    assert any(
+        finding.get("severity") == "blocking"
+        and finding.get("code", "").startswith("secret-")
+        and (path is None or finding.get("path") == path)
+        for finding in findings
+    )
+
+
+def _nested_list(value: object, *, depth: int) -> object:
+    nested = value
+    for _ in range(depth):
+        nested = [nested]
+    return nested
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "id_token=short-live-id-token",
+        "X-Amz-Credential=AKIAREALVALUE",
+        "X-Amz-Security-Token=short-session-secret",
+    ],
+    ids=["oauth-id-token", "aws-credential", "aws-security-token"],
+)
+def test_secret_scanner_residual_rejects_compound_secret_query_keys(
+    query: str,
+) -> None:
+    findings = validate_no_secret_values(
+        {"reportPath": f"https://example.test/callback?{query}"}
+    )
+
+    _assert_blocking_secret_safety_finding(findings, path="reportPath")
+
+
+def test_secret_scanner_residual_windows_prefix_does_not_hide_scheme_less_userinfo() -> None:
+    assert validate_no_secret_values({"reportPath": "C:reports@2026.json"}) == []
+
+    findings = validate_no_secret_values(
+        {"reportPath": "C:notes Contact user:pass@private.test"}
+    )
+
+    _assert_blocking_secret_safety_finding(findings, path="reportPath")
+
+
+def test_secret_scanner_residual_rejects_short_bearer_credentials() -> None:
+    assert (
+        validate_no_secret_values(
+            {"summary": "Bearer authentication is configured."}
+        )
+        == []
+    )
+
+    findings = validate_no_secret_values(
+        {"summary": "Authorization header: Bearer abc123"}
+    )
+
+    _assert_blocking_secret_safety_finding(findings, path="summary")
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "a1b2c3d4e5f6g7h8i9j0-k1l2m3n4o5p6q7r8",
+        "sk-live-prod-a1B2c3D4e5F6g7H8i9J0k1L2m3N4",
+    ],
+    ids=["two-character-classes", "multiple-hyphens"],
+)
+def test_secret_scanner_residual_rejects_hyphenated_opaque_tokens(
+    value: str,
+) -> None:
+    findings = validate_no_secret_values({"summary": value})
+
+    _assert_blocking_secret_safety_finding(findings, path="summary")
+
+
+@pytest.mark.parametrize(
+    "unsafe_policy",
+    [
+        {"refresh": "short-real-secret"},
+        {"maxExchanges": "short-real-secret"},
+    ],
+    ids=["invalid-refresh-enum", "invalid-numeric-field-type"],
+)
+def test_secret_scanner_residual_token_policy_requires_documented_value_shape(
+    unsafe_policy: dict[str, object],
+) -> None:
+    documented_policy = {
+        "tokenPolicy": {
+            "exchangeCount": 0,
+            "hourlyExchangeCount": 0,
+            "maxExchanges": 1,
+            "maxExchangesPerHour": 1,
+            "refresh": "silent-credential",
+            "ttlDays": 30,
+        }
+    }
+    assert validate_no_secret_values(documented_policy) == []
+
+    findings = validate_no_secret_values({"tokenPolicy": unsafe_policy})
+
+    _assert_blocking_secret_safety_finding(findings)
+
+
+@pytest.mark.parametrize(
+    "unsafe_selector",
+    [
+        {"nth": "short-real-secret"},
+        {"domainSemantics": "short-real-secret"},
+    ],
+    ids=["invalid-nth-type", "missing-primary-signal"],
+)
+def test_secret_scanner_residual_selector_requires_documented_value_shape(
+    unsafe_selector: dict[str, object],
+) -> None:
+    documented_selector = {
+        "targets": {"apiTokenField": {"testId": "api-token-field"}}
+    }
+    assert validate_no_secret_values(documented_selector) == []
+
+    findings = validate_no_secret_values(
+        {"targets": {"apiTokenField": unsafe_selector}}
+    )
+
+    _assert_blocking_secret_safety_finding(findings)
+
+
+def _assert_deep_finite_secret_scanning_control() -> None:
+    safe = _nested_list("public metadata", depth=64)
+    unsafe = _nested_list({"apiToken": "short-live-key"}, depth=64)
+
+    assert validate_no_secret_values(safe) == []
+    _assert_blocking_secret_safety_finding(validate_no_secret_values(unsafe))
+
+
+def test_secret_scanner_residual_returns_blocker_for_cyclic_payload() -> None:
+    _assert_deep_finite_secret_scanning_control()
+    payload: dict[str, object] = {}
+    payload["self"] = payload
+
+    findings = validate_no_secret_values(payload)
+
+    _assert_blocking_secret_safety_finding(findings)
+
+
+def test_secret_scanner_residual_returns_blocker_for_depth_overflow() -> None:
+    _assert_deep_finite_secret_scanning_control()
+    payload = _nested_list("public metadata", depth=1_200)
+
+    findings = validate_no_secret_values(payload)
+
+    _assert_blocking_secret_safety_finding(findings)
+
+
 @pytest.mark.parametrize(
     "payload",
     [
