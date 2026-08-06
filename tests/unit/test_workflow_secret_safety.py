@@ -759,6 +759,80 @@ def test_compound_secret_named_containers_keep_secret_field_context(
     assert any(finding["path"] == expected_path for finding in findings)
 
 
+def test_secret_scanner_closure_rejects_credential_metadata_before_run_history_write(
+    tmp_path,
+) -> None:
+    from verifysignal_spec.workspace.models import RunHistoryEntry
+    from verifysignal_spec.workspace.repository import (
+        create_default_use_case,
+        record_run,
+        save_use_case,
+    )
+
+    record = create_default_use_case(
+        tmp_path,
+        "localized-home",
+        "Localized home",
+    )
+    save_use_case(tmp_path, record)
+    entry = RunHistoryEntry(
+        runId="real-run",
+        useCaseAlias=record.alias,
+        profile="normal",
+        status="passed",
+        startedAt="2026-08-05T00:00:00.000000001Z",
+        completedAt="2026-08-05T00:00:00.000000002Z",
+    )
+    entry.runtimeOutputs = [
+        {
+            "name": "diagnostic",
+            "metadata": {"credential": "short-live-value"},
+        }
+    ]
+
+    with pytest.raises(ValueError, match="secret-looking value"):
+        record_run(tmp_path, entry)
+
+    assert not layout.run_history_path(tmp_path, record.alias, entry.runId).exists()
+
+
+def test_secret_scanner_closure_accepts_numeric_feature_branch() -> None:
+    assert (
+        validate_no_secret_values(
+            {"git": {"branch": "028-entitlement-preflight-recovery"}}
+        )
+        == []
+    )
+
+
+@pytest.mark.parametrize(
+    "error_code",
+    [
+        "entitlement.trust-key-context-disallowed",
+        "unsupported-placeholder-namespace",
+        "unresolved-placeholder-reference",
+    ],
+)
+def test_secret_scanner_closure_accepts_structured_public_error_codes(
+    error_code: str,
+) -> None:
+    from verifysignal_spec.workspace.repository import _validate_last_core_attempt
+
+    attempt = {
+        "attemptedAt": "2026-08-06T12:00:00.000000001Z",
+        "operation": "run",
+        "schema": "verifysignal.error/v1",
+        "status": "error",
+        "errorCode": error_code,
+        "executionState": "not-started",
+        "sideEffectMayExist": False,
+    }
+
+    expected = dict(attempt)
+    _validate_last_core_attempt(attempt, exact_shape=True)
+    assert attempt == expected
+
+
 @pytest.mark.parametrize(
     "value",
     [
