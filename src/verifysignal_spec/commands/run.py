@@ -71,7 +71,11 @@ from verifysignal_spec.workflows.write_safety import (
     canonical_side_effect_policy_snapshot,
     evaluate_rerun_decision as _evaluate_rerun_decision,
 )
-from verifysignal_spec.workflows.run_preflight import build_run_preflight, local_run_policy_blockers
+from verifysignal_spec.workflows.run_preflight import (
+    build_run_preflight,
+    local_run_policy_blockers,
+    missing_run_artifacts,
+)
 
 
 _DEFAULT_PREPARED_WRITER = write_prepared_run_request
@@ -132,7 +136,7 @@ def run(
     preflight = build_run_preflight(
         {
             "targetBlocker": target_blocker,
-            "missingArtifacts": _missing_local_run_artifacts(project, use_case),
+            "missingArtifacts": missing_run_artifacts(project, use_case),
             "policyBlockers": local_policy_blockers,
             "confirmationRequirements": calculate_run_confirmation_requirements(project, use_case),
             "confirmedRisks": list(confirmed_risks or []),
@@ -165,7 +169,7 @@ def run(
         preflight = build_run_preflight(
             {
                 "targetBlocker": target_blocker,
-                "missingArtifacts": _missing_local_run_artifacts(project, use_case),
+                "missingArtifacts": missing_run_artifacts(project, use_case),
                 "policyBlockers": local_policy_blockers,
                 "confirmationRequirements": calculate_run_confirmation_requirements(project, use_case),
                 "confirmedRisks": list(confirmed_risks or []),
@@ -811,29 +815,6 @@ def _first_run_payload(
 
 def evaluate_rerun_decision(record: Any, *, supersede_reviews: list[Any] | None = None) -> dict[str, Any]:
     return _evaluate_rerun_decision(record, supersede_reviews=supersede_reviews)
-
-
-def _missing_local_run_artifacts(project: Path, record: Any) -> list[str]:
-    missing: list[str] = []
-    references = [
-        record.runRequest,
-        record.mainSkill,
-        *record.skills,
-        *record.sourceOnlySkills,
-    ]
-    for reference in references:
-        if reference is None or not getattr(reference, "path", None):
-            label = "run request" if reference is record.runRequest else "main/supporting skill"
-            missing.append(label)
-            continue
-        try:
-            path = layout.project_relative_path(project, str(reference.path))
-        except ValueError:
-            missing.append(str(reference.path))
-            continue
-        if not path.exists() or not path.is_file():
-            missing.append(str(reference.path))
-    return sorted(set(missing))
 
 
 def _generated_binding_collision_findings(project: Path, record: Any, runtime_values: dict[str, str]) -> list[dict[str, Any]]:

@@ -1,10 +1,86 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
+from verifysignal_spec.workspace import layout
 from verifysignal_spec.workspace.models import ConfirmationRequirement
 from verifysignal_spec.workspace.validation import validate_side_effect_declaration
+from verifysignal_spec.workflows.repository import load_active_workflow_run
 from verifysignal_spec.workflows.write_safety import evaluate_rerun_decision
+
+
+def missing_run_artifacts(project: Path, use_case: Any) -> list[str]:
+    """Collect executable run artifacts identically for check and execution."""
+
+    active_run = load_active_workflow_run(project, str(use_case.alias))
+    if active_run is not None:
+        authored_stage_paths = [
+            [
+                layout.workflow_stage_document_path(
+                    project,
+                    str(use_case.alias),
+                    "specify",
+                )
+            ],
+            [
+                layout.workflow_stage_document_path(
+                    project,
+                    str(use_case.alias),
+                    "plan",
+                ),
+                layout.workflow_stage_document_path(
+                    project,
+                    str(use_case.alias),
+                    "plan",
+                ).with_suffix(".yaml"),
+            ],
+            [
+                layout.workflow_stage_document_path(
+                    project,
+                    str(use_case.alias),
+                    "tasks",
+                ),
+                layout.workflow_stage_document_path(
+                    project,
+                    str(use_case.alias),
+                    "tasks",
+                ).with_suffix(".yaml"),
+            ],
+        ]
+        for authored_paths in authored_stage_paths:
+            missing_authored = [
+                layout.to_project_relative(project, path)
+                for path in authored_paths
+                if not path.exists() or not path.is_file()
+            ]
+            if missing_authored:
+                return missing_authored
+
+    missing: list[str] = []
+    references = [
+        use_case.runRequest,
+        use_case.mainSkill,
+        *use_case.skills,
+        *use_case.sourceOnlySkills,
+    ]
+    for reference in references:
+        if reference is None or not getattr(reference, "path", None):
+            label = (
+                "run request"
+                if reference is use_case.runRequest
+                else "main/supporting skill"
+            )
+            missing.append(label)
+            continue
+        try:
+            path = layout.project_relative_path(project, str(reference.path))
+        except ValueError:
+            missing.append(str(reference.path))
+            continue
+        if not path.exists() or not path.is_file():
+            missing.append(str(reference.path))
+    return sorted(set(missing))
 
 
 def local_run_policy_blockers(

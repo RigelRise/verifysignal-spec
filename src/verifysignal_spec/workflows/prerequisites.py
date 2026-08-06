@@ -29,6 +29,7 @@ from verifysignal_spec.workspace.models import UnderstandingFreshnessState
 from verifysignal_spec.workflows.run_preflight import (
     build_run_preflight,
     local_run_policy_blockers,
+    missing_run_artifacts,
 )
 
 from .first_run import build_understanding_onboarding_preparation
@@ -293,7 +294,7 @@ def _loaded_run_preflight(project: Path, alias: str) -> dict[str, Any]:
     record = load_use_case(project, alias)
     readiness = load_readiness_snapshot(project, alias)
     reviews = load_supersede_reviews(project, alias)
-    missing = [item["path"] for item in _missing_stage_artifacts(project, "run", alias)]
+    missing = missing_run_artifacts(project, record)
     return build_run_preflight(
         {
             "targetBlocker": _target_environment_confirmation_blocker(project, "run", alias),
@@ -526,6 +527,16 @@ def _resolve_alias(project: Path, stage: str, alias: str | None, rule: StagePrer
     return {"availableAliases": aliases}
 
 
+def _run_missing_next_stage(missing: list[str]) -> str:
+    if any(path.endswith("/spec.md") for path in missing):
+        return "specify"
+    if any(path.endswith(("/plan.md", "/plan.yaml")) for path in missing):
+        return "plan"
+    if any(path.endswith(("/tasks.md", "/tasks.yaml")) for path in missing):
+        return "tasks"
+    return "implement"
+
+
 def _missing_stage_artifacts(project: Path, stage: str, alias: str | None) -> list[dict[str, str]]:
     if stage in {"understand", "specify", "list"}:
         return []
@@ -538,6 +549,13 @@ def _missing_stage_artifacts(project: Path, stage: str, alias: str | None) -> li
         return [{"path": use_case_record, "nextStage": "specify"}]
     if stage in {"plan", "tasks", "implement", "validate", "run", "repair"} and _has_unresolved_blocking_clarifications(record):
         return [{"path": f"{use_case_record}:authoringQuestions", "nextStage": "clarify"}]
+    if stage == "run":
+        missing_run = missing_run_artifacts(project, record)
+        next_stage = _run_missing_next_stage(missing_run)
+        return [
+            {"path": path, "nextStage": next_stage}
+            for path in missing_run
+        ]
 
     spec_md = _stage_rel(project, alias, "specify")
     if stage in {"clarify", "plan"} and not _exists(project, spec_md):
