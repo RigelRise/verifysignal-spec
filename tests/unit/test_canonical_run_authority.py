@@ -238,6 +238,52 @@ def test_load_rejects_legacy_non_boolean_risk_authority(
         load_use_case(tmp_path, record.alias)
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("sideEffectStatus", "definitely-safe"),
+        ("rerunRisk", "definitely-safe"),
+        ("sideEffectStatus", " not-observed "),
+        ("rerunRisk", " safe "),
+    ],
+    ids=[
+        "unknown-side-effect-status",
+        "unknown-rerun-risk",
+        "padded-side-effect-status",
+        "padded-rerun-risk",
+    ],
+)
+def test_record_run_rejects_noncanonical_risk_tokens_before_writes(
+    tmp_path: Path,
+    field: str,
+    value: str,
+) -> None:
+    record = _saved_record(tmp_path)
+    entry = _entry(record.alias)
+    entry.postCommitInterpretation = {
+        "postCommit": False,
+        "sideEffectMayExist": False,
+        "sideEffectStatus": "not-observed",
+        "rerunRisk": "safe",
+        field: value,
+    }
+    history_path = layout.run_history_path(
+        tmp_path,
+        record.alias,
+        entry.runId,
+    )
+    authority_path = layout.run_authority_path(tmp_path, record.alias)
+    use_case_path = layout.use_case_path(tmp_path, record.alias)
+    base_before = use_case_path.read_bytes()
+
+    with pytest.raises(ValueError, match="(?i)(risk|status|token|invalid)"):
+        record_run(tmp_path, entry)
+
+    assert not history_path.exists()
+    assert not authority_path.exists()
+    assert use_case_path.read_bytes() == base_before
+
+
 def test_contradictory_committed_risk_is_rejected_and_never_classified_safe(
     tmp_path: Path,
 ) -> None:
