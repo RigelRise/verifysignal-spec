@@ -304,6 +304,76 @@ def test_secret_scanner_preserves_public_uri_and_windows_path_boundaries(
 @pytest.mark.parametrize(
     "payload",
     [
+        {"tokenPolicy": {"value": "short-real-secret"}},
+        {"passwordInput": {"value": "short-real-secret"}},
+        {"targets": {"apiTokenField": {"value": "short-real-secret"}}},
+        {"summary": "Basic dTpw"},
+        {"summary": "A1b2C3d4E5f6G7h8I9j0-K1l2M3n4O5p6Q7r8"},
+        {"reportPath": "https://example.test/?credential=actual-secret-value"},
+        {"reportPath": f"https://example.test/?X-Amz-Signature={'a' * 64}"},
+        {"reportPath": "https://example.test/?credentials[password]=hunter2"},
+        {"reportPath": "https://example.test/?token[]=abc123"},
+        {"reportPath": "C:notes See https://user:pass@example.com"},
+        {"reportPath": "D:note https://example.test?token=actual-secret"},
+        {
+            "reportPath": (
+                "https://example.test/?next="
+                "Contact%20user%3Apass%40private.test%20now"
+            )
+        },
+        {
+            "reportPath": (
+                "https://example.test/?next="
+                "https%253A%252F%252Fuser%253Apass%2540private.test%252Fapp"
+            )
+        },
+    ],
+    ids=[
+        "invalid-public-token-policy-shape",
+        "invalid-root-password-input-shape",
+        "invalid-selector-shape",
+        "short-basic-credential",
+        "base64url-high-entropy",
+        "credential-query",
+        "signed-url-query",
+        "structured-credential-query",
+        "array-token-query",
+        "windows-prefix-embedded-userinfo",
+        "windows-prefix-embedded-token-query",
+        "encoded-nested-prose-userinfo",
+        "double-encoded-nested-userinfo",
+    ],
+)
+def test_secret_scanner_rejects_adversarial_secret_boundaries(
+    payload: dict[str, object],
+) -> None:
+    assert validate_no_secret_values(payload)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"summary": "Basic authentication is supported."},
+        {"summary": "Bearer authentication is configured."},
+        {
+            "tokenPolicy": {
+                "maxExchanges": 3,
+                "maxExchangesPerHour": 3,
+                "ttlDays": 30,
+            }
+        },
+    ],
+    ids=["basic-prose", "bearer-prose", "public-token-policy-shape"],
+)
+def test_secret_scanner_preserves_documented_public_boundaries(
+    payload: dict[str, object],
+) -> None:
+    assert validate_no_secret_values(payload) == []
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
         {"targets": {"currentPasswordInput": {"testId": "current-password-input"}}},
         {"targets": {"apiTokenField": {"testId": "api-token-field"}}},
         {"controls": {"resetPasswordButton": {"role": "button"}}},
