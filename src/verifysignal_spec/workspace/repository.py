@@ -4,6 +4,7 @@ import json
 import time
 import hashlib
 import subprocess
+from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -12,7 +13,17 @@ from verifysignal_spec import __version__ as SPEC_VERSION
 
 from . import layout
 from ..process import run_text
-from .textio import atomic_write_text_lf
+from .path_safety import (
+    ensure_no_casefold_sibling_collision,
+    ensure_unredirected_project_path,
+)
+from .secret_safety import validate_no_secret_values
+from .textio import (
+    atomic_write_text_lf,
+    durable_atomic_write_text_lf,
+    durable_create_text_lf,
+)
+from .time_ordering import format_utc_ns, parse_utc_iso_ns
 from .models import (
     ArtifactCapabilityPolicy,
     ArtifactCapabilityStamp,
@@ -38,9 +49,41 @@ def now_iso() -> str:
 def core_attempt_iso() -> str:
     """Return a local nanosecond-resolution timestamp for attempt identity."""
 
-    seconds, nanoseconds = divmod(time.time_ns(), 1_000_000_000)
-    prefix = datetime.fromtimestamp(seconds, UTC).strftime("%Y-%m-%dT%H:%M:%S")
-    return f"{prefix}.{nanoseconds:09d}Z"
+    return format_utc_ns(time.time_ns())
+
+
+def core_attempt_iso_after(previous: str) -> str:
+    """Return an attempt timestamp that is strictly later than ``previous``."""
+
+    previous_ns = parse_utc_iso_ns(previous)
+    if previous_ns is None:
+        raise ValueError(f"Invalid Core attempt timestamp: {previous}")
+    return format_utc_ns(max(time.time_ns(), previous_ns + 1))
+
+
+def core_attempt_iso_after_record(
+    record: UseCaseRecord,
+    *,
+    candidate: str | None = None,
+) -> str:
+    """Return a new attempt identity after every durable record projection."""
+
+    candidate_text = candidate or core_attempt_iso()
+    candidate_ns = parse_utc_iso_ns(candidate_text)
+    if candidate_ns is None:
+        raise ValueError(f"Invalid Core attempt timestamp: {candidate_text}")
+    evidence: list[Any] = []
+    if isinstance(record.lastRun, dict):
+        evidence.extend(
+            [record.lastRun.get("completedAt"), record.lastRun.get("startedAt")]
+        )
+    if record.lastCoreAttempt is not None:
+        evidence.append(record.lastCoreAttempt.attemptedAt)
+    for value in evidence:
+        parsed = parse_utc_iso_ns(value)
+        if parsed is not None:
+            candidate_ns = max(candidate_ns, parsed + 1)
+    return format_utc_ns(candidate_ns)
 
 
 def load_document(path: Path, default: Any | None = None) -> Any:
@@ -59,6 +102,24 @@ def save_document(path: Path, data: Any) -> None:
     # LF regardless of host: artifact_fingerprints below hashes these files' BYTES, so a CRLF
     # translation on Windows would make the same workspace fingerprint differently there.
     atomic_write_text_lf(path, json.dumps(data, indent=2, sort_keys=False) + "\n")
+
+
+def save_document_durable(path: Path, data: Any) -> None:
+    """Persist a safety authority with crash-durable replacement ordering."""
+
+    durable_atomic_write_text_lf(
+        path,
+        json.dumps(data, indent=2, sort_keys=False) + "\n",
+    )
+
+
+def create_document_durable(path: Path, data: Any) -> None:
+    """Create immutable safety authority without replacing an existing file."""
+
+    durable_create_text_lf(
+        path,
+        json.dumps(data, indent=2, sort_keys=False) + "\n",
+    )
 
 
 def _named_outputs_path(project: Path) -> Path:
@@ -340,35 +401,952 @@ def save_registry(project: Path, registry: dict[str, Any]) -> None:
 
 def load_use_case(project: Path, alias: str) -> UseCaseRecord:
     layout.ensure_path_safe_alias(alias)
-    data = load_document(layout.use_case_path(project, alias))
+    path = _safe_use_case_path(project, alias)
+    if not path.exists():
+        raise FileNotFoundError(f"Use case not found: {alias}")
+    if not path.is_file():
+        raise ValueError("Use-case authority must be a regular file.")
+    data = load_document(path)
     if not data:
         raise FileNotFoundError(f"Use case not found: {alias}")
-    return UseCaseRecord.from_dict(data)
-
-
-def save_last_core_attempt(project: Path, alias: str, attempt: LastCoreAttempt) -> UseCaseRecord:
-    """Replace only the redacted non-run attempt projection on a use case."""
-
-    record = load_use_case(project, alias)
-    record.lastCoreAttempt = attempt
-    save_document(layout.use_case_path(project, alias), record.to_dict())
+    _validate_base_run_evidence(data, alias)
+    record = UseCaseRecord.from_dict(data)
+    if record.alias != alias:
+        raise ValueError(
+            "Use-case authority identity does not match its requested filename."
+        )
+    authority = _load_run_authority(project, alias)
+    if authority is None:
+        # Read-only legacy compatibility retains an unorderable YAML-only run,
+        # while any durable history is recovered now so preflight cannot act on
+        # a stale projection after an older writer crashed between its writes.
+        histories = _load_run_history_documents(project, alias)
+        if histories:
+            record.lastRun = _recover_legacy_last_run(
+                alias,
+                record.lastRun,
+                histories,
+                require_history_for_unorderable=False,
+            )
+        return record
+    histories = _load_run_history_documents(project, alias)
+    _assert_base_projection_reconciles(record, authority, histories)
+    _assert_run_history_reconciles(alias, authority, histories)
+    # Explicit nulls are tombstones. They must overwrite stale generic
+    # projections instead of being interpreted as absent values.
+    attempt = authority["lastCoreAttempt"]
+    record.lastCoreAttempt = (
+        LastCoreAttempt.from_dict(attempt) if attempt is not None else None
+    )
+    record.lastRun = deepcopy(authority["lastRun"])
     return record
 
 
-def clear_last_core_attempt(project: Path, alias: str) -> UseCaseRecord:
-    """Clear a prior Core error marker without rewriting run/registry history."""
+class LastCoreAttemptOwnershipError(RuntimeError):
+    """Raised when an invocation no longer owns the durable attempt marker."""
 
+
+_ATTEMPT_OWNERSHIP_UNCHECKED = object()
+
+
+def save_last_core_attempt(
+    project: Path,
+    alias: str,
+    attempt: LastCoreAttempt,
+    *,
+    expected_attempted_at: str | None | object = _ATTEMPT_OWNERSHIP_UNCHECKED,
+) -> UseCaseRecord:
+    """Replace the canonical redacted attempt before invoking Core."""
+
+    observed_authority = _load_run_authority(project, alias)
     record = load_use_case(project, alias)
+    _assert_run_authority_snapshot(project, alias, observed_authority)
+    _assert_last_core_attempt_owner(record, expected_attempted_at)
+    if observed_authority is None:
+        record.lastRun = _recover_legacy_last_run(
+            alias,
+            record.lastRun,
+            _load_run_history_documents(project, alias),
+            require_history_for_unorderable=True,
+        )
+    current_attempted_at = (
+        record.lastCoreAttempt.attemptedAt
+        if record.lastCoreAttempt is not None
+        else None
+    )
+    if attempt.attemptedAt != current_attempted_at:
+        ordered_attempted_at = core_attempt_iso_after_record(
+            record,
+            candidate=attempt.attemptedAt,
+        )
+        if ordered_attempted_at != attempt.attemptedAt:
+            attempt = LastCoreAttempt.from_dict(
+                {
+                    **attempt.to_dict(),
+                    "attemptedAt": ordered_attempted_at,
+                }
+            )
+    record.lastCoreAttempt = attempt
+    _assert_run_authority_snapshot(project, alias, observed_authority)
+    _save_run_authority(project, record)
+    save_document_durable(_safe_use_case_path(project, alias), record.to_dict())
+    return record
+
+
+def clear_last_core_attempt(
+    project: Path,
+    alias: str,
+    *,
+    expected_attempted_at: str | None | object = _ATTEMPT_OWNERSHIP_UNCHECKED,
+) -> UseCaseRecord:
+    """Tombstone an owned attempt only after its real run is durable."""
+
+    observed_authority = _load_run_authority(project, alias)
+    record = load_use_case(project, alias)
+    _assert_run_authority_snapshot(project, alias, observed_authority)
+    _assert_last_core_attempt_owner(record, expected_attempted_at)
     if record.lastCoreAttempt is not None:
         record.lastCoreAttempt = None
-        save_document(layout.use_case_path(project, alias), record.to_dict())
+        # The tombstone is canonical and durable before the generic use-case
+        # projection. A crash or stale writer can therefore never resurrect
+        # or erase safety authority.
+        _assert_run_authority_snapshot(project, alias, observed_authority)
+        _save_run_authority(project, record)
+        save_document_durable(_safe_use_case_path(project, alias), record.to_dict())
     return record
+
+
+_RUN_AUTHORITY_SCHEMA = "verifysignal-spec-run-authority/v1"
+_RUN_AUTHORITY_KEYS = {
+    "schemaVersion",
+    "useCaseAlias",
+    "lastCoreAttempt",
+    "lastRun",
+}
+_LAST_CORE_ATTEMPT_KEYS = {
+    "attemptedAt",
+    "operation",
+    "schema",
+    "status",
+    "errorCode",
+    "executionState",
+    "sideEffectMayExist",
+}
+_LAST_RUN_FIELDS = (
+    "runId",
+    "status",
+    "startedAt",
+    "completedAt",
+    "coreStatus",
+    "coverageStatus",
+    "profile",
+    "profileSettings",
+    "selectedMainSkill",
+    "executedSkill",
+    "skillSelectionStatus",
+    "gateCoverage",
+    "missingRequiredGates",
+    "partialCoverage",
+    "runtimeContradictions",
+    "repairRecommendations",
+    "sideEffectPolicy",
+    "sideEffects",
+    "runtimeOutputs",
+    "resolvedRuntimeInputs",
+    "postCommitInterpretation",
+    "rerunDecision",
+    "sideEffectLifecycle",
+    "reportPath",
+    "evidenceDir",
+)
+_LAST_RUN_KEYS = set(_LAST_RUN_FIELDS)
+_LAST_RUN_LIST_FIELDS = {
+    "gateCoverage",
+    "missingRequiredGates",
+    "partialCoverage",
+    "runtimeContradictions",
+    "repairRecommendations",
+    "runtimeOutputs",
+    "resolvedRuntimeInputs",
+}
+_LAST_RUN_MAPPING_FIELDS = {
+    "profileSettings",
+    "sideEffectPolicy",
+    "sideEffects",
+    "postCommitInterpretation",
+    "rerunDecision",
+    "sideEffectLifecycle",
+}
+_LAST_RUN_TEXT_FIELDS = {
+    "status",
+    "coreStatus",
+    "coverageStatus",
+    "profile",
+    "skillSelectionStatus",
+    "reportPath",
+    "evidenceDir",
+}
+_RISK_BOOLEAN_FIELDS = {
+    "postCommit",
+    "sideEffectMayExist",
+    "cleanupRequired",
+    "declared",
+    "requiresConfirmationBeforeRun",
+}
+_RISK_TEXT_FIELDS = {
+    "class",
+    "sideEffectClass",
+    "mode",
+    "executionStatus",
+    "verificationStatus",
+    "sideEffectStatus",
+    "failurePhase",
+    "rerunRisk",
+    "status",
+    "decision",
+    "outcomeClass",
+    "policyBranch",
+    "coreRisk",
+    "specDecision",
+}
+_SAFE_SIDE_EFFECT_STATUSES = {"not-started", "none", "not-committed"}
+_RESTRICTIVE_SIDE_EFFECT_STATUSES = {
+    "possible",
+    "inferred",
+    "likely-committed",
+    "committed",
+    "committed-confirmed",
+    "violated",
+}
+_CANONICAL_SIDE_EFFECT_STATUSES = _SAFE_SIDE_EFFECT_STATUSES | _RESTRICTIVE_SIDE_EFFECT_STATUSES | {
+    "not-applicable",
+    "not-observed",
+    "unknown",
+}
+_CANONICAL_RERUN_RISKS = {
+    "safe",
+    "safe-with-new-inputs",
+    "requires-confirmation",
+    "blocked",
+}
+
+
+def _load_run_authority(project: Path, alias: str) -> dict[str, Any] | None:
+    path = _safe_run_authority_path(project, alias)
+    if not path.exists():
+        return None
+    if not path.is_file():
+        raise ValueError("Canonical run authority must be a regular file.")
+    data = load_document(path, default=None)
+    _validate_run_authority(data, alias)
+    return data
+
+
+def _validate_run_authority(data: Any, alias: str) -> None:
+    if not isinstance(data, dict) or set(data) != _RUN_AUTHORITY_KEYS:
+        raise ValueError("Canonical run authority has an invalid document shape.")
+    if data.get("schemaVersion") != _RUN_AUTHORITY_SCHEMA:
+        raise ValueError("Canonical run authority has an unsupported schema.")
+    if data.get("useCaseAlias") != alias:
+        raise ValueError("Canonical run authority belongs to another use case.")
+    attempt = data.get("lastCoreAttempt")
+    if attempt is not None:
+        _validate_last_core_attempt(attempt, exact_shape=True)
+    last_run = data.get("lastRun")
+    if last_run is not None:
+        _validate_last_run(
+            last_run,
+            alias,
+            require_comparable=True,
+        )
+    _validate_run_authority_cross_slot(attempt, last_run)
+
+
+def _validate_base_run_evidence(data: Any, alias: str) -> None:
+    """Reject malformed generic safety slots before permissive model decoding."""
+
+    if not isinstance(data, dict):
+        raise ValueError("Use-case authority must be a structured document.")
+    attempt = data.get("lastCoreAttempt")
+    if attempt is not None:
+        _validate_last_core_attempt(attempt, exact_shape=False)
+    last_run = data.get("lastRun")
+    if last_run is not None:
+        _validate_last_run(last_run, alias, require_comparable=False)
+
+
+def _validate_last_core_attempt(
+    attempt: Any,
+    *,
+    exact_shape: bool,
+) -> None:
+    if not isinstance(attempt, dict):
+        raise ValueError("Canonical run authority has an invalid attempt marker.")
+    keys = set(attempt)
+    required = {"attemptedAt", "operation", "status", "executionState"}
+    if (
+        (exact_shape and keys != _LAST_CORE_ATTEMPT_KEYS)
+        or not required <= keys
+        or not keys <= _LAST_CORE_ATTEMPT_KEYS
+    ):
+        raise ValueError("Canonical run authority has an invalid attempt marker.")
+    secret_findings = validate_no_secret_values(attempt, "lastCoreAttempt")
+    if secret_findings:
+        raise ValueError("Canonical run authority contains a secret-looking value.")
+    if parse_utc_iso_ns(attempt.get("attemptedAt")) is None:
+        raise ValueError("Canonical run authority has an invalid attempt timestamp.")
+    if attempt.get("operation") != "run":
+        raise ValueError("Canonical run authority has an invalid operation.")
+    if attempt.get("executionState") not in {"not-started", "unknown"}:
+        raise ValueError("Canonical run authority has an invalid execution state.")
+    if not isinstance(attempt.get("status"), str) or not attempt["status"]:
+        raise ValueError("Canonical run authority has an invalid attempt status.")
+    side_effect_may_exist = attempt.get("sideEffectMayExist")
+    if side_effect_may_exist is not None and not isinstance(
+        side_effect_may_exist,
+        bool,
+    ):
+        raise ValueError("Canonical run authority has invalid side-effect authority.")
+    if (
+        attempt.get("executionState") == "not-started"
+        and side_effect_may_exist is not False
+    ):
+        raise ValueError(
+            "Canonical not-started authority requires sideEffectMayExist false."
+        )
+    for optional_text in ("schema", "errorCode"):
+        value = attempt.get(optional_text)
+        if value is not None and not isinstance(value, str):
+            raise ValueError(
+                f"Canonical run authority has invalid {optional_text}."
+            )
+
+
+def _validate_last_run(
+    last_run: Any,
+    alias: str,
+    *,
+    require_comparable: bool,
+) -> None:
+    if not isinstance(last_run, dict):
+        raise ValueError("Canonical run authority has an invalid lastRun.")
+    secret_findings = validate_no_secret_values(last_run, f"{alias}.lastRun")
+    if secret_findings:
+        raise ValueError("Canonical run authority contains a secret-looking value.")
+    if not set(last_run) <= _LAST_RUN_KEYS:
+        raise ValueError("Canonical run authority has an invalid lastRun allowlist.")
+    try:
+        layout.ensure_path_safe_run_id(last_run.get("runId"))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Canonical run authority has an invalid run id.") from exc
+    if not isinstance(last_run.get("status"), str) or not last_run["status"]:
+        raise ValueError("Canonical run authority has an invalid lastRun status.")
+    started_at = parse_utc_iso_ns(last_run.get("startedAt"))
+    completed_at = parse_utc_iso_ns(last_run.get("completedAt"))
+    for field, parsed in (
+        ("startedAt", started_at),
+        ("completedAt", completed_at),
+    ):
+        if last_run.get(field) is not None and parsed is None:
+            raise ValueError(
+                f"Canonical run authority has an invalid {field} timestamp."
+            )
+    if require_comparable and started_at is None and completed_at is None:
+        raise ValueError(
+            "Canonical run authority lastRun requires a comparable timestamp."
+        )
+    if (
+        started_at is not None
+        and completed_at is not None
+        and completed_at < started_at
+    ):
+        raise ValueError(
+            "Canonical run authority completion timestamp precedes its start."
+        )
+    for field in _LAST_RUN_TEXT_FIELDS:
+        value = last_run.get(field)
+        if value is not None and not isinstance(value, str):
+            raise ValueError(
+                f"Canonical run authority has an invalid lastRun {field}."
+            )
+    for field in _LAST_RUN_LIST_FIELDS:
+        value = last_run.get(field)
+        if value is not None and not isinstance(value, list):
+            raise ValueError(
+                f"Canonical run authority has an invalid lastRun {field}."
+            )
+    for field in _LAST_RUN_MAPPING_FIELDS:
+        value = last_run.get(field)
+        if value is not None and not isinstance(value, dict):
+            raise ValueError(
+                f"Canonical run authority has an invalid lastRun {field}."
+            )
+    for field in ("selectedMainSkill", "executedSkill"):
+        value = last_run.get(field)
+        if value is not None and not isinstance(value, (dict, str)):
+            raise ValueError(
+                f"Canonical run authority has an invalid lastRun {field}."
+            )
+    for field in _LAST_RUN_MAPPING_FIELDS:
+        value = last_run.get(field)
+        if isinstance(value, dict):
+            _validate_risk_authority_fields(value, field)
+    _validate_cross_mapping_risk_authority(last_run)
+
+
+def _validate_risk_authority_fields(value: dict[str, Any], field: str) -> None:
+    """Reject values whose coercion could weaken persisted rerun authority."""
+
+    for key in _RISK_BOOLEAN_FIELDS:
+        item = value.get(key)
+        if item is not None and not isinstance(item, bool):
+            raise ValueError(
+                f"Canonical run authority has invalid boolean risk field {field}.{key}."
+            )
+    for key in _RISK_TEXT_FIELDS:
+        item = value.get(key)
+        if item is not None and (
+            not isinstance(item, str)
+            or not item.strip()
+            or item != item.strip()
+        ):
+            raise ValueError(
+                f"Canonical run authority has invalid text risk field {field}.{key}."
+            )
+        allowed_values = (
+            _CANONICAL_SIDE_EFFECT_STATUSES
+            if key == "sideEffectStatus" or (field == "sideEffects" and key == "status")
+            else _CANONICAL_RERUN_RISKS
+            if key == "rerunRisk"
+            else None
+        )
+        if item is not None and allowed_values is not None and item not in allowed_values:
+            raise ValueError(
+                f"Canonical run authority has invalid risk token {field}.{key}."
+            )
+    commit_step = value.get("commitStep")
+    if commit_step is not None:
+        if not isinstance(commit_step, dict):
+            raise ValueError(
+                f"Canonical run authority has invalid risk field {field}.commitStep."
+            )
+        reached = commit_step.get("reached")
+        if reached is not None and not isinstance(reached, bool):
+            raise ValueError(
+                f"Canonical run authority has invalid boolean risk field {field}.commitStep.reached."
+            )
+    else:
+        reached = None
+
+    post_commit = value.get("postCommit")
+    side_effect_may_exist = value.get("sideEffectMayExist")
+    side_effect_status = str(value.get("sideEffectStatus") or "").strip().lower()
+    raw_side_effect_status = str(value.get("status") or "").strip().lower()
+    rerun_risk = str(value.get("rerunRisk") or "").strip().lower()
+    explicitly_safe = (
+        post_commit is False and side_effect_may_exist is False
+    ) or (
+        side_effect_may_exist is False
+        and side_effect_status in _SAFE_SIDE_EFFECT_STATUSES
+    )
+    restrictive_evidence = (
+        reached is True
+        or side_effect_status in _RESTRICTIVE_SIDE_EFFECT_STATUSES
+        or raw_side_effect_status in _RESTRICTIVE_SIDE_EFFECT_STATUSES
+    )
+    explicitly_risky = post_commit is True or side_effect_may_exist is True
+    claims_safe = (
+        side_effect_status in _SAFE_SIDE_EFFECT_STATUSES
+        or rerun_risk == "safe"
+    )
+    if (
+        (explicitly_safe and restrictive_evidence)
+        or (explicitly_risky and claims_safe)
+        or (post_commit is True and side_effect_may_exist is False)
+    ):
+        raise ValueError(
+            f"Canonical run authority has contradictory risk evidence in {field}."
+        )
+
+
+def _validate_cross_mapping_risk_authority(last_run: dict[str, Any]) -> None:
+    """Reject a safe claim contradicted by another persisted risk mapping."""
+
+    mappings = [
+        value
+        for field in _LAST_RUN_MAPPING_FIELDS
+        if isinstance((value := last_run.get(field)), dict)
+    ]
+    has_explicit_safe = any(_mapping_claims_no_commit(value) for value in mappings)
+    has_restrictive_evidence = any(
+        _mapping_has_restrictive_evidence(value) for value in mappings
+    )
+    if has_explicit_safe and has_restrictive_evidence:
+        raise ValueError(
+            "Canonical run authority has contradictory risk evidence across lastRun mappings."
+        )
+
+
+def _mapping_claims_no_commit(value: dict[str, Any]) -> bool:
+    post_commit = value.get("postCommit")
+    side_effect_may_exist = value.get("sideEffectMayExist")
+    status = str(value.get("sideEffectStatus") or "").strip().lower()
+    return (
+        post_commit is False and side_effect_may_exist is False
+    ) or (
+        side_effect_may_exist is False
+        and status in _SAFE_SIDE_EFFECT_STATUSES
+    )
+
+
+def _mapping_has_restrictive_evidence(value: dict[str, Any]) -> bool:
+    commit_step = value.get("commitStep")
+    reached = (
+        commit_step.get("reached")
+        if isinstance(commit_step, dict)
+        else None
+    )
+    statuses = {
+        str(value.get("sideEffectStatus") or "").strip().lower(),
+        str(value.get("status") or "").strip().lower(),
+    }
+    return (
+        reached is True
+        or value.get("postCommit") is True
+        or value.get("sideEffectMayExist") is True
+        or bool(statuses & _RESTRICTIVE_SIDE_EFFECT_STATUSES)
+    )
+
+
+def _validate_run_authority_cross_slot(
+    attempt: Any,
+    last_run: Any,
+) -> None:
+    if not isinstance(attempt, dict) or not isinstance(last_run, dict):
+        return
+    attempt_stamp = _attempt_stamp(attempt)
+    started_at = parse_utc_iso_ns(last_run.get("startedAt"))
+    run_stamp = _last_run_stamp(last_run)
+    if attempt_stamp is None or run_stamp is None:
+        return
+    # record_run deliberately retains its marker until the same-start real run
+    # is durable. Any other active attempt must be strictly newer than the
+    # completed real-run evidence.
+    if attempt_stamp == started_at or attempt_stamp > run_stamp:
+        return
+    raise ValueError(
+        "Canonical run and attempt authority have an invalid temporal relationship."
+    )
+
+
+def _validate_run_history_document(
+    data: Any,
+    alias: str,
+    expected_run_id: str,
+    *,
+    strict_completion: bool = False,
+) -> dict[str, Any]:
+    if not isinstance(data, dict):
+        raise ValueError("RunHistory authority must be a structured document.")
+    secret_findings = validate_no_secret_values(data, f"{alias}.RunHistory")
+    if secret_findings:
+        first = secret_findings[0]
+        raise ValueError(
+            "RunHistory authority contains a secret-looking value at "
+            f"{first.get('path', '<unknown>')}."
+        )
+    try:
+        run_id = layout.ensure_path_safe_run_id(data.get("runId"))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("RunHistory authority has an invalid run id.") from exc
+    if run_id != expected_run_id:
+        raise ValueError("RunHistory identity does not match its filename.")
+    if data.get("useCaseAlias") != alias:
+        raise ValueError("RunHistory authority belongs to another use case.")
+    started_at = parse_utc_iso_ns(data.get("startedAt"))
+    if started_at is None:
+        raise ValueError("RunHistory authority has an invalid startedAt timestamp.")
+    completed_value = data.get("completedAt")
+    completed_at = parse_utc_iso_ns(completed_value)
+    if completed_value is not None and completed_at is None:
+        raise ValueError("RunHistory authority has an invalid completedAt timestamp.")
+    if strict_completion and completed_at is None:
+        raise ValueError("A newly recorded RunHistory requires completedAt.")
+    if completed_at is not None and (
+        completed_at < started_at
+        or (strict_completion and completed_at == started_at)
+    ):
+        raise ValueError("RunHistory completion must follow its start timestamp.")
+    projection = _project_run_history(data)
+    _validate_last_run(projection, alias, require_comparable=True)
+    return projection
+
+
+def _project_run_history(data: dict[str, Any]) -> dict[str, Any]:
+    return {
+        field: deepcopy(data.get(field))
+        for field in _LAST_RUN_FIELDS
+    }
+
+
+def _load_run_history_documents(
+    project: Path,
+    alias: str,
+) -> list[dict[str, Any]]:
+    directory = _safe_run_history_dir(project, alias)
+    if not directory.exists():
+        return []
+    if not directory.is_dir():
+        raise ValueError("RunHistory authority path must be a directory.")
+    try:
+        siblings = sorted(
+            directory.iterdir(),
+            key=lambda candidate: (candidate.name.casefold(), candidate.name),
+        )
+    except OSError as exc:
+        raise ValueError(
+            "RunHistory authority sibling names cannot be verified safely."
+        ) from exc
+    histories: list[dict[str, Any]] = []
+    for sibling in siblings:
+        if sibling.suffix.casefold() != ".yaml":
+            continue
+        # The suffix spelling is canonical too. A `.YAML` sibling must not be
+        # hidden on POSIX and then silently selected as `.yaml` on Windows.
+        path = ensure_no_casefold_sibling_collision(
+            sibling.with_suffix(".yaml"),
+            authority="RunHistory authority",
+        )
+        ensure_unredirected_project_path(
+            project,
+            path,
+            authority="RunHistory authority",
+        )
+        if not path.is_file():
+            raise ValueError("RunHistory authority must be a regular file.")
+        data = load_document(path, default=None)
+        histories.append(
+            _validate_run_history_document(data, alias, path.stem)
+        )
+    return histories
+
+
+def _recover_legacy_last_run(
+    alias: str,
+    base_run: Any,
+    histories: list[dict[str, Any]],
+    *,
+    require_history_for_unorderable: bool,
+) -> dict[str, Any] | None:
+    """Recover main-era timestamp-less projections before first sidecar write."""
+
+    if base_run is not None:
+        _validate_last_run(base_run, alias, require_comparable=False)
+    if not histories:
+        if (
+            require_history_for_unorderable
+            and base_run is not None
+            and _last_run_stamp(base_run) is None
+        ):
+            raise ValueError(
+                "Legacy lastRun requires matching comparable RunHistory authority."
+            )
+        return deepcopy(base_run)
+    newest_stamp = max(_last_run_stamp(history) for history in histories)
+    newest = [
+        history
+        for history in histories
+        if _last_run_stamp(history) == newest_stamp
+    ]
+    if len(newest) != 1:
+        raise ValueError("RunHistory authority is ambiguous at the newest timestamp.")
+    if base_run is not None:
+        matching = [
+            history
+            for history in histories
+            if history.get("runId") == base_run.get("runId")
+        ]
+        base_stamp = _last_run_stamp(base_run)
+        if matching and (
+            len(matching) != 1
+            or not _projection_is_compatible_subset(base_run, matching[0])
+        ):
+            raise ValueError(
+                "Legacy lastRun conflicts with its RunHistory authority."
+            )
+        if not matching and (
+            base_stamp is None
+            or newest_stamp is None
+            or newest_stamp <= base_stamp
+        ):
+            raise ValueError(
+                "Legacy lastRun conflicts with its RunHistory authority."
+            )
+    return deepcopy(newest[0])
+
+
+def _assert_base_projection_reconciles(
+    record: UseCaseRecord,
+    authority: dict[str, Any],
+    histories: list[dict[str, Any]],
+) -> None:
+    base_run = record.lastRun if isinstance(record.lastRun, dict) else None
+    canonical_run = (
+        authority.get("lastRun")
+        if isinstance(authority.get("lastRun"), dict)
+        else None
+    )
+    base_run_stamp = _last_run_stamp(base_run)
+    canonical_run_stamp = _last_run_stamp(canonical_run)
+    if base_run is not None:
+        if canonical_run is None:
+            canonical_attempt_stamp = _attempt_stamp(authority.get("lastCoreAttempt"))
+            if (
+                base_run_stamp is None
+                or canonical_attempt_stamp is None
+                or base_run_stamp >= canonical_attempt_stamp
+            ):
+                raise ValueError(
+                    "Base run projection is newer than or conflicts with canonical authority; downgrade recovery is required."
+                )
+        elif _projection_is_compatible_subset(base_run, canonical_run):
+            pass
+        elif base_run_stamp is None or canonical_run_stamp is None:
+            raise ValueError(
+                "Base and canonical run projections cannot be ordered safely."
+            )
+        elif base_run_stamp > canonical_run_stamp:
+            raise ValueError(
+                "Base run projection is newer than canonical authority; downgrade recovery is required."
+            )
+        elif (
+            base_run_stamp == canonical_run_stamp
+            and _without_none(base_run) != _without_none(canonical_run)
+        ):
+            raise ValueError(
+                "Base and canonical run projections conflict at the same timestamp."
+            )
+
+    base_attempt = record.lastCoreAttempt
+    canonical_attempt = authority.get("lastCoreAttempt")
+    if base_attempt is None:
+        return
+    base_attempt_stamp = _attempt_stamp(base_attempt)
+    canonical_attempt_stamp = _attempt_stamp(canonical_attempt)
+    if canonical_attempt is not None:
+        if base_attempt_stamp is None or canonical_attempt_stamp is None:
+            raise ValueError(
+                "Base attempt projection cannot be ordered safely."
+            )
+        if base_attempt_stamp > canonical_attempt_stamp:
+            raise ValueError(
+                "Base attempt projection is newer than canonical authority; downgrade recovery is required."
+            )
+        # Equal attemptedAt is the exact attempt identity. Canonical refinement
+        # legitimately precedes its generic projection and therefore wins even
+        # if a crash left the same-identity base marker stale.
+        return
+
+    # A canonical tombstone intentionally outranks the stale base marker when
+    # the completed canonical run proves that marker was already resolved.
+    if (
+        base_attempt_stamp is None
+        or canonical_run_stamp is None
+        or base_attempt_stamp >= canonical_run_stamp
+    ):
+        raise ValueError(
+            "Base attempt projection conflicts with the canonical tombstone."
+        )
+
+
+def _assert_run_history_reconciles(
+    alias: str,
+    authority: dict[str, Any],
+    histories: list[dict[str, Any]],
+) -> None:
+    canonical_run = (
+        authority.get("lastRun")
+        if isinstance(authority.get("lastRun"), dict)
+        else None
+    )
+    canonical_run_stamp = _last_run_stamp(canonical_run)
+    canonical_attempt_stamp = _attempt_stamp(authority.get("lastCoreAttempt"))
+    if canonical_run is None:
+        for history in histories:
+            history_stamp = _last_run_stamp(history)
+            if (
+                history_stamp is None
+                or canonical_attempt_stamp is None
+                or history_stamp >= canonical_attempt_stamp
+            ):
+                raise ValueError(
+                    "RunHistory conflicts with canonical lastRun tombstone."
+                )
+        return
+
+    matching = [
+        history
+        for history in histories
+        if history.get("runId") == canonical_run.get("runId")
+    ]
+    if len(matching) > 1:
+        raise ValueError("RunHistory identity is ambiguous.")
+    if matching:
+        if _without_none(matching[0]) != _without_none(canonical_run):
+            raise ValueError(
+                "RunHistory diverges from canonical run authority."
+            )
+        if canonical_run_stamp is None:
+            canonical_run_stamp = _last_run_stamp(matching[0])
+    for history in histories:
+        if matching and history is matching[0]:
+            continue
+        history_stamp = _last_run_stamp(history)
+        if (
+            history_stamp is None
+            or canonical_run_stamp is None
+            or history_stamp >= canonical_run_stamp
+        ):
+            raise ValueError(
+                "RunHistory is newer than or conflicts with canonical run authority; downgrade recovery is required."
+            )
+
+
+def _last_run_stamp(last_run: dict[str, Any] | None) -> int | None:
+    if not isinstance(last_run, dict):
+        return None
+    completed_at = parse_utc_iso_ns(last_run.get("completedAt"))
+    if completed_at is not None:
+        return completed_at
+    return parse_utc_iso_ns(last_run.get("startedAt"))
+
+
+def _attempt_stamp(attempt: Any) -> int | None:
+    if isinstance(attempt, LastCoreAttempt):
+        return parse_utc_iso_ns(attempt.attemptedAt)
+    if isinstance(attempt, dict):
+        return parse_utc_iso_ns(attempt.get("attemptedAt"))
+    return None
+
+
+def _without_none(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: _without_none(item)
+            for key, item in value.items()
+            if item is not None
+        }
+    if isinstance(value, list):
+        return [_without_none(item) for item in value]
+    return value
+
+
+def _projection_is_compatible_subset(
+    projection: dict[str, Any],
+    authority: dict[str, Any],
+) -> bool:
+    return all(
+        value is None
+        or (
+            key in authority
+            and _without_none(value) == _without_none(authority.get(key))
+        )
+        for key, value in projection.items()
+    )
+
+
+def _run_authority_document(record: UseCaseRecord) -> dict[str, Any]:
+    return {
+        "schemaVersion": _RUN_AUTHORITY_SCHEMA,
+        "useCaseAlias": record.alias,
+        "lastCoreAttempt": (
+            record.lastCoreAttempt.to_dict()
+            if record.lastCoreAttempt is not None
+            else None
+        ),
+        "lastRun": deepcopy(record.lastRun),
+    }
+
+
+def _save_run_authority(project: Path, record: UseCaseRecord) -> None:
+    document = _run_authority_document(record)
+    _validate_run_authority(document, record.alias)
+    save_document_durable(
+        _safe_run_authority_path(project, record.alias),
+        document,
+    )
+
+
+def _assert_last_core_attempt_owner(
+    record: UseCaseRecord,
+    expected_attempted_at: str | None | object,
+) -> None:
+    if expected_attempted_at is _ATTEMPT_OWNERSHIP_UNCHECKED:
+        return
+    current = (
+        record.lastCoreAttempt.attemptedAt
+        if record.lastCoreAttempt is not None
+        else None
+    )
+    if current != expected_attempted_at:
+        raise LastCoreAttemptOwnershipError(
+            "LastCoreAttempt ownership changed before persistence completed."
+        )
+
+
+def _assert_run_authority_snapshot(
+    project: Path,
+    alias: str,
+    expected: dict[str, Any] | None,
+) -> None:
+    if _load_run_authority(project, alias) != expected:
+        raise LastCoreAttemptOwnershipError(
+            "Canonical run authority changed before persistence completed."
+        )
 
 
 def save_use_case(project: Path, record: UseCaseRecord) -> None:
     layout.ensure_path_safe_alias(record.alias)
-    save_document(layout.use_case_path(project, record.alias), record.to_dict())
+    save_document(_safe_use_case_path(project, record.alias), record.to_dict())
     upsert_registry_entry(project, record)
+
+
+def _safe_use_case_path(project: Path, alias: str) -> Path:
+    return ensure_unredirected_project_path(
+        project,
+        layout.use_case_path(project, alias),
+        authority="Use-case authority",
+    )
+
+
+def _safe_run_authority_path(project: Path, alias: str) -> Path:
+    return ensure_unredirected_project_path(
+        project,
+        layout.run_authority_path(project, alias),
+        authority="Canonical run authority",
+    )
+
+
+def _safe_run_history_dir(project: Path, alias: str) -> Path:
+    return ensure_unredirected_project_path(
+        project,
+        layout.workspace_root(project)
+        / layout.RUNS_DIR
+        / layout.ensure_path_safe_alias(alias),
+        authority="RunHistory authority",
+    )
+
+
+def _safe_run_history_path(project: Path, alias: str, run_id: str) -> Path:
+    path = ensure_unredirected_project_path(
+        project,
+        layout.run_history_path(project, alias, run_id),
+        authority="RunHistory authority",
+    )
+    return ensure_no_casefold_sibling_collision(
+        path,
+        authority="RunHistory authority",
+    )
 
 
 def update_use_case_workflow_reference(project: Path, alias: str, workflow: dict[str, Any]) -> UseCaseRecord:
@@ -415,7 +1393,7 @@ def list_use_cases(project: Path) -> tuple[list[dict[str, Any]], list[dict[str, 
             record_path = layout.project_relative_path(project, row["recordPath"])
             if not record_path.exists():
                 raise FileNotFoundError(row["recordPath"])
-            record = UseCaseRecord.from_dict(load_document(record_path))
+            record = load_use_case(project, str(row["alias"]))
             current = readiness_current_state(project, record)
             row.update(
                 {
@@ -500,38 +1478,75 @@ def update_validation(project: Path, alias: str, result: dict[str, Any]) -> UseC
 
 
 def record_run(project: Path, entry: RunHistoryEntry) -> None:
-    save_document(layout.run_history_path(project, entry.useCaseAlias, entry.runId), entry.to_dict())
+    use_case_path = _safe_use_case_path(project, entry.useCaseAlias)
+    history_path = _safe_run_history_path(
+        project,
+        entry.useCaseAlias,
+        entry.runId,
+    )
+    history_document = entry.to_dict()
+    try:
+        history_path.lstat()
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        raise ValueError("RunHistory identity cannot be inspected safely.") from exc
+    else:
+        raise ValueError("RunHistory identity already exists and cannot be reused.")
+    projection = _validate_run_history_document(
+        history_document,
+        entry.useCaseAlias,
+        entry.runId,
+        strict_completion=True,
+    )
+    observed_authority = _load_run_authority(project, entry.useCaseAlias)
     record = load_use_case(project, entry.useCaseAlias)
-    record.lastRun = {
-        "runId": entry.runId,
-        "status": entry.status,
-        "startedAt": entry.startedAt,
-        "completedAt": entry.completedAt,
-        "coreStatus": entry.coreStatus,
-        "coverageStatus": entry.coverageStatus,
-        "profile": entry.profile,
-        "profileSettings": entry.profileSettings,
-        "selectedMainSkill": entry.selectedMainSkill,
-        "executedSkill": entry.executedSkill,
-        "skillSelectionStatus": entry.skillSelectionStatus,
-        "gateCoverage": entry.gateCoverage,
-        "missingRequiredGates": entry.missingRequiredGates,
-        "partialCoverage": entry.partialCoverage,
-        "runtimeContradictions": entry.runtimeContradictions,
-        "repairRecommendations": entry.repairRecommendations,
-        "sideEffectPolicy": entry.sideEffectPolicy,
-        "sideEffects": entry.sideEffects,
-        "runtimeOutputs": entry.runtimeOutputs,
-        "resolvedRuntimeInputs": entry.resolvedRuntimeInputs,
-        "postCommitInterpretation": entry.postCommitInterpretation,
-        "rerunDecision": entry.rerunDecision,
-        "sideEffectLifecycle": entry.sideEffectLifecycle,
-        "reportPath": entry.reportPath,
-        "evidenceDir": entry.evidenceDir,
-    }
+    _assert_run_authority_snapshot(
+        project,
+        entry.useCaseAlias,
+        observed_authority,
+    )
+    prior_run = record.lastRun
+    if observed_authority is None:
+        prior_run = _recover_legacy_last_run(
+            entry.useCaseAlias,
+            record.lastRun,
+            _load_run_history_documents(project, entry.useCaseAlias),
+            require_history_for_unorderable=True,
+        )
+    prior_stamp = _last_run_stamp(prior_run)
+    new_stamp = _last_run_stamp(projection)
+    if prior_stamp is not None and (new_stamp is None or new_stamp <= prior_stamp):
+        raise ValueError(
+            "New RunHistory does not follow the prior real-run authority."
+        )
+    record.lastRun = projection
     record.status = "ready" if entry.status == "passed" else "failed"
     _canonicalize_unambiguous_rerun_policy(record)
-    save_use_case(project, record)
+    authority_document = _run_authority_document(record)
+    # Validate every byte-bearing document before the first durable write. An
+    # invalid/secret result must not leave a rejected RunHistory artifact.
+    _validate_run_authority(authority_document, record.alias)
+    _assert_run_authority_snapshot(project, record.alias, observed_authority)
+    try:
+        create_document_durable(history_path, history_document)
+    except FileExistsError as exc:
+        raise ValueError(
+            "RunHistory identity already exists and cannot be reused."
+        ) from exc
+    # RunHistory is durable first; the canonical authority then records both
+    # the completed run and the still-owned attempt. Clearing the attempt is a
+    # separate, later tombstone write by the invocation that owns it.
+    _assert_run_authority_snapshot(project, record.alias, observed_authority)
+    save_document_durable(
+        _safe_run_authority_path(project, record.alias),
+        authority_document,
+    )
+    save_document_durable(
+        use_case_path,
+        record.to_dict(),
+    )
+    upsert_registry_entry(project, record)
     _publish_outputs_from_run(project, record, entry)
 
 
@@ -1230,7 +2245,15 @@ def calculate_run_confirmation_requirements(project: Path, record: UseCaseRecord
     side_effect = side_effect_class(record)
     unresolved_risks = side_effect_risk_assertions(record)
     if side_effect not in {"write", "external-notification"}:
-        if unresolved_risks:
+        from verifysignal_spec.workflows.write_safety import (
+            policy_changed_after_violation_run,
+        )
+
+        policy_changed = policy_changed_after_violation_run(
+            record,
+            record.lastRun if isinstance(record.lastRun, dict) else {},
+        )
+        if unresolved_risks and not policy_changed:
             risk = unresolved_risks[0]
             requirements.append(
                 confirmation_requirement(

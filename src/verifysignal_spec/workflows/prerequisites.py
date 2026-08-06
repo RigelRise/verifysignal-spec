@@ -40,10 +40,12 @@ from .models import (
     WORKFLOW_PREREQUISITE_CHECK_SCHEMA,
     WORKFLOW_UNDERSTANDING_COMMIT_THRESHOLD,
     WORKFLOW_UNDERSTANDING_MAX_AGE_DAYS,
+    WorkflowRun,
     native_invocation,
 )
-from .repository import load_workflow_run
-from .transitions import managed_workflow_stage_decision
+from .target_confirmation import target_confirmation_blocker
+from .transitions import resolve_managed_workflow_stage
+from .run_lock import probe_run_invocation_blocker
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,12 +84,30 @@ def check_prerequisites(
     rule = STAGE_PREREQUISITE_RULES[stage]
     project = project.resolve()
     resolved_alias = _resolve_alias(project, stage, alias, rule)
+    if stage == "run" and isinstance(resolved_alias, str):
+        run_lock_blocker = probe_run_invocation_blocker(
+            project,
+            resolved_alias,
+        )
+        if run_lock_blocker is not None:
+            return _result(
+                stage,
+                resolved_alias,
+                "blocked",
+                can_proceed=False,
+                recommended_action="wait-for-active-run",
+                next_command=run_lock_blocker["recoveryCommand"],
+                blockers=[run_lock_blocker],
+            )
+    authoritative_workflow_run: WorkflowRun | None = None
+    workflow_run_resolved = False
     if isinstance(resolved_alias, str) and stage in {"validate", "run"}:
-        stage_decision = managed_workflow_stage_decision(
+        stage_decision, authoritative_workflow_run = resolve_managed_workflow_stage(
             project,
             resolved_alias,
             stage,
         )
+        workflow_run_resolved = True
         stage_blocker = stage_decision.get("blocker")
         if isinstance(stage_blocker, dict):
             return stage_position_blocked_check_result(
@@ -98,7 +118,11 @@ def check_prerequisites(
     authoritative_run_preflight: dict[str, Any] | None = None
     if stage == "run" and isinstance(resolved_alias, str):
         try:
-            authoritative_run_preflight = _loaded_run_preflight(project, resolved_alias)
+            authoritative_run_preflight = _loaded_run_preflight(
+                project,
+                resolved_alias,
+                workflow_run=authoritative_workflow_run,
+            )
         except FileNotFoundError:
             authoritative_run_preflight = None
         if authoritative_run_preflight is not None:
@@ -203,11 +227,15 @@ def check_prerequisites(
             **understanding_payload,
         )
 
-    target_confirmation = (
-        _target_environment_confirmation_blocker(project, stage, resolved_alias)
-        if isinstance(resolved_alias, str)
-        else None
-    )
+    target_confirmation = None
+    if isinstance(resolved_alias, str):
+        target_confirmation = _target_environment_confirmation_blocker(
+            project,
+            stage,
+            resolved_alias,
+            workflow_run=authoritative_workflow_run,
+            workflow_run_resolved=workflow_run_resolved,
+        )
     if target_confirmation:
         return _result(
             stage,
@@ -239,7 +267,11 @@ def check_prerequisites(
         )
 
     if stage == "run" and isinstance(resolved_alias, str):
-        preflight = authoritative_run_preflight or _loaded_run_preflight(project, resolved_alias)
+        preflight = authoritative_run_preflight or _loaded_run_preflight(
+            project,
+            resolved_alias,
+            workflow_run=authoritative_workflow_run,
+        )
         confirmation = preflight.get("confirmation")
         rerun_decision = preflight["rerunDecision"]
         if not preflight["canProceed"]:
@@ -290,14 +322,25 @@ def check_prerequisites(
     )
 
 
-def _loaded_run_preflight(project: Path, alias: str) -> dict[str, Any]:
+def _loaded_run_preflight(
+    project: Path,
+    alias: str,
+    *,
+    workflow_run: WorkflowRun | None,
+) -> dict[str, Any]:
     record = load_use_case(project, alias)
     readiness = load_readiness_snapshot(project, alias)
     reviews = load_supersede_reviews(project, alias)
     missing = missing_run_artifacts(project, record)
     return build_run_preflight(
         {
-            "targetBlocker": _target_environment_confirmation_blocker(project, "run", alias),
+            "targetBlocker": _target_environment_confirmation_blocker(
+                project,
+                "run",
+                alias,
+                workflow_run=workflow_run,
+                workflow_run_resolved=True,
+            ),
             "missingArtifacts": missing,
             "policyBlockers": local_run_policy_blockers(
                 record,
@@ -641,6 +684,9 @@ def _target_environment_confirmation_blocker(
     project: Path,
     stage: str,
     alias: str,
+    *,
+    workflow_run: WorkflowRun | None = None,
+    workflow_run_resolved: bool = False,
 ) -> dict[str, Any] | None:
     if stage not in {"plan", "tasks", "implement", "validate", "run", "repair"}:
         return None
@@ -648,43 +694,23 @@ def _target_environment_confirmation_blocker(
         record = load_use_case(project, alias)
     except FileNotFoundError:
         return None
-    question = next(
-        (
-            item
-            for item in getattr(record, "authoringQuestions", [])
-            if item.id == "browser-target-environment"
-            and item.requiresConfirmation
-        ),
-        None,
+    blocker = (
+        target_confirmation_blocker(
+            project,
+            record,
+            workflow_run=workflow_run,
+        )
+        if workflow_run_resolved
+        else target_confirmation_blocker(project, record)
     )
-    if not question:
+    if blocker is None:
         return None
-    workflow = record.workflow if isinstance(record.workflow, dict) else {}
-    run_id = workflow.get("lastWorkflowRunId")
-    confirmed = False
-    if run_id:
-        try:
-            run = load_workflow_run(project, str(run_id))
-            confirmation = run.targetEnvironmentConfirmation or {}
-            confirmed = bool(
-                confirmation.get("url")
-                and confirmation.get("source") in {"direct-user", "explicit-command"}
-            )
-        except FileNotFoundError:
-            confirmed = False
-    if confirmed and question.status == "answered":
-        return None
-    suggested = (question.suggestedAnswer or {}).get("baseUrl")
     return {
-        "code": "clarification.target-environment-confirmation-required",
-        "severity": "blocker",
-        "category": "target-environment",
+        **blocker,
         "message": (
             "Confirm the recommended browser target or provide another target "
             "for this workflow before browser authoring or execution."
         ),
-        "questionId": question.id,
-        "recommendedTarget": suggested,
         "recoveryCommand": _native_next("clarify", alias),
     }
 

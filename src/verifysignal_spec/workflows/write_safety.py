@@ -14,6 +14,7 @@ from verifysignal_spec.workspace.models import (
     SideEffectDeclaration,
     SupersedeReview,
 )
+from verifysignal_spec.workspace.time_ordering import parse_utc_iso_ns
 from verifysignal_spec.workflows.repair_recommendations import combine_rerun_decision
 
 
@@ -410,6 +411,17 @@ def evaluate_rerun_decision(record: Any, *, supersede_reviews: list[Any] | None 
         spec_decision = policy.afterNoCommit
         core_risk = "safe"
 
+    policy_changed_after_violation = policy_changed_after_violation_run(
+        record,
+        last_run,
+    )
+    if policy_changed_after_violation:
+        # Changing the exact policy that produced a violation is an explicit
+        # owner decision and is the documented one-run reconciliation path.
+        # The prior evidence remains classified conservatively in history.
+        core_risk = "safe"
+        spec_decision = "allowed"
+
     supersede = (
         _matching_supersede_review(last_run, supersede_reviews or [])
         if source_run_id
@@ -464,7 +476,11 @@ def evaluate_rerun_decision(record: Any, *, supersede_reviews: list[Any] | None 
         reason = "Rerun is allowed only with refreshed generated runtime inputs."
         next_action = "Proceed with run."
     else:
-        reason = "Rerun is allowed by Core risk and Spec rerun policy."
+        reason = (
+            "Rerun is allowed once because the owner explicitly changed the side-effect policy after the prior violation."
+            if policy_changed_after_violation
+            else "Rerun is allowed by Core risk and Spec rerun policy."
+        )
         next_action = "Proceed with run."
     result = {
         "decision": decision,
@@ -504,6 +520,8 @@ def _classify_previous_run(record: Any) -> dict[str, Any]:
         else None
     )
     if isinstance(attempt, dict) and attempt.get("operation") == "run" and _attempt_is_later(attempt, last_run):
+        if attempt.get("sideEffectMayExist") is True:
+            return {"outcomeClass": "unknown-write", "policyBranch": "afterUnknown"}
         explicitly_safe = (
             attempt.get("executionState") == "not-started"
             or attempt.get("sideEffectMayExist") is False
@@ -521,12 +539,35 @@ def _classify_previous_run(record: Any) -> dict[str, Any]:
     result_classification = last_run.get("resultClassification") if isinstance(last_run.get("resultClassification"), dict) else {}
     evidence = {**result_classification, **interpretation}
     source = {"sourceRunId": str(last_run.get("runId"))} if last_run.get("runId") else {}
+    restrictive_statuses = {
+        "possible",
+        "inferred",
+        "likely-committed",
+        "committed",
+        "committed-confirmed",
+        "violated",
+    }
+    risk_mappings = [
+        value
+        for field in (
+            "sideEffects",
+            "postCommitInterpretation",
+            "resultClassification",
+            "sideEffectLifecycle",
+        )
+        if isinstance((value := last_run.get(field)), dict)
+    ]
+    if any(
+        _mapping_has_restrictive_write_evidence(value, restrictive_statuses)
+        for value in risk_mappings
+    ):
+        return {"outcomeClass": "commit", "policyBranch": "afterCommit", **source}
     explicitly_safe = (
         evidence.get("postCommit") is False
         and evidence.get("sideEffectMayExist") is False
     ) or (
         evidence.get("sideEffectMayExist") is False
-        and str(evidence.get("sideEffectStatus") or "").lower() in {"not-started", "none", "not-committed"}
+        and str(evidence.get("sideEffectStatus") or "").strip().lower() in {"not-started", "none", "not-committed"}
     )
     if explicitly_safe:
         return {"outcomeClass": "no-commit", "policyBranch": "afterNoCommit", **source}
@@ -538,14 +579,106 @@ def _classify_previous_run(record: Any) -> dict[str, Any]:
         )
     committed_statuses = {"possible", "inferred", "likely-committed", "committed", "committed-confirmed", "violated"}
     if _has_write_evidence(record, last_run) and (
-        evidence.get("postCommit") is True
-        or evidence.get("sideEffectMayExist") is True
-        or str(evidence.get("sideEffectStatus") or "").lower() in committed_statuses
+        str(evidence.get("sideEffectStatus") or "").strip().lower() in committed_statuses
     ):
         return {"outcomeClass": "commit", "policyBranch": "afterCommit", **source}
     if _has_write_evidence(record, last_run):
         return {"outcomeClass": "unknown-write", "policyBranch": "afterUnknown", **source}
     return {"outcomeClass": "no-commit", "policyBranch": "afterNoCommit", **source}
+
+
+def policy_changed_after_violation_run(
+    record: Any,
+    last_run: dict[str, Any],
+) -> bool:
+    if not last_run:
+        return False
+    side_effects = (
+        last_run.get("sideEffects")
+        if isinstance(last_run.get("sideEffects"), dict)
+        else {}
+    )
+    violation_statuses = []
+    for field in ("postCommitInterpretation", "resultClassification"):
+        value = last_run.get(field)
+        if isinstance(value, dict):
+            violation_statuses.append(
+                str(value.get("sideEffectStatus") or "").strip().lower()
+            )
+    violation_statuses.append(
+        str(side_effects.get("status") or "").strip().lower()
+    )
+    violations = side_effects.get("violations")
+    violated = "violated" in violation_statuses or (
+        isinstance(violations, list)
+        and any(isinstance(item, dict) for item in violations)
+    )
+    if not violated:
+        return False
+    previous_policy = last_run.get("sideEffectPolicy")
+    if not isinstance(previous_policy, dict):
+        previous_policy = (
+            side_effects.get("policy")
+            if isinstance(side_effects.get("policy"), dict)
+            else None
+        )
+    if not isinstance(previous_policy, dict):
+        return False
+    previous_policy_snapshot = canonical_side_effect_policy_snapshot(
+        previous_policy
+    )
+    if previous_policy_snapshot.get("mode") != "observe":
+        return False
+
+    attempt_model = getattr(record, "lastCoreAttempt", None)
+    attempt = (
+        attempt_model.to_dict()
+        if hasattr(attempt_model, "to_dict")
+        else attempt_model
+        if isinstance(attempt_model, dict)
+        else None
+    )
+    if (
+        isinstance(attempt, dict)
+        and attempt.get("operation") == "run"
+        and _attempt_is_later(attempt, last_run)
+    ):
+        return False
+
+    confirmed_commit_statuses = {
+        "possible",
+        "inferred",
+        "likely-committed",
+        "committed",
+        "committed-confirmed",
+    }
+    risk_mappings = [
+        value
+        for field in (
+            "sideEffects",
+            "postCommitInterpretation",
+            "resultClassification",
+            "sideEffectLifecycle",
+        )
+        if isinstance((value := last_run.get(field)), dict)
+    ]
+    if any(
+        _mapping_has_confirmed_commit_evidence(
+            value,
+            confirmed_commit_statuses,
+        )
+        for value in risk_mappings
+    ):
+        return False
+
+    current_policy = (
+        record.sideEffects
+        if isinstance(getattr(record, "sideEffects", None), dict)
+        else {}
+    )
+    return previous_policy_snapshot != canonical_side_effect_policy_snapshot(
+        current_policy
+    )
 
 
 def _has_write_evidence(record: Any, last_run: dict[str, Any] | None) -> bool:
@@ -569,15 +702,57 @@ def _has_write_evidence(record: Any, last_run: dict[str, Any] | None) -> bool:
         else {}
     )
     evidence = {**classification, **interpretation}
-    if evidence.get("postCommit") is True or evidence.get("sideEffectMayExist") is True:
-        return True
-    return str(evidence.get("sideEffectStatus") or "").lower() in {
+    if _mapping_has_restrictive_write_evidence(evidence, {
         "possible",
         "inferred",
         "likely-committed",
         "committed",
         "committed-confirmed",
+        "violated",
+    }):
+        return True
+    side_effects = last_run.get("sideEffects")
+    return isinstance(side_effects, dict) and _mapping_has_restrictive_write_evidence(
+        side_effects,
+        {"possible", "inferred", "likely-committed", "committed", "committed-confirmed", "violated"},
+    )
+
+
+def _mapping_has_restrictive_write_evidence(
+    value: dict[str, Any],
+    restrictive_statuses: set[str],
+) -> bool:
+    commit_step = value.get("commitStep")
+    reached = commit_step.get("reached") if isinstance(commit_step, dict) else None
+    statuses = {
+        str(value.get("sideEffectStatus") or "").strip().lower(),
+        str(value.get("status") or "").strip().lower(),
     }
+    return (
+        reached is True
+        or value.get("postCommit") is True
+        or value.get("sideEffectMayExist") is True
+        or bool(statuses & restrictive_statuses)
+    )
+
+
+def _mapping_has_confirmed_commit_evidence(
+    value: dict[str, Any],
+    committed_statuses: set[str],
+) -> bool:
+    """Distinguish a policy observation from an established commit fact."""
+
+    commit_step = value.get("commitStep")
+    reached = commit_step.get("reached") if isinstance(commit_step, dict) else None
+    statuses = {
+        str(value.get("sideEffectStatus") or "").strip().lower(),
+        str(value.get("status") or "").strip().lower(),
+    }
+    return (
+        reached is True
+        or value.get("postCommit") is True
+        or bool(statuses & committed_statuses)
+    )
 
 
 def _attempt_is_later(attempt: dict[str, Any], last_run: dict[str, Any] | None) -> bool:
@@ -675,15 +850,7 @@ def _legacy_attempt_review_matches(record: Any, review: Any) -> bool:
 
 
 def _parse_evidence_time(value: Any) -> Any | None:
-    if not isinstance(value, str) or not value:
-        return None
-    try:
-        from datetime import UTC, datetime
-
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed.astimezone(UTC)
-    except ValueError:
-        return None
+    return parse_utc_iso_ns(value)
 
 
 def rerun_confirmation_id(alias: str, source_run_id: str) -> str:

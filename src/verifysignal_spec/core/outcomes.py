@@ -128,7 +128,7 @@ def normalize_core_outcome(operation: str, response: Any) -> NormalizedCoreOutco
         and status == "error"
     ):
         error_code = _safe_error_code(operation, core_public_error_code(response))
-        execution = _execution_projection(response)
+        execution = _entitlement_preexecution_projection(response, error_code)
         return NormalizedCoreOutcome(
             operation=operation,
             kind="core-error",
@@ -162,6 +162,20 @@ def _execution_projection(
     ):
         return False, None, None, None
     return True, started, phase, side_effect
+
+
+def _entitlement_preexecution_projection(
+    response: dict[str, Any],
+    error_code: str | None,
+) -> tuple[bool, bool | None, str | None, bool | None]:
+    """Trust execution metadata only for Core's canonical entitlement preflight failure."""
+
+    if error_code not in CORE_ENTITLEMENT_ERROR_MAP:
+        return False, None, None, None
+    execution = _execution_projection(response)
+    if execution != (True, False, "pre-execution", False):
+        return False, None, None, None
+    return execution
 
 
 def _path_safe_run_id(value: Any) -> bool:

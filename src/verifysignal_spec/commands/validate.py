@@ -332,15 +332,15 @@ def run(
         if prepared_changed and prepared_document is not None
         else run_request
     )
+    entitlement_api_base_url = api_base_url_for_runtime(managed_runtime, api_base_url)
     result = CoreAdapter(executable=managed_runtime.runtimeCommand, cwd=project).authoring_check(
         authoring_run_request,
         main_skill,
         skills,
         runtime_readiness=runtime_readiness,
         env=environment_values,
-        entitlement_receipt=valid_receipt_path(
-            api_base_url_for_runtime(managed_runtime, api_base_url),
-        ),
+        entitlement_receipt=valid_receipt_path(entitlement_api_base_url),
+        entitlement_api_base_url=entitlement_api_base_url,
     )
     outcome = normalize_core_outcome("authoring-check", result)
     normalized_outcome = outcome.to_dict()

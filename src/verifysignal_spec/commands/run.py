@@ -39,16 +39,19 @@ from verifysignal_spec.workflows.readiness import executable_contract_blockers, 
 from verifysignal_spec.workflows.stage_cards import run_result_card
 from verifysignal_spec.workflows.target_confirmation import target_confirmation_blocker
 from verifysignal_spec.workflows.transitions import (
-    managed_workflow_stage_decision,
+    resolve_managed_workflow_stage,
     transition_workflow,
 )
 from verifysignal_spec.workflows.repository import load_artifact_plan
 from verifysignal_spec.workspace.models import ArtifactReference, LastCoreAttempt, RerunPolicy, RunHistoryEntry
 from verifysignal_spec.workspace import layout
+from verifysignal_spec.workspace.path_safety import ensure_unredirected_project_path
 from verifysignal_spec.workspace.repository import (
     calculate_run_confirmation_requirements,
     clear_last_core_attempt,
     core_attempt_iso,
+    core_attempt_iso_after,
+    core_attempt_iso_after_record,
     load_document,
     load_readiness_snapshot,
     load_use_case,
@@ -76,6 +79,11 @@ from verifysignal_spec.workflows.run_preflight import (
     local_run_policy_blockers,
     missing_run_artifacts,
 )
+from verifysignal_spec.workflows.run_lock import (
+    RunInvocationLockUnavailable,
+    acquire_run_invocation_lease,
+    run_invocation_blocker,
+)
 
 
 _DEFAULT_PREPARED_WRITER = write_prepared_run_request
@@ -94,7 +102,71 @@ def run(
     replay: str | Path | None = None,
     env_file: Path | None = None,
 ) -> dict[str, Any]:
-    stage_decision = managed_workflow_stage_decision(
+    try:
+        lease = acquire_run_invocation_lease(project, alias)
+    except RunInvocationLockUnavailable:
+        return _run_lock_blocked_result(
+            alias,
+            profile_name,
+            run_invocation_blocker(alias, unavailable=True),
+        )
+    if lease is None:
+        return _run_lock_blocked_result(
+            alias,
+            profile_name,
+            run_invocation_blocker(alias),
+        )
+    with lease:
+        return _run_with_invocation_lease(
+            project,
+            alias,
+            profile_name=profile_name,
+            interactive=interactive,
+            core_cmd=core_cmd,
+            api_base_url=api_base_url,
+            slow_mo_override=slow_mo_override,
+            confirmed_risks=confirmed_risks,
+            record=record,
+            replay=replay,
+            env_file=env_file,
+        )
+
+
+def _run_with_invocation_lease(
+    project: Path,
+    alias: str,
+    profile_name: str = "normal",
+    interactive: bool = True,
+    core_cmd: str | None = None,
+    api_base_url: str | None = None,
+    slow_mo_override: int | None = None,
+    confirmed_risks: list[str] | None = None,
+    record: bool = False,
+    replay: str | Path | None = None,
+    env_file: Path | None = None,
+) -> dict[str, Any]:
+    try:
+        ensure_unredirected_project_path(
+            project,
+            layout.workspace_root(project) / layout.RUNS_DIR,
+            authority="Prepared-request and RunHistory authority",
+        )
+    except ValueError as exc:
+        return _prepared_request_ownership_blocker(
+            alias,
+            profile_name,
+            {
+                "decision": "blocked",
+                "outcomeClass": "unknown",
+                "policyBranch": "authority-path",
+                "reason": str(exc),
+                "refreshRuntimeInputs": [],
+                "nextAction": (
+                    "Restore .verifysignal/runs as a project-owned directory."
+                ),
+            },
+        )
+    stage_decision, authoritative_workflow_run = resolve_managed_workflow_stage(
         project,
         alias,
         "run",
@@ -122,7 +194,11 @@ def run(
     # also imports `record_run`. The overloaded name is not cosmetic — a local `record` holding the
     # (always truthy) use case silently shadowed this flag and made EVERY run pass --record to Core.
     use_case = load_use_case(project, alias)
-    target_blocker = target_confirmation_blocker(project, use_case)
+    target_blocker = target_confirmation_blocker(
+        project,
+        use_case,
+        workflow_run=authoritative_workflow_run,
+    )
     profile = next((item for item in use_case.profiles if item.name == profile_name), None)
     if profile is None:
         available = ", ".join(item.name for item in use_case.profiles) or "normal"
@@ -387,6 +463,37 @@ def run(
     if prepared_changed and not prepared_ownership.createdByThisInvocation:
         return _prepared_request_ownership_blocker(alias, profile_name, rerun_guard)
     prepared_run_request = prepared_ownership.path
+    prior_attempted_at = (
+        use_case.lastCoreAttempt.attemptedAt
+        if use_case.lastCoreAttempt is not None
+        else None
+    )
+    in_flight_attempt = LastCoreAttempt(
+        attemptedAt=core_attempt_iso_after_record(
+            use_case,
+            candidate=core_attempt_iso(),
+        ),
+        operation="run",
+        schema=None,
+        status="unknown",
+        errorCode=None,
+        executionState="unknown",
+        sideEffectMayExist=True,
+    )
+    try:
+        persisted_attempt_record = save_last_core_attempt(
+            project,
+            alias,
+            in_flight_attempt,
+            expected_attempted_at=prior_attempted_at,
+        )
+        if persisted_attempt_record.lastCoreAttempt is None:
+            raise RuntimeError("The write-ahead Core attempt was not persisted.")
+        in_flight_attempt = persisted_attempt_record.lastCoreAttempt
+    except BaseException:
+        cleanup_owned_prepared_run_request(project, prepared_ownership)
+        raise
+    entitlement_api_base_url = api_base_url_for_runtime(managed_runtime, api_base_url)
     try:
         result = CoreAdapter(executable=managed_runtime.runtimeCommand, cwd=project).run(
             prepared_run_request,
@@ -398,23 +505,27 @@ def run(
             record=record,
             replay=replay,
             env={**runtime_values, **environment_values},
-            entitlement_receipt=valid_receipt_path(
-                api_base_url_for_runtime(managed_runtime, api_base_url),
-            ),
+            entitlement_receipt=valid_receipt_path(entitlement_api_base_url),
+            entitlement_api_base_url=entitlement_api_base_url,
         )
         normalized_outcome = normalize_core_outcome("run", result)
     except BaseException:
         cleanup_owned_prepared_run_request(project, prepared_ownership)
         attempt = LastCoreAttempt(
-            attemptedAt=core_attempt_iso(),
+            attemptedAt=in_flight_attempt.attemptedAt,
             operation="run",
             schema=None,
             status="error",
             errorCode="core.contract-invalid",
             executionState="unknown",
-            sideEffectMayExist=None,
+            sideEffectMayExist=True,
         )
-        save_last_core_attempt(project, alias, attempt)
+        save_last_core_attempt(
+            project,
+            alias,
+            attempt,
+            expected_attempted_at=in_flight_attempt.attemptedAt,
+        )
         updated_use_case = load_use_case(project, alias)
         updated_readiness = load_readiness_snapshot(project, alias)
         attempt_preflight = build_run_preflight(
@@ -471,20 +582,31 @@ def run(
     if not normalized_outcome.eligibleForRunPersistence:
         cleanup_owned_prepared_run_request(project, prepared_ownership)
         explicitly_not_started = bool(
-            normalized_outcome.executionKnown
+            normalized_outcome.kind == "core-error"
+            and normalized_outcome.executionKnown
             and normalized_outcome.executionStarted is False
             and normalized_outcome.sideEffectMayExist is False
         )
+        retained_side_effect_risk = (
+            True
+            if normalized_outcome.kind == "contract-invalid"
+            else normalized_outcome.sideEffectMayExist
+        )
         attempt = LastCoreAttempt(
-            attemptedAt=core_attempt_iso(),
+            attemptedAt=in_flight_attempt.attemptedAt,
             operation="run",
             schema=normalized_outcome.schema,
             status=normalized_outcome.status,
             errorCode=normalized_outcome.errorCode,
             executionState="not-started" if explicitly_not_started else "unknown",
-            sideEffectMayExist=normalized_outcome.sideEffectMayExist,
+            sideEffectMayExist=retained_side_effect_risk,
         )
-        save_last_core_attempt(project, alias, attempt)
+        save_last_core_attempt(
+            project,
+            alias,
+            attempt,
+            expected_attempted_at=in_flight_attempt.attemptedAt,
+        )
         updated_use_case = load_use_case(project, alias)
         updated_readiness = load_readiness_snapshot(project, alias)
         attempt_preflight = build_run_preflight(
@@ -623,6 +745,8 @@ def run(
                 "stageCards": first_run_payload["stageCards"],
             }
         )
+    run_started_at = in_flight_attempt.attemptedAt
+    run_completed_at = core_attempt_iso_after(run_started_at)
     entry = RunHistoryEntry(
         runId=run_id,
         useCaseAlias=alias,
@@ -660,8 +784,8 @@ def run(
         postCommitInterpretation=post_commit.to_dict(),
         rerunDecision=rerun_guard,
         sideEffectLifecycle=side_effect_lifecycle_summary(use_case, runtime_outputs if isinstance(runtime_outputs, list) else []),
-        startedAt=now_iso(),
-        completedAt=now_iso(),
+        startedAt=run_started_at,
+        completedAt=run_completed_at,
         summary={
             "core": data.get("summary") or result.get("summary"),
             "status": use_case_status,
@@ -681,7 +805,11 @@ def run(
         evidenceDir=data.get("evidencePath") or data.get("evidenceDir"),
     )
     record_run(project, entry)
-    clear_last_core_attempt(project, alias)
+    clear_last_core_attempt(
+        project,
+        alias,
+        expected_attempted_at=in_flight_attempt.attemptedAt,
+    )
     completed_use_case = load_use_case(project, alias)
     completed_readiness = load_readiness_snapshot(project, alias)
     completed_preflight = build_run_preflight(
@@ -757,6 +885,29 @@ def run(
         "reportPath": entry.reportPath,
         "evidenceDir": entry.evidenceDir,
         "core": result,
+    }
+
+
+def _run_lock_blocked_result(
+    alias: str,
+    profile_name: str,
+    blocker: dict[str, str],
+) -> dict[str, Any]:
+    return {
+        "alias": alias,
+        "status": "blocked",
+        "canProceed": False,
+        "coreStatus": "not-run",
+        "coverageStatus": "not-run",
+        "coreBrowserStatus": "blocked",
+        "specCoverageStatus": "not-run",
+        "profile": profile_name,
+        "requiresConfirmation": False,
+        "confirmation": None,
+        "blockers": [blocker],
+        "reason": blocker["message"],
+        "recommendedAction": "wait-for-active-run",
+        "nextAction": blocker["recoveryCommand"],
     }
 
 

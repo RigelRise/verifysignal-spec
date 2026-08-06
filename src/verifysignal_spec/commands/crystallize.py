@@ -35,12 +35,12 @@ def run(
     )
     if managed_runtime.status != "ready":
         return _runtime_setup_blocked_payload(managed_runtime)
+    entitlement_api_base_url = api_base_url_for_runtime(managed_runtime, api_base_url)
     return CoreAdapter(executable=managed_runtime.runtimeCommand, cwd=project).crystallize(
         run_dir=run_dir,
         out=out,
-        entitlement_receipt=valid_receipt_path(
-            api_base_url_for_runtime(managed_runtime, api_base_url),
-        ),
+        entitlement_receipt=valid_receipt_path(entitlement_api_base_url),
+        entitlement_api_base_url=entitlement_api_base_url,
     )
 
 

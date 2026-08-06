@@ -495,7 +495,8 @@ class PostCommitInterpretation:
 
     @classmethod
     def from_core_result(cls, core_result: dict[str, Any] | None) -> "PostCommitInterpretation":
-        data = core_result.get("data") if isinstance(core_result, dict) and isinstance(core_result.get("data"), dict) else core_result
+        root = core_result if isinstance(core_result, dict) else {}
+        data = root.get("data") if isinstance(root.get("data"), dict) else root
         data = data if isinstance(data, dict) else {}
         report = data.get("report") if isinstance(data.get("report"), dict) else {}
         source = report or data
@@ -506,10 +507,32 @@ class PostCommitInterpretation:
         failure_phase = str(classification.get("failurePhase") or side_effects.get("failurePhase") or "unknown")
         side_effect_status = str(classification.get("sideEffectStatus") or side_effects.get("status") or "unknown")
         post_commit = commit_reached and failure_phase in {"post-commit", "post-verification"}
-        risky_statuses = {"possible", "likely-committed", "committed-confirmed", "violated", "unknown"}
-        side_effect_may_exist = commit_reached and side_effect_status in risky_statuses
+        risky_statuses = {
+            "possible",
+            "inferred",
+            "likely-committed",
+            "committed",
+            "committed-confirmed",
+            "violated",
+        }
+        data_side_effects = data.get("sideEffects") if isinstance(data.get("sideEffects"), dict) else {}
+        report_side_effects = report.get("sideEffects") if isinstance(report.get("sideEffects"), dict) else {}
+        execution_evidence = [
+            root.get("execution") if isinstance(root.get("execution"), dict) else {},
+            data.get("execution") if isinstance(data.get("execution"), dict) else {},
+            report.get("execution") if isinstance(report.get("execution"), dict) else {},
+        ]
+        explicit_runtime_risk = any(
+            item.get("sideEffectMayExist") is True
+            for item in [*execution_evidence, data_side_effects, report_side_effects]
+        )
+        side_effect_may_exist = (
+            explicit_runtime_risk
+            or side_effect_status in risky_statuses
+            or (commit_reached and side_effect_status == "unknown")
+        )
         if post_commit or side_effect_may_exist:
-            message = "The commit step was reached; the side effect may already exist before final verification completed."
+            message = "The public Core result indicates that the side effect may already exist before final verification completed."
         else:
             message = "No committed side effect was identified from the public Core result."
         return cls(
@@ -1038,7 +1061,7 @@ class RepairSession:
 
 @dataclass(slots=True)
 class LastCoreAttempt:
-    """Redacted metadata for a protected Core call that did not produce a run."""
+    """Redacted run-invocation intent retained until a real run is durable."""
 
     attemptedAt: str
     operation: str

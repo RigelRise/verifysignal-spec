@@ -12,6 +12,7 @@ from verifysignal_spec.workspace.repository import (
     load_use_case,
     now_iso,
 )
+from verifysignal_spec.workspace.time_ordering import parse_utc_iso_ns
 
 from .models import (
     WORKFLOW_ARTIFACT_PLAN_SCHEMA,
@@ -82,6 +83,14 @@ _DURABLE_STAGE_PROJECTION_SCHEMAS = {
     "plan": WORKFLOW_ARTIFACT_PLAN_SCHEMA,
     "tasks": WORKFLOW_TASK_SET_SCHEMA,
 }
+_LEGACY_WORKFLOW_STATUSES = {
+    "not-started",
+    "running",
+    "paused",
+    "blocked",
+    "failed",
+    "completed",
+}
 
 
 def validate_workflow_stage_position(
@@ -106,18 +115,18 @@ def validate_workflow_stage_position(
         )
 
 
-def managed_workflow_stage_decision(
+def resolve_managed_workflow_stage(
     project: Path,
     alias: str,
     requested_stage: str,
-) -> dict[str, Any]:
-    """Return a pure stage-position decision for protected public commands."""
+) -> tuple[dict[str, Any], WorkflowRun | None]:
+    """Return the stage decision and the exact WorkflowRun authority it used."""
 
     project = project.resolve()
     alias = layout.ensure_path_safe_alias(alias)
     record_path = layout.use_case_path(project, alias)
     if not record_path.is_file() or record_path.is_symlink():
-        return {"managed": False, "blocker": None}
+        return {"managed": False, "blocker": None}, None
     record = load_use_case(project, alias)
     try:
         run = load_active_workflow_run(project, alias)
@@ -149,18 +158,21 @@ def managed_workflow_stage_decision(
             "requestedStage": requested_stage,
             "recoveryCommand": recovery_command,
         }
-        return {
-            "managed": True,
-            "currentStage": "unknown",
-            "requestedStage": requested_stage,
-            "blocker": blocker,
-        }
+        return (
+            {
+                "managed": True,
+                "currentStage": "unknown",
+                "requestedStage": requested_stage,
+                "blocker": blocker,
+            },
+            None,
+        )
     if run is None and not _has_legacy_workflow_evidence(
         project,
         alias,
         record,
     ):
-        return {"managed": False, "blocker": None}
+        return {"managed": False, "blocker": None}, None
 
     current_stage = (
         run.currentStage
@@ -173,12 +185,15 @@ def managed_workflow_stage_decision(
         else {requested_stage}
     )
     if current_stage in allowed_sources:
-        return {
-            "managed": True,
-            "currentStage": current_stage,
-            "requestedStage": requested_stage,
-            "blocker": None,
-        }
+        return (
+            {
+                "managed": True,
+                "currentStage": current_stage,
+                "requestedStage": requested_stage,
+                "blocker": None,
+            },
+            run,
+        )
 
     integration = run.integration if run is not None else project_integration(project)
     recovery_command = _next_command(current_stage, alias, integration)
@@ -194,12 +209,30 @@ def managed_workflow_stage_decision(
         "requestedStage": requested_stage,
         "recoveryCommand": recovery_command,
     }
-    return {
-        "managed": True,
-        "currentStage": current_stage,
-        "requestedStage": requested_stage,
-        "blocker": blocker,
-    }
+    return (
+        {
+            "managed": True,
+            "currentStage": current_stage,
+            "requestedStage": requested_stage,
+            "blocker": blocker,
+        },
+        run,
+    )
+
+
+def managed_workflow_stage_decision(
+    project: Path,
+    alias: str,
+    requested_stage: str,
+) -> dict[str, Any]:
+    """Return the compatible public stage-position decision projection."""
+
+    decision, _run = resolve_managed_workflow_stage(
+        project,
+        alias,
+        requested_stage,
+    )
+    return decision
 
 
 def validate_managed_workflow_stage_position(
@@ -265,7 +298,7 @@ def transition_workflow(
     source_stage = run.currentStage
     stage_state = _stage_state(run, stage)
 
-    if stage == "validate" and source_stage in {"run", "repair"}:
+    if stage == "validate":
         _reset_stages_after_validation(run)
     if stage == "repair" and outcome == "completed":
         _reset_stages_after_repair(run)
@@ -430,7 +463,11 @@ def _has_legacy_workflow_evidence(
     record: Any,
 ) -> bool:
     workflow_reference = getattr(record, "workflow", None)
-    if isinstance(workflow_reference, dict) and workflow_reference:
+    if _compatible_legacy_workflow_reference(
+        project,
+        alias,
+        workflow_reference,
+    ):
         return True
     state_path = layout.workflow_state_path(project, alias)
     if state_path.is_file() and not state_path.is_symlink():
@@ -464,17 +501,20 @@ def _legacy_furthest_authored_stage(
             evidence[stage_name] = content
 
     workflow_reference = getattr(record, "workflow", None)
-    if isinstance(workflow_reference, dict):
+    if _compatible_legacy_workflow_reference(
+        project,
+        alias,
+        workflow_reference,
+    ):
         current_stage = str(workflow_reference.get("currentStage") or "")
-        if current_stage in WORKFLOW_STAGES:
-            current_index = WORKFLOW_STAGES.index(current_stage)
-            completed_index = min(
-                current_index - 1,
-                len(_MIGRATABLE_AUTHORED_STAGES) - 1,
-            )
-            if completed_index >= 0:
-                stage_name = _MIGRATABLE_AUTHORED_STAGES[completed_index]
-                evidence.setdefault(stage_name, f"workflow:{current_stage}")
+        current_index = WORKFLOW_STAGES.index(current_stage)
+        completed_index = min(
+            current_index - 1,
+            len(_MIGRATABLE_AUTHORED_STAGES) - 1,
+        )
+        if completed_index >= 0:
+            stage_name = _MIGRATABLE_AUTHORED_STAGES[completed_index]
+            evidence.setdefault(stage_name, f"workflow:{current_stage}")
 
     for stage_name in ("plan", "tasks"):
         projection_path = _durable_stage_projection(
@@ -506,6 +546,32 @@ def _legacy_furthest_authored_stage(
         None,
     )
     return furthest_stage, evidence
+
+
+def _compatible_legacy_workflow_reference(
+    project: Path,
+    alias: str,
+    value: Any,
+) -> bool:
+    if not isinstance(value, dict):
+        return False
+    if value.get("workflowDir") != workflow_dir_rel(project, alias):
+        return False
+    if value.get("currentStage") not in WORKFLOW_STAGES:
+        return False
+    if value.get("workflowStatus") not in _LEGACY_WORKFLOW_STATUSES:
+        return False
+    if "lastWorkflowRunId" in value:
+        run_id = value.get("lastWorkflowRunId")
+        if not isinstance(run_id, str) or not run_id:
+            return False
+        try:
+            layout.ensure_path_safe_run_id(run_id)
+        except ValueError:
+            return False
+    if "lastUpdatedAt" in value and parse_utc_iso_ns(value.get("lastUpdatedAt")) is None:
+        return False
+    return True
 
 
 def _durable_artifact_reference(project: Path, reference: Any) -> bool:

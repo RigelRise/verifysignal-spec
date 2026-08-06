@@ -36,14 +36,14 @@ def run(project: Path, alias: str, from_report: str | None = None, approve: bool
         if managed_runtime.status != "ready":
             payload = _runtime_setup_blocked_payload(managed_runtime)
             return {"alias": alias, **payload, "repair": payload}
+        entitlement_api_base_url = api_base_url_for_runtime(managed_runtime, api_base_url)
         result = CoreAdapter(
             executable=managed_runtime.runtimeCommand,
             cwd=project,
         ).inspect_report(
             Path(from_report),
-            entitlement_receipt=valid_receipt_path(
-                api_base_url_for_runtime(managed_runtime, api_base_url),
-            ),
+            entitlement_receipt=valid_receipt_path(entitlement_api_base_url),
+            entitlement_api_base_url=entitlement_api_base_url,
         )
         findings = list(result.get("data", {}).get("findings", []))
     else:
