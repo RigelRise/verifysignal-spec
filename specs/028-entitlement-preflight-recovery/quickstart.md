@@ -1,10 +1,13 @@
 # Quickstart: Entitlement Preflight Recovery
 
-## 0. Pin the local repository tuple
+## 0. Rebase, then pin the local repository tuple
 
-Run this quickstart from the Spec feature worktree. The defaults name the four
-isolated worktrees used by this feature; override a path before running the block
-if the local checkout uses another name.
+For merge-ready evidence, first rebase the Core and Spec feature branches on
+their current `origin/main` and make both worktrees clean. Then run this
+quickstart from the Spec feature worktree. The defaults name the four isolated
+worktrees used by this feature; override a path before running the block if the
+local checkout uses another name. Any later rebase or tuple movement invalidates
+all evidence from sections 3 through 8 and requires those legs to be repeated.
 
 ```sh
 set -eu
@@ -99,7 +102,37 @@ Required red evidence:
 - a top-level public Core error is not normalized and readiness overstates proof;
 - direct run bypasses validation and persists a pseudo-run;
 - `afterUnknown` is not selected and stale confirmation survives;
-- stage persistence resets projections instead of advancing WorkflowRun.
+- stage persistence resets projections instead of advancing WorkflowRun;
+- Core's exported operation policy can be mutated to bypass the `run` receipt
+  guard;
+- authored class `none` overrides explicit runtime
+  `sideEffectMayExist: true`;
+- Core can be invoked before durable write-ahead intent, or a post-response
+  failure can erase all attempt evidence;
+- stage eligibility and target confirmation can resolve different WorkflowRuns;
+- two same-alias runs can overwrite one shared marker or clear one another's
+  attempt;
+- wall-clock rollback can make a new attempt older than prior durable evidence;
+- contract-invalid data can downgrade conservative side-effect risk;
+- a corrupt alias-matching WorkflowRun can be skipped in favor of stale valid
+  authority, and ordinary atomic replacement does not prove crash durability;
+- Windows-device/trailing/control names are accepted on POSIX, or case-fold
+  sibling collisions can make RunHistory/WorkflowRun authority host-dependent;
+- an A,B,A RunHistory identity reuse replaces A or changes B's canonical
+  `lastRun`, rather than failing before any later write;
+- non-boolean, whitespace-padded/ambiguous, or cross-mapping contradictory risk
+  authority can be coerced into a safe rerun branch;
+- secret scalars inside secret-named/compound containers such as `apiToken` or
+  nested lists, scheme-less/network-path/relative-query or prose-embedded
+  credential URI references (including repeatedly encoded nested values),
+  compound `*_token` or bracketed provider credential/signature query aliases,
+  short Basic/Bearer credentials, base64/base64url content, punctuation after a
+  Windows drive prefix, context-mismatched high-entropy public identifiers, or
+  invalid/multi-primary public-container shapes, exact `credential` metadata
+  leaves, numeric feature branches, or structured public `errorCode` values can
+  bypass validation, false-positive, or raise;
+- a sidecar-absent older YAML projection can hide a unique newer RunHistory, or
+  a timestamp-less legacy run can be silently accepted by the first safety write.
 
 ## 3. Focused green suites
 
@@ -110,16 +143,40 @@ verify_pins || exit 1
 "$VS_SPEC_PYTHON" -m pytest -q \
   tests/unit/test_core_outcome_normalization.py \
   tests/unit/test_run_preflight.py \
+  tests/unit/test_run_invocation_lock.py \
   tests/unit/test_rerun_policy.py \
+  tests/unit/test_durable_run_persistence.py \
+  tests/unit/test_canonical_run_authority.py \
+  tests/unit/test_workspace_layout_portability.py \
+  tests/unit/test_run_history_filename_portability.py \
+  tests/unit/test_authority_path_safety.py \
+  tests/unit/test_workflow_secret_safety.py \
   tests/unit/test_workflow_repository.py \
   tests/contract/test_entitlement_preflight_recovery_contract.py \
   tests/integration/test_fresh_workspace_runtime_mode.py \
   tests/integration/test_protected_readiness_scope.py \
   tests/integration/test_preexecution_run_lifecycle.py \
+  tests/integration/test_prepared_request_error_cleanup.py \
   tests/integration/test_rerun_policy_authority.py \
+  tests/integration/test_workflow_target_confirmation.py \
+  tests/integration/test_workflow_run_authority_validation.py \
   tests/integration/test_workflow_run_state_authority.py \
   tests/integration/test_workflow_terminal_transition_ordering.py \
   tests/integration/test_managed_runtime_performance.py
+verify_pins || exit 1
+```
+
+Run the companion Core immutability regression against the same pin:
+
+```sh
+verify_pins || exit 1
+(
+  cd "$VS_CORE_DIR"
+  npm ci
+  npm test -- \
+    tests/unit/entitlement-guard.test.ts \
+    tests/unit/runtime-trust-contract.test.ts
+)
 verify_pins || exit 1
 ```
 
@@ -129,15 +186,131 @@ RunHistory or browser evidence.
 
 The Core-error lifecycle suite must include both controls:
 
-- current envelope: `started: false`, `sideEffectMayExist: false` records a safe
-  non-run `lastCoreAttempt`, creates no RunHistory, and requires no unknown-risk
-  confirmation;
+- current entitlement envelope: exact `started: false`,
+  `phase: pre-execution`, `sideEffectMayExist: false` records a safe non-run
+  `lastCoreAttempt`, creates no RunHistory, and requires no unknown-risk
+  confirmation; the same tuple on a non-entitlement error or any contradictory
+  entitlement tuple remains unknown;
 - legacy envelope: execution metadata absent records an unknown non-run attempt,
   creates no RunHistory, and selects `afterUnknown` for the next write rerun.
+
+It must also prove the write-ahead ordering boundary:
+
+- conservative `lastCoreAttempt` exists before the Core adapter is called;
+- marker persistence failure invokes Core zero times and cleans only the exact
+  invocation-owned prepared request;
+- adapter, normalizer, post-response interpretation, and `record_run` failures
+  retain conservative unknown intent with side-effect risk;
+- a valid run uses the marker timestamp as `startedAt`, records a strictly later
+  `completedAt`, and clears the marker only after `record_run` succeeds;
+- if marker clearing alone fails, the equal-start durable real run remains
+  authoritative over the leftover marker.
+- a new marker orders strictly after prior run completion and prior attempt
+  evidence when the wall clock moves backward;
+- refinement and clear reject a mismatched `attemptedAt` and preserve the marker
+  owned by another attempt;
+- a contract-invalid response retains unknown execution and
+  `sideEffectMayExist: true`, including for authored class `none`.
+
+The concurrency/durability suites must prove:
+
+- one same-process and one cross-process holder exclude a second run for the
+  same resolved project/alias, while another alias can acquire independently;
+- workflow check and direct run expose `runtime.run-in-progress`, invoke Core
+  zero times, and persist no attempt/run artifacts while the lease is held;
+- the lease is reacquirable after explicit release and holder termination;
+- unavailable trustworthy locking fails closed with
+  `runtime.run-lock-unavailable`;
+- POSIX uses a private no-follow per-user runtime lock file outside the mutable
+  project and proves that replacing the project-local lock directory cannot
+  admit another holder; its identity is project `st_dev`/`st_ino` plus
+  `alias.casefold()`, while Windows uses normalized/case-normalized resolved path
+  plus `alias.casefold()`; durable mutable writes observe file `fsync` → atomic
+  replace → parent-directory `fsync`; Windows CI exercises the named mutex and
+  write-through replacement path;
+- marker, lastRun, and marker clear use durable replacement, while RunHistory
+  uses native durable create-without-replacement; A,B,A reuse leaves A bytes and
+  B canonical authority unchanged.
+- `.verifysignal/use-cases/<alias>.run-authority.json` has exact schema/identity
+  and overlays `lastCoreAttempt`/`lastRun` onto stale generic YAML, including
+  null marker tombstones that cannot be resurrected by a provably stale writer;
+- the exact canonical `lastRun` projection allowlist rejects unknown fields and
+  recursively secret-looking nested values, including secret-named/compound
+  containers, nested list scalars, credential-bearing URI references without a
+  scheme, network/relative references, references embedded in prose,
+  repeatedly encoded nested references, provider/bracketed query aliases,
+  verified Bearer/Basic values, and base64/base64url/high-entropy content before
+  generic public-field exemptions; multiline prose is not treated as one giant
+  URI and public selector/token-policy exemptions require their documented
+  value shape; cyclic or over-limit nested inputs return a blocking finding
+  rather than raising or being skipped;
+- canonical, legacy, and RunHistory risk authority rejects wrong types,
+  whitespace-padded/ambiguous status tokens, and within-/cross-mapping
+  contradictions before write; `commitStep.reached: true`, explicit true
+  booleans, and strongly committed status remain conservative if an in-memory
+  value also claims safety;
+- base YAML or RunHistory that is temporally newer, conflicts in identity at the
+  same timestamp, or diverges without a reconcilable order fails closed instead
+  of being discarded or timestamp-merged;
+- with no sidecar, a unique newer valid RunHistory is recovered before preflight;
+  a timestamp-less generic `lastRun` with no matching history remains readable
+  but the first canonical safety write rejects it as unorderable;
+- portable component validation rejects controls, trailing dot/space, and
+  Windows device basenames case-insensitively, while RunHistory and WorkflowRun
+  read/write reject sibling names that differ only by case before mutation;
+- before Core, canonical marker precedes generic projection; a real result
+  orders RunHistory → canonical `lastRun` plus still-owned marker → generic
+  projection → canonical clear tombstone → generic projection;
+- corrupt/non-regular run authority and direct or ancestral POSIX
+  symlink/Windows junction/reparse paths fail closed without fallback or an
+  external-target write.
+
+The redirect cases above exercise components that are already redirected when
+validation begins and the cooperating-process boundary. Do not report them as a
+claim against adversarial same-user replacement between validation and ordinary
+authority I/O. The prepared-request replacement cases are stronger by design:
+retained directory/file handles must keep creation and cleanup anchored when a
+pathname is renamed or replaced.
+
+The rerun matrix must include authored `none` plus explicit runtime
+`sideEffectMayExist: true` and select `afterUnknown` for the non-run attempt.
+Contradictory `executionState: not-started` does not override that explicit true
+boolean. It must also inject successful-run true evidence through both
+`execution.sideEffectMayExist` and `data.sideEffects.sideEffectMayExist`, retain
+it in `postCommitInterpretation`, RunHistory, and canonical `lastRun`, and select
+`afterCommit`.
 
 The prepared-request cleanup test must pre-create a neighboring and a user-owned
 file, create exactly one transient file during invocation, and prove only that
 exact newly created file is deleted after Core error.
+
+### Native Windows safety gate
+
+The PR's stable protected `spec` context must require all three CI results:
+
+1. `spec-tests` — full pytest on Ubuntu;
+2. `windows-safety` — Python 3.12 on `windows-latest`, running
+   `tests/unit/test_run_invocation_lock.py` and
+   `tests/unit/test_durable_run_persistence.py` plus
+   `tests/unit/test_workspace_layout_portability.py`,
+   `tests/unit/test_run_history_filename_portability.py`,
+   `tests/unit/test_authority_path_safety.py` and
+   `tests/unit/test_run_request_preparation.py` natively;
+3. `windows-install` — the independent advertised installer/MCP customer path.
+
+The native safety job must execute `CreateMutexW`/`WaitForSingleObject` for the
+global per-alias mutex and `MoveFileExW` with replace-existing plus write-through
+for durable mutable authority replacement, plus
+`test_durable_create_is_native_no_replace_and_leaves_no_temporary_file` to prove
+the no-replace RunHistory primitive. It must run
+`tests/unit/test_workspace_layout_portability.py` and
+`tests/unit/test_run_history_filename_portability.py` natively and exercise Windows
+`FILE_ATTRIBUTE_REPARSE_POINT`/junction refusal. A mocked POSIX run or the
+installer journey alone is not evidence for these primitives. The native job
+also proves prepared-request creation, Core-compatible read sharing, and
+cleanup by the retained Windows handle. The portable-name and case-fold
+collision corpus must pass both here and in the full POSIX suite; a Windows-only
+or simulated-only pass is insufficient.
 
 ## 4. Full local Spec regression
 
@@ -326,17 +499,54 @@ Current-envelope fixture assertions:
   or unknown-write-risk confirmation exists;
 - only the exact invocation-created prepared request is removed.
 
+Write-ahead failure-injection assertions:
+
+- the initial marker is persisted before the adapter sees the request;
+- response-interpretation and run-persistence failures retain the marker;
+- successful `record_run` establishes ordered timestamps before marker clear;
+- a marker-clear failure leaves a real run that outranks the equal-start marker.
+
 Legacy-envelope write fixture assertions:
 
 - `lastCoreAttempt.executionState` is `unknown`;
 - no synthetic run exists;
 - the next preflight selects `afterUnknown` and produces the configured decision.
 
+Runtime-authority fixture assertion:
+
+- explicit `sideEffectMayExist: true` selects `afterUnknown` even when authored
+  side-effect class is `none` or authenticated-read.
+- for a valid real run, true from either `execution` or `data.sideEffects`
+  survives `postCommitInterpretation`, RunHistory, and canonical `lastRun` and
+  selects `afterCommit`.
+- contract-invalid run output retains conservative true risk rather than
+  trusting malformed execution data.
+- a contradictory `executionState: not-started` never downgrades an explicit
+  runtime `sideEffectMayExist: true`; the attempt remains `afterUnknown`.
+- persisted non-boolean, whitespace-padded/ambiguous, within-mapping, and
+  cross-mapping contradictory risk is rejected before mutation; already-decoded
+  true/reached/strongly committed evidence is never classified safe, and the
+  raw public `sideEffects.status` alias rejects unknown tokens just like
+  normalized `sideEffectStatus`.
+- a `violated` result blocks an unchanged-policy rerun, while only an
+  observation-mode violation without independent commit evidence or a later run
+  attempt can use an exact semantic owner policy change for one new attempt;
+  absent prior policy, notes-only edits, confirmed commit evidence, and later
+  attempts remain blocked, and a clean result must become the latest evidence
+  before strict pass.
+
 These deterministic controls are repeatable without using the Rigel fixture:
 
 ```sh
 verify_pins || exit 1
 "$VS_SPEC_PYTHON" -m pytest -q \
+  tests/unit/test_canonical_run_authority.py \
+  tests/unit/test_run_invocation_lock.py \
+  tests/unit/test_durable_run_persistence.py \
+  tests/unit/test_workspace_layout_portability.py \
+  tests/unit/test_run_history_filename_portability.py \
+  tests/unit/test_authority_path_safety.py \
+  tests/unit/test_workflow_secret_safety.py \
   tests/integration/test_preexecution_run_lifecycle.py \
   tests/integration/test_rerun_policy_authority.py \
   tests/integration/test_prepared_request_error_cleanup.py
@@ -357,6 +567,8 @@ non-mutation regressions explicitly:
 verify_pins || exit 1
 "$VS_SPEC_PYTHON" -m pytest -q \
   tests/unit/test_workflow_repository.py \
+  tests/integration/test_workflow_target_confirmation.py \
+  tests/integration/test_workflow_run_authority_validation.py \
   tests/integration/test_workflow_run_state_authority.py \
   tests/integration/test_workflow_terminal_transition_ordering.py
 verify_pins || exit 1
@@ -368,6 +580,34 @@ leaving one projection stale after a newer WorkflowRun; the next mutating
 workflow transition must heal the projection and retain completed stages and
 target confirmation. A read-only inspection must render the authoritative run
 without mutating the project.
+
+Also create a stale use-case reference to an older confirmed WorkflowRun while
+a unique newer active WorkflowRun remains unconfirmed. Both workflow check and
+direct run must use the newer run for stage and target authority and must block
+before Core resolution.
+
+Run the strict authority corruption matrix. Every referenced or structured
+alias-matching invalid document must return `workflow.authority-invalid` before
+runtime resolution/Core invocation, including invalid schema/identity/enums,
+invalid required workflow timestamps or invalid optional timestamps when
+present, incomplete/duplicate stage states, malformed blockers or gate
+decisions, completed status without `currentStage: run` or a completed `run`
+state, non-completed status carrying workflow
+`completedAt`, invalid predecessor state outside the exercised
+repair/revalidation exceptions, invalid/secret target confirmation, and direct
+or ancestral symlink/reparse authority. Also retain a positive legacy fixture
+whose pending stages omit stage-level timestamps. A
+corrupt different-alias candidate and an unreferenced unstructured file must not
+displace the valid matching run. Verify that a one-nanosecond newer valid run is
+selected and equal newest timestamps remain ambiguous even when one tied run is
+referenced by the use-case projection. Rejected reads/writes must leave any
+redirect target outside the project unchanged.
+
+Add the portable authority namespace to that matrix: reject Windows device,
+control, and trailing-dot/space aliases/run IDs, and reject `Run-A.yaml` plus
+`run-a.yaml` for both WorkflowRun and RunHistory before read selection or write.
+The same valid mixed-case public Core run ID must remain unchanged on both POSIX
+and Windows.
 
 Do not describe the three-file update as transactionally atomic. Each file uses
 atomic replacement; WorkflowRun is the authority used for recovery.
@@ -383,8 +623,26 @@ Before opening the Spec PR, record:
 - separately labelled deterministic fake-Core current/legacy control evidence;
 - zero secret-canary occurrences;
 - compatibility matrix for new workspace, field-absent legacy workspace, current
-  Core error metadata, and older Core error without metadata;
+  Core error metadata, older Core error without metadata, explicit runtime
+  side-effect truth over authored class, contract-invalid conservative risk,
+  write-ahead/CAS/durability ordering, same-alias lease contention/recovery,
+  backward-clock logical ordering, strict WorkflowRun corruption handling, and
+  stale WorkflowRun projection recovery, canonical run-authority
+  overlay/tombstones, newer/conflicting/unorderable base or RunHistory refusal,
+  sidecar-absent unique-newer-history recovery, timestamp-less-first-write
+  refusal, explicitly unsupported pre-authority-binary downgrade after sidecar
+  creation, canonical `lastRun` allowlist/recursive scanner ordering,
+  immutable RunHistory A,B,A no-replace behavior, strict and cross-mapping risk
+  authority, true preservation from both public success locations,
+  portable-name/case-fold collision behavior on POSIX and Windows,
+  persisted-redirect/cooperating-process threat scope versus handle-anchored
+  prepared requests, and the required native Windows safety gate;
 - no manual version-file changes.
+
+After every item above is green, run `/speckit-analyze` and resolve all remaining
+Critical/High findings. Only then open the PR. Do not move the final analysis
+ahead of the rebase, tuple establishment, local/acceptance evidence, Docker, or
+browser/localized-home legs.
 
 The Spec PR title is `fix: preserve protected preflight without synthetic runs`.
 Merge only after the companion Core patch release is available and the Spec

@@ -26,6 +26,11 @@ or preserves an `effectiveResolutionMode` projection. No output includes receipt
 key, environment value, or sensitive command content beyond the already public
 explicit executable string selected by the user.
 
+For every protected source-runtime invocation, the command resolves one
+effective entitlement API base URL. Receipt lookup and cached public-key lookup
+both use that exact endpoint namespace. A custom CLI/workspace endpoint cannot
+silently read keys cached for the default service.
+
 ## Readiness v1 additive shape
 
 The fields below are added to both the persisted
@@ -75,6 +80,8 @@ Allowed values:
 5. `command-and-trust-inputs` may be useful onboarding information but never
    satisfies run preflight.
 6. `fullBrowserFlowExecuted` remains false during readiness validation.
+7. The receipt and source-runtime public-key handoff use the same effective API
+   endpoint for authoring-check, run, probe, crystallize, and report inspection.
 
 ## Legacy decoding
 
