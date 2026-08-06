@@ -7,6 +7,7 @@ from tests.fixtures.workflows.main_skill_run_coverage import (
     create_main_skill_coverage_workspace,
 )
 from tests.helpers import FAKE_CORE
+from verifysignal_spec.commands.run import run as execute_run
 from verifysignal_spec.commands.validate import run as validate_run
 from verifysignal_spec.runtime.resolver import ensure_core_runtime
 from verifysignal_spec.workspace import layout
@@ -77,6 +78,43 @@ def test_protected_authoring_pass_upgrades_readiness_scope_and_snapshot(
     assert snapshot.trustMaterialStatus == "ready"
     assert snapshot.protectedOperationStatus == "passed"
     assert snapshot.readinessScope == "protected-operation"
+
+
+def test_authoring_only_validation_cannot_mint_protected_readiness_or_authorize_run(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    create_main_skill_coverage_workspace(tmp_path, core_cmd=str(FAKE_CORE))
+    monkeypatch.delenv("FAKE_VERIFYSIGNAL_MODE", raising=False)
+
+    validation = validate_run(
+        tmp_path,
+        ALIAS,
+        runtime_readiness=False,
+        core_cmd=str(FAKE_CORE),
+    )
+
+    assert validation["status"] == "passed"
+    assert validation["runtimeReadinessStatus"] == "not-run"
+    snapshot = load_readiness_snapshot(tmp_path, ALIAS)
+    assert snapshot is not None
+    assert snapshot.status == "blocked"
+    assert snapshot.commandCompatibilityStatus == "passed"
+    assert snapshot.trustMaterialStatus == "ready"
+    assert snapshot.protectedOperationStatus == "not-checked"
+    assert snapshot.readinessScope == "command-and-trust-inputs"
+
+    run = execute_run(
+        tmp_path,
+        ALIAS,
+        interactive=False,
+        core_cmd=str(FAKE_CORE),
+    )
+
+    assert run["status"] == "blocked"
+    assert [item["code"] for item in run["blockers"]] == [
+        "runtime.protected-readiness-required"
+    ]
 
 
 def test_public_entitlement_error_blocks_protected_scope_with_normalized_code(
