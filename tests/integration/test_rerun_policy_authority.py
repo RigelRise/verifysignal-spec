@@ -82,6 +82,19 @@ def _attempt(
             "afterCommit",
         ),
         (
+            "legacy-real-write-without-classification",
+            "write",
+            {
+                "runId": "legacy-real-run",
+                "status": "failed",
+                "completedAt": "2026-08-05T00:00:00Z",
+            },
+            None,
+            "requires-confirmation",
+            "unknown-write",
+            "afterUnknown",
+        ),
+        (
             "unknown-write-attempt",
             "write",
             None,
