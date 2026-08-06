@@ -189,6 +189,54 @@ def test_record_run_rejects_reused_run_id_without_overwriting_history(
     assert persisted.lastRun["runId"] == second.runId
 
 
+def test_record_run_rejects_non_boolean_risk_authority_before_writes(
+    tmp_path: Path,
+) -> None:
+    record = _saved_record(tmp_path)
+    entry = _entry(record.alias)
+    entry.postCommitInterpretation = {
+        "postCommit": "true",
+        "sideEffectMayExist": "true",
+        "sideEffectStatus": "none",
+    }
+    history_path = layout.run_history_path(
+        tmp_path,
+        record.alias,
+        entry.runId,
+    )
+    authority_path = layout.run_authority_path(tmp_path, record.alias)
+    use_case_path = layout.use_case_path(tmp_path, record.alias)
+    base_before = use_case_path.read_bytes()
+
+    with pytest.raises(ValueError, match="(?i)(risk|side.effect|boolean|invalid)"):
+        record_run(tmp_path, entry)
+
+    assert not history_path.exists()
+    assert not authority_path.exists()
+    assert use_case_path.read_bytes() == base_before
+
+
+def test_load_rejects_legacy_non_boolean_risk_authority(
+    tmp_path: Path,
+) -> None:
+    record = _saved_record(tmp_path)
+    path = layout.use_case_path(tmp_path, record.alias)
+    document = load_document(path)
+    document["lastRun"] = {
+        "runId": "legacy-run",
+        "status": "passed",
+        "postCommitInterpretation": {
+            "postCommit": "true",
+            "sideEffectMayExist": "true",
+            "sideEffectStatus": "none",
+        },
+    }
+    save_document(path, document)
+
+    with pytest.raises(ValueError, match="(?i)(risk|side.effect|boolean|invalid)"):
+        load_use_case(tmp_path, record.alias)
+
+
 def test_equal_time_matching_run_history_cannot_diverge_from_canonical_risk(
     tmp_path: Path,
 ) -> None:
