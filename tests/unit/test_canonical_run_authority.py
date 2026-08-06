@@ -416,6 +416,28 @@ def test_record_run_rejects_cross_mapping_raw_violated_status(
     assert not history_path.exists()
 
 
+def test_record_run_rejects_noncanonical_raw_side_effect_status(
+    tmp_path: Path,
+) -> None:
+    record = _saved_record(tmp_path)
+    entry = _entry(record.alias)
+    entry.sideEffects = {
+        "class": "write",
+        "status": "definitely-safe",
+        "commitStep": {"reached": False},
+    }
+    history_path = layout.run_history_path(
+        tmp_path,
+        record.alias,
+        entry.runId,
+    )
+
+    with pytest.raises(ValueError, match="(?i)(risk|status|token|invalid)"):
+        record_run(tmp_path, entry)
+
+    assert not history_path.exists()
+
+
 def test_raw_violated_status_outweighs_safe_interpretation_in_evaluator(
     tmp_path: Path,
 ) -> None:
