@@ -228,7 +228,14 @@ def get_core_configuration(project: Path) -> dict[str, Any]:
     }
 
 
-def save_core_configuration(project: Path, core_cmd: str, *, source: str | None = None, version: str | None = None) -> dict[str, Any]:
+def save_core_configuration(
+    project: Path,
+    core_cmd: str,
+    *,
+    source: str | None = None,
+    version: str | None = None,
+    api_base_url: str | None = None,
+) -> dict[str, Any]:
     root = layout.workspace_root(project)
     workspace_path = root / layout.WORKSPACE_FILE
     if not workspace_path.exists():
@@ -245,6 +252,8 @@ def save_core_configuration(project: Path, core_cmd: str, *, source: str | None 
     workspace["coreLastVerifiedAt"] = timestamp
     if version:
         workspace["coreVersion"] = version
+    if api_base_url:
+        workspace["entitlementApiBaseUrl"] = api_base_url
     workspace["updatedAt"] = timestamp
     save_document(workspace_path, workspace)
     return workspace
