@@ -12,6 +12,7 @@ from verifysignal_spec.workspace.models import LastCoreAttempt, RunHistoryEntry
 from verifysignal_spec.workspace.repository import (
     clear_last_core_attempt,
     create_default_use_case,
+    load_use_case,
     record_run,
     save_last_core_attempt,
     save_use_case,
@@ -94,3 +95,96 @@ def test_attempt_and_real_run_authority_use_durable_document_writes(
     history_path = layout.run_history_path(tmp_path, record.alias, entry.runId)
     assert durable_paths.count(use_case_path) == 3
     assert history_path in durable_paths
+
+
+def test_durable_atomic_write_replaces_existing_file(tmp_path: Path) -> None:
+    target = tmp_path / "authority.yaml"
+    target.write_text("old\n", encoding="utf-8")
+
+    durable_atomic_write_text_lf(target, "new\n")
+
+    assert target.read_bytes() == b"new\n"
+
+
+def test_stale_use_case_writer_cannot_erase_inflight_run_authority(
+    tmp_path: Path,
+) -> None:
+    record = create_default_use_case(tmp_path, "localized-home", "Localized home")
+    save_use_case(tmp_path, record)
+    stale_record = load_use_case(tmp_path, record.alias)
+    attempt = LastCoreAttempt(
+        attemptedAt="2026-08-05T00:00:00.000000001Z",
+        operation="run",
+        schema=None,
+        status="unknown",
+        errorCode=None,
+        executionState="unknown",
+        sideEffectMayExist=True,
+    )
+
+    save_last_core_attempt(tmp_path, record.alias, attempt)
+    save_use_case(tmp_path, stale_record)
+
+    assert load_use_case(tmp_path, record.alias).lastCoreAttempt == attempt
+
+
+def test_stale_use_case_writer_cannot_erase_completed_run_authority(
+    tmp_path: Path,
+) -> None:
+    record = create_default_use_case(tmp_path, "localized-home", "Localized home")
+    save_use_case(tmp_path, record)
+    stale_record = load_use_case(tmp_path, record.alias)
+    attempt = LastCoreAttempt(
+        attemptedAt="2026-08-05T00:00:00.000000001Z",
+        operation="run",
+        schema=None,
+        status="unknown",
+        errorCode=None,
+        executionState="unknown",
+        sideEffectMayExist=True,
+    )
+    entry = RunHistoryEntry(
+        runId="real-run",
+        useCaseAlias=record.alias,
+        profile="normal",
+        status="passed",
+        startedAt=attempt.attemptedAt,
+        completedAt="2026-08-05T00:00:00.000000002Z",
+    )
+
+    save_last_core_attempt(tmp_path, record.alias, attempt)
+    record_run(tmp_path, entry)
+    clear_last_core_attempt(
+        tmp_path,
+        record.alias,
+        expected_attempted_at=attempt.attemptedAt,
+    )
+    save_use_case(tmp_path, stale_record)
+
+    persisted = load_use_case(tmp_path, record.alias)
+    assert persisted.lastCoreAttempt is None
+    assert persisted.lastRun is not None
+    assert persisted.lastRun["runId"] == entry.runId
+
+
+def test_existing_corrupt_run_authority_fails_closed(tmp_path: Path) -> None:
+    record = create_default_use_case(tmp_path, "localized-home", "Localized home")
+    save_use_case(tmp_path, record)
+    authority_path = layout.run_authority_path(tmp_path, record.alias)
+    authority_path.write_text("not: [valid", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="run authority"):
+        load_use_case(tmp_path, record.alias)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX symlink semantics")
+def test_existing_symlink_run_authority_fails_closed(tmp_path: Path) -> None:
+    record = create_default_use_case(tmp_path, "localized-home", "Localized home")
+    save_use_case(tmp_path, record)
+    outside = tmp_path / "outside.json"
+    outside.write_text("{}\n", encoding="utf-8")
+    authority_path = layout.run_authority_path(tmp_path, record.alias)
+    authority_path.symlink_to(outside)
+
+    with pytest.raises(ValueError, match="run authority"):
+        load_use_case(tmp_path, record.alias)

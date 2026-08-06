@@ -45,21 +45,31 @@ from verifysignal_spec.workflows.repository import (
     [
         "invalid-status",
         "invalid-current-stage",
+        "missing-schema",
+        "invalid-workflow-id",
+        "invalid-use-case-alias",
+        "invalid-integration",
+        "invalid-updated-at",
         "empty-stage-states",
+        "missing-stage-state",
         "duplicate-stage-state",
+        "invalid-stage-status",
+        "invalid-confirmation",
+        "secret-confirmation",
     ],
 )
 def test_matching_workflow_authority_rejects_invalid_run_invariants(
     tmp_path: Path,
     corruption: str,
 ) -> None:
-    run = _create_runnable_workflow_authority(tmp_path)
-    document = _run_document(tmp_path, run.runId)
+    project = tmp_path / "workspace"
+    run = _create_runnable_workflow_authority(project)
+    document = _run_document(project, run.runId)
     _corrupt_workflow_run(document, corruption)
-    save_document(layout.workflow_run_path(tmp_path, run.runId), document)
+    save_document(layout.workflow_run_path(project, run.runId), document)
 
     with pytest.raises(ValueError):
-        load_active_workflow_run(tmp_path, ALIAS)
+        load_active_workflow_run(project, ALIAS)
 
 
 def test_newer_invalid_matching_authority_outranks_stale_confirmed_reference_and_fails_closed(
@@ -101,6 +111,50 @@ def test_newer_invalid_matching_authority_outranks_stale_confirmed_reference_and
     assert checked["blockers"][0]["currentStage"] == "unknown"
 
 
+def test_equal_newest_authorities_remain_ambiguous_when_one_is_referenced(
+    tmp_path: Path,
+) -> None:
+    referenced = _create_runnable_workflow_authority(tmp_path)
+    referenced_document = _run_document(tmp_path, referenced.runId)
+    referenced_document["updatedAt"] = "2026-08-05T00:00:00.000000009Z"
+    save_document(
+        layout.workflow_run_path(tmp_path, referenced.runId),
+        referenced_document,
+    )
+
+    competing_document = deepcopy(referenced_document)
+    competing_document["runId"] = "wf-equal-newest-unreferenced"
+    competing_document.pop("targetEnvironmentConfirmation", None)
+    save_document(
+        layout.workflow_run_path(tmp_path, competing_document["runId"]),
+        competing_document,
+    )
+
+    record = load_use_case(tmp_path, ALIAS)
+    assert isinstance(record.workflow, dict)
+    record.workflow["lastWorkflowRunId"] = referenced.runId
+    save_use_case(tmp_path, record)
+
+    with pytest.raises(ValueError, match="ambiguous"):
+        load_active_workflow_run(tmp_path, ALIAS)
+
+
+def test_run_stage_authority_rejects_pending_prior_stage_states(
+    tmp_path: Path,
+) -> None:
+    run = _create_runnable_workflow_authority(tmp_path)
+    document = _run_document(tmp_path, run.runId)
+    assert document["currentStage"] == "run"
+    for stage_state in document["stageStates"]:
+        stage_state["status"] = "pending"
+        stage_state.pop("startedAt", None)
+        stage_state.pop("completedAt", None)
+    save_document(layout.workflow_run_path(tmp_path, run.runId), document)
+
+    with pytest.raises(ValueError):
+        load_active_workflow_run(tmp_path, ALIAS)
+
+
 def test_corrupt_different_alias_candidate_does_not_block_valid_authority(
     tmp_path: Path,
 ) -> None:
@@ -125,6 +179,26 @@ def test_corrupt_different_alias_candidate_does_not_block_valid_authority(
 
     assert authoritative is not None
     assert authoritative.runId == valid.runId
+
+
+def test_unstructured_unreferenced_candidate_is_ignored_but_referenced_one_blocks(
+    tmp_path: Path,
+) -> None:
+    valid = _create_runnable_workflow_authority(tmp_path)
+    malformed_id = "wf-unstructured-authority"
+    save_document(layout.workflow_run_path(tmp_path, malformed_id), ["invalid"])
+
+    authoritative = load_active_workflow_run(tmp_path, ALIAS)
+    assert authoritative is not None
+    assert authoritative.runId == valid.runId
+
+    record = load_use_case(tmp_path, ALIAS)
+    assert isinstance(record.workflow, dict)
+    record.workflow["lastWorkflowRunId"] = malformed_id
+    save_use_case(tmp_path, record)
+
+    with pytest.raises(ValueError):
+        load_active_workflow_run(tmp_path, ALIAS)
 
 
 def test_newest_authority_ordering_preserves_nanosecond_precision(
@@ -258,12 +332,45 @@ def _corrupt_workflow_run(document: dict[str, Any], corruption: str) -> None:
     if corruption == "invalid-current-stage":
         document["currentStage"] = "launch"
         return
+    if corruption == "missing-schema":
+        document.pop("schemaVersion", None)
+        return
+    if corruption == "invalid-workflow-id":
+        document["workflowId"] = "different-workflow"
+        return
+    if corruption == "invalid-use-case-alias":
+        document["useCaseAlias"] = "../escaped"
+        return
+    if corruption == "invalid-integration":
+        document["integration"] = "unknown-agent"
+        return
+    if corruption == "invalid-updated-at":
+        document["updatedAt"] = "not-a-timestamp"
+        return
     if corruption == "empty-stage-states":
         document["stageStates"] = []
+        return
+    if corruption == "missing-stage-state":
+        stage_states = document["stageStates"]
+        assert isinstance(stage_states, list) and stage_states
+        stage_states.pop()
         return
     if corruption == "duplicate-stage-state":
         stage_states = document["stageStates"]
         assert isinstance(stage_states, list) and stage_states
         stage_states.append(deepcopy(stage_states[0]))
+        return
+    if corruption == "invalid-stage-status":
+        stage_states = document["stageStates"]
+        assert isinstance(stage_states, list) and stage_states
+        stage_states[0]["status"] = "teleported"
+        return
+    if corruption == "invalid-confirmation":
+        document["targetEnvironmentConfirmation"]["source"] = "repo-inferred"
+        return
+    if corruption == "secret-confirmation":
+        document["targetEnvironmentConfirmation"]["url"] = (
+            "https://app.example.test?token=VS_TEST_SECRET_DO_NOT_PERSIST_123"
+        )
         return
     raise AssertionError(f"Unsupported corruption fixture: {corruption}")
