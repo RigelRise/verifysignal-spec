@@ -43,6 +43,29 @@ def test_run_invocation_lease_is_exclusive_per_project_alias(
             reacquired.release()
 
 
+@pytest.mark.skipif(
+    sys.platform != "darwin",
+    reason="macOS case-insensitive filesystem identity regression",
+)
+def test_run_invocation_lease_uses_directory_identity_across_case_aliases(
+    tmp_path: Path,
+) -> None:
+    alternate = Path(str(tmp_path).swapcase())
+    if not alternate.exists() or not os.path.samefile(tmp_path, alternate):
+        pytest.skip("test volume is case-sensitive")
+
+    first = acquire_run_invocation_lease(tmp_path, "localized-home")
+    assert first is not None
+    contender = None
+    try:
+        contender = acquire_run_invocation_lease(alternate, "localized-home")
+        assert contender is None
+    finally:
+        if contender is not None:
+            contender.release()
+        first.release()
+
+
 def test_run_invocation_lease_is_released_when_holder_process_terminates(
     tmp_path: Path,
 ) -> None:

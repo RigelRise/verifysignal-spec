@@ -147,6 +147,48 @@ def test_record_run_rejects_missing_completion_before_authority_writes(
     assert use_case_path.read_bytes() == base_before
 
 
+def test_record_run_rejects_reused_run_id_without_overwriting_history(
+    tmp_path: Path,
+) -> None:
+    record = _saved_record(tmp_path)
+    first = RunHistoryEntry(
+        runId="run-a",
+        useCaseAlias=record.alias,
+        profile="normal",
+        status="passed",
+        startedAt="2026-08-05T00:00:00.000000001Z",
+        completedAt="2026-08-05T00:00:00.000000002Z",
+    )
+    second = RunHistoryEntry(
+        runId="run-b",
+        useCaseAlias=record.alias,
+        profile="normal",
+        status="passed",
+        startedAt="2026-08-05T00:00:00.000000003Z",
+        completedAt="2026-08-05T00:00:00.000000004Z",
+    )
+    reused = RunHistoryEntry(
+        runId="run-a",
+        useCaseAlias=record.alias,
+        profile="normal",
+        status="passed",
+        startedAt="2026-08-05T00:00:00.000000005Z",
+        completedAt="2026-08-05T00:00:00.000000006Z",
+    )
+    record_run(tmp_path, first)
+    record_run(tmp_path, second)
+    first_path = layout.run_history_path(tmp_path, record.alias, first.runId)
+    first_bytes = first_path.read_bytes()
+
+    with pytest.raises(ValueError, match="(?i)(already|reuse|identity|exists)"):
+        record_run(tmp_path, reused)
+
+    assert first_path.read_bytes() == first_bytes
+    persisted = load_use_case(tmp_path, record.alias)
+    assert persisted.lastRun is not None
+    assert persisted.lastRun["runId"] == second.runId
+
+
 def test_equal_time_matching_run_history_cannot_diverge_from_canonical_risk(
     tmp_path: Path,
 ) -> None:
