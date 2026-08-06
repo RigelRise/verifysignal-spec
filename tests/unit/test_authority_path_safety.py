@@ -13,6 +13,7 @@ from verifysignal_spec.workspace.repository import (
     save_use_case,
 )
 from verifysignal_spec.workspace.models import LastCoreAttempt
+from verifysignal_spec.workflows.engine import create_workflow_run
 from verifysignal_spec.workflows.models import WorkflowRun
 from verifysignal_spec.workflows.repository import (
     create_stage_states,
@@ -83,6 +84,30 @@ def test_workflow_run_save_rejects_symlinked_runs_ancestor_without_external_writ
         save_workflow_run(project, run)
 
     assert not outside_path.exists()
+
+
+def test_workflow_creation_rejects_redirected_workflows_ancestor_without_external_writes(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "project"
+    workspace_dir = project / layout.WORKSPACE_DIR
+    workspace_dir.mkdir(parents=True)
+    outside = tmp_path / "outside-workflows"
+    outside.mkdir()
+    _symlink_directory(workspace_dir / layout.WORKFLOWS_DIR, outside)
+
+    with pytest.raises(
+        ValueError,
+        match=r"(?i)(symbolic|symlink|outside|project|unsafe|ancestor)",
+    ):
+        create_workflow_run(
+            project,
+            "Validate the localized home page.",
+            alias="localized-home",
+            integration="codex",
+        )
+
+    assert list(outside.iterdir()) == []
 
 
 def test_use_case_load_rejects_symlinked_use_cases_ancestor(
@@ -156,3 +181,50 @@ def test_use_case_document_alias_must_match_requested_filename_without_wrong_sid
 
     assert not layout.run_authority_path(project, record.alias).exists()
     assert not layout.run_authority_path(project, "different-alias").exists()
+
+
+@pytest.mark.parametrize(
+    "alias",
+    [
+        "con",
+        "prn.txt",
+        "portable.",
+        "line-break\n",
+        "control\x1fcharacter",
+    ],
+)
+def test_aliases_reject_non_portable_windows_and_control_names(alias: str) -> None:
+    with pytest.raises(ValueError):
+        layout.ensure_path_safe_alias(alias)
+
+
+@pytest.mark.parametrize(
+    "run_id",
+    [
+        "CON",
+        "com1.result",
+        "portable.",
+        "line-break\n",
+        "control\x1fcharacter",
+    ],
+)
+def test_run_ids_reject_non_portable_windows_and_control_names(run_id: str) -> None:
+    with pytest.raises(ValueError):
+        layout.ensure_path_safe_run_id(run_id)
+
+
+@pytest.mark.parametrize(
+    "generated_id",
+    [
+        "nul",
+        "lpt1.result",
+        "portable.",
+        "line-break\n",
+        "control\x1fcharacter",
+    ],
+)
+def test_generated_ids_reject_non_portable_windows_and_control_names(
+    generated_id: str,
+) -> None:
+    with pytest.raises(ValueError):
+        layout.ensure_path_safe_id(generated_id)

@@ -210,6 +210,186 @@ def test_first_sidecar_recovers_timestamp_less_legacy_run_from_history(
     assert recovered.lastRun["completedAt"] == COMPLETED_AT
 
 
+def test_first_sidecar_accepts_identical_equal_time_legacy_history(
+    tmp_path: Path,
+) -> None:
+    record = _saved_record(tmp_path)
+    record.lastRun = {
+        "runId": "legacy-equal-run",
+        "status": "passed",
+        "profile": "normal",
+        "startedAt": ATTEMPTED_AT,
+        "completedAt": COMPLETED_AT,
+    }
+    save_use_case(tmp_path, record)
+    history_entry = RunHistoryEntry(
+        runId="legacy-equal-run",
+        useCaseAlias=record.alias,
+        profile="normal",
+        status="passed",
+        startedAt=ATTEMPTED_AT,
+        completedAt=COMPLETED_AT,
+    )
+    save_document(
+        layout.run_history_path(tmp_path, record.alias, history_entry.runId),
+        history_entry.to_dict(),
+    )
+    attempt = _attempt()
+    attempt.attemptedAt = "2026-08-05T00:00:00.000000003Z"
+
+    save_last_core_attempt(tmp_path, record.alias, attempt)
+
+    recovered = load_use_case(tmp_path, record.alias)
+    assert recovered.lastRun is not None
+    assert recovered.lastRun["runId"] == history_entry.runId
+    assert recovered.lastCoreAttempt == attempt
+
+
+def test_first_sidecar_recovers_unique_newer_history_over_older_base(
+    tmp_path: Path,
+) -> None:
+    record = _saved_record(tmp_path)
+    record.lastRun = {
+        "runId": "older-base-run",
+        "status": "passed",
+        "profile": "normal",
+        "startedAt": ATTEMPTED_AT,
+        "completedAt": COMPLETED_AT,
+    }
+    save_use_case(tmp_path, record)
+    newer_history = RunHistoryEntry(
+        runId="newer-history-run",
+        useCaseAlias=record.alias,
+        profile="normal",
+        status="passed",
+        startedAt="2026-08-05T00:00:00.000000003Z",
+        completedAt="2026-08-05T00:00:00.000000004Z",
+    )
+    save_document(
+        layout.run_history_path(tmp_path, record.alias, newer_history.runId),
+        newer_history.to_dict(),
+    )
+    attempt = _attempt()
+    attempt.attemptedAt = "2026-08-05T00:00:00.000000005Z"
+
+    save_last_core_attempt(tmp_path, record.alias, attempt)
+
+    recovered = load_use_case(tmp_path, record.alias)
+    assert recovered.lastRun is not None
+    assert recovered.lastRun["runId"] == newer_history.runId
+    assert recovered.lastRun["completedAt"] == newer_history.completedAt
+
+
+def test_first_sidecar_rejects_equal_newest_history_with_different_ids(
+    tmp_path: Path,
+) -> None:
+    record = _saved_record(tmp_path)
+    record.lastRun = {
+        "runId": "older-base-run",
+        "status": "passed",
+        "profile": "normal",
+        "startedAt": ATTEMPTED_AT,
+        "completedAt": COMPLETED_AT,
+    }
+    save_use_case(tmp_path, record)
+    for run_id in ("equal-newest-a", "equal-newest-b"):
+        entry = RunHistoryEntry(
+            runId=run_id,
+            useCaseAlias=record.alias,
+            profile="normal",
+            status="passed",
+            startedAt="2026-08-05T00:00:00.000000003Z",
+            completedAt="2026-08-05T00:00:00.000000004Z",
+        )
+        save_document(
+            layout.run_history_path(tmp_path, record.alias, entry.runId),
+            entry.to_dict(),
+        )
+    attempt = _attempt()
+    attempt.attemptedAt = "2026-08-05T00:00:00.000000005Z"
+
+    with pytest.raises(ValueError, match="(?i)(ambiguous|conflict|history)"):
+        save_last_core_attempt(tmp_path, record.alias, attempt)
+
+    assert not layout.run_authority_path(tmp_path, record.alias).exists()
+
+
+def test_first_sidecar_rejects_same_id_equal_time_risk_divergence(
+    tmp_path: Path,
+) -> None:
+    record = _saved_record(tmp_path)
+    record.lastRun = {
+        "runId": "legacy-risk-run",
+        "status": "passed",
+        "profile": "normal",
+        "startedAt": ATTEMPTED_AT,
+        "completedAt": COMPLETED_AT,
+        "postCommitInterpretation": {
+            "postCommit": False,
+            "sideEffectMayExist": False,
+        },
+    }
+    save_use_case(tmp_path, record)
+    history_entry = RunHistoryEntry(
+        runId="legacy-risk-run",
+        useCaseAlias=record.alias,
+        profile="normal",
+        status="passed",
+        startedAt=ATTEMPTED_AT,
+        completedAt=COMPLETED_AT,
+        postCommitInterpretation={
+            "postCommit": True,
+            "sideEffectMayExist": True,
+        },
+    )
+    save_document(
+        layout.run_history_path(tmp_path, record.alias, history_entry.runId),
+        history_entry.to_dict(),
+    )
+    attempt = _attempt()
+    attempt.attemptedAt = "2026-08-05T00:00:00.000000003Z"
+
+    with pytest.raises(ValueError, match="(?i)(risk|diverge|conflict|history)"):
+        save_last_core_attempt(tmp_path, record.alias, attempt)
+
+    assert not layout.run_authority_path(tmp_path, record.alias).exists()
+
+
+def test_recovered_future_history_advances_first_marker_identity(
+    tmp_path: Path,
+) -> None:
+    record = _saved_record(tmp_path)
+    record.lastRun = {
+        "runId": "future-legacy-run",
+        "status": "passed",
+        "profile": "normal",
+    }
+    save_use_case(tmp_path, record)
+    future_completed_at = "2099-08-05T00:00:00.000000002Z"
+    history_entry = RunHistoryEntry(
+        runId="future-legacy-run",
+        useCaseAlias=record.alias,
+        profile="normal",
+        status="passed",
+        startedAt="2099-08-05T00:00:00.000000001Z",
+        completedAt=future_completed_at,
+    )
+    save_document(
+        layout.run_history_path(tmp_path, record.alias, history_entry.runId),
+        history_entry.to_dict(),
+    )
+    stale_wall_clock_attempt = _attempt()
+
+    persisted = save_last_core_attempt(
+        tmp_path,
+        record.alias,
+        stale_wall_clock_attempt,
+    )
+
+    assert persisted.lastCoreAttempt is not None
+    assert persisted.lastCoreAttempt.attemptedAt > future_completed_at
+
+
 def test_later_marker_cannot_mask_intervening_run_history(
     tmp_path: Path,
 ) -> None:
@@ -282,6 +462,70 @@ def test_base_run_equal_to_canonical_marker_requires_run_history_provenance(
 
     with pytest.raises(ValueError, match="(?i)(run|provenance|conflict|authority)"):
         load_use_case(tmp_path, record.alias)
+
+
+@pytest.mark.parametrize(
+    "attempted_at",
+    [
+        "2026-08-05T00:00:00.000000000Z",
+        "2026-08-05T00:00:00.000000002Z",
+        "2026-08-05T00:00:00.000000003Z",
+    ],
+    ids=["older-than-start", "between-start-and-completion", "equal-completion"],
+)
+def test_canonical_cross_slot_marker_rejects_impossible_run_ordering(
+    tmp_path: Path,
+    attempted_at: str,
+) -> None:
+    record = _saved_record(tmp_path)
+    attempt = _attempt()
+    attempt.attemptedAt = attempted_at
+    last_run = {
+        "runId": "canonical-real-run",
+        "status": "passed",
+        "startedAt": ATTEMPTED_AT,
+        "completedAt": "2026-08-05T00:00:00.000000003Z",
+    }
+    save_document(
+        layout.run_authority_path(tmp_path, record.alias),
+        _authority_document(record.alias, attempt.to_dict(), last_run),
+    )
+
+    with pytest.raises(ValueError, match="(?i)(attempt|run|ordering|timestamp)"):
+        load_use_case(tmp_path, record.alias)
+
+
+@pytest.mark.parametrize(
+    "attempted_at",
+    [
+        ATTEMPTED_AT,
+        "2026-08-05T00:00:00.000000004Z",
+    ],
+    ids=["retained-same-start", "strictly-later-attempt"],
+)
+def test_canonical_cross_slot_marker_accepts_recoverable_run_ordering(
+    tmp_path: Path,
+    attempted_at: str,
+) -> None:
+    record = _saved_record(tmp_path)
+    attempt = _attempt()
+    attempt.attemptedAt = attempted_at
+    last_run = {
+        "runId": "canonical-real-run",
+        "status": "passed",
+        "startedAt": ATTEMPTED_AT,
+        "completedAt": "2026-08-05T00:00:00.000000003Z",
+    }
+    save_document(
+        layout.run_authority_path(tmp_path, record.alias),
+        _authority_document(record.alias, attempt.to_dict(), last_run),
+    )
+
+    recovered = load_use_case(tmp_path, record.alias)
+
+    assert recovered.lastCoreAttempt is not None
+    assert recovered.lastCoreAttempt.attemptedAt == attempted_at
+    assert recovered.lastRun == last_run
 
 
 def test_newer_base_projection_than_canonical_authority_fails_closed(
