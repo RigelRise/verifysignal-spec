@@ -78,6 +78,21 @@ def test_the_windows_leg_stays_a_customer_path_not_a_contributor_one() -> None:
     assert "pytest" not in _windows_job()
 
 
+def test_windows_safety_job_executes_native_authority_primitives() -> None:
+    jobs = _workflow_jobs()
+    safety = jobs.get("windows-safety")
+    assert isinstance(safety, dict), "native Windows safety coverage is gone"
+    assert safety.get("runs-on") == "windows-latest"
+    scripts = _run_scripts(safety)
+    assert "python -m pytest -q" in scripts
+    for module in (
+        "tests/unit/test_run_invocation_lock.py",
+        "tests/unit/test_durable_run_persistence.py",
+        "tests/unit/test_authority_path_safety.py",
+    ):
+        assert module in scripts
+
+
 def test_branch_protected_spec_context_aggregates_ubuntu_and_windows() -> None:
     jobs = _workflow_jobs()
     aggregator = jobs.get("spec")
@@ -90,7 +105,7 @@ def test_branch_protected_spec_context_aggregates_ubuntu_and_windows() -> None:
         assert isinstance(raw_needs, list), "spec must aggregate prerequisite jobs"
         needs = {str(item) for item in raw_needs}
 
-    assert "windows-install" in needs
+    assert {"windows-install", "windows-safety"} <= needs
     ubuntu_needs = [
         job_id
         for job_id in needs
@@ -105,7 +120,7 @@ def test_branch_protected_spec_context_aggregates_ubuntu_and_windows() -> None:
     # a failure instead of allowing a skipped green check.
     assert "always()" in str(aggregator.get("if", ""))
     aggregator_text = str(aggregator)
-    for prerequisite in (ubuntu_needs[0], "windows-install"):
+    for prerequisite in (ubuntu_needs[0], "windows-safety", "windows-install"):
         assert any(
             reference in aggregator_text
             for reference in _result_reference(prerequisite)
