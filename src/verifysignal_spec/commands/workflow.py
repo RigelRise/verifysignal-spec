@@ -10,7 +10,11 @@ from verifysignal_spec.workflows import stage_persistence
 from verifysignal_spec.workflows.first_run import accept_first_run, build_first_run_recommendation, skip_first_run
 from verifysignal_spec.workflows.repository import inspect_golden_path_workspace_state, reset_golden_path_workspace_state
 from verifysignal_spec.workflows.models import WORKFLOW_ID
-from verifysignal_spec.workflows.prerequisites import check_prerequisites
+from verifysignal_spec.workflows.prerequisites import (
+    check_prerequisites,
+    stage_position_blocked_check_result,
+)
+from verifysignal_spec.workflows.transitions import managed_workflow_stage_decision
 from verifysignal_spec.workflows.write_safety import build_rerun_approval_review, evaluate_rerun_decision
 from verifysignal_spec.workspace.models import SupersedeReview
 from verifysignal_spec.workspace.repository import load_supersede_reviews, load_use_case, now_iso, save_supersede_review
@@ -79,7 +83,20 @@ def info(project: Path, workflow_id: str = WORKFLOW_ID, integration: str | None 
 
 def check(project: Path, stage: str, alias: str | None = None, refresh_decision: str | None = None) -> dict[str, Any]:
     if stage == "validate":
-        result = workflow_readiness.validation_readiness(project, alias=alias)
+        stage_decision = (
+            managed_workflow_stage_decision(project, alias, stage)
+            if isinstance(alias, str)
+            else {"blocker": None}
+        )
+        stage_blocker = stage_decision.get("blocker")
+        if isinstance(stage_blocker, dict) and isinstance(alias, str):
+            result = stage_position_blocked_check_result(
+                stage,
+                alias,
+                stage_blocker,
+            )
+        else:
+            result = workflow_readiness.validation_readiness(project, alias=alias)
     else:
         result = check_prerequisites(
             project,
@@ -117,6 +134,9 @@ def supersede_write_outcome(project: Path, alias: str, payload: dict[str, Any]) 
             "blockers": blockers,
         }
     saved = save_supersede_review(project, alias, review)
+    # Recompute through the same run preflight used by workflow check/direct run
+    # so the single active gate is removed or replaced before this command returns.
+    check_prerequisites(project, "run", alias=alias)
     return {
         "schemaVersion": "verifysignal-spec-supersede-review-result/v1",
         "alias": alias,
@@ -185,7 +205,13 @@ def approve_rerun(project: Path, alias: str, confirm_risk: str | None = None) ->
             "blockers": blockers,
         }
     saved = save_supersede_review(project, alias, review)
-    updated_decision = evaluate_rerun_decision(record, supersede_reviews=load_supersede_reviews(project, alias))
+    current_preflight = check_prerequisites(project, "run", alias=alias)
+    updated_decision = current_preflight.get("rerunDecision")
+    if not isinstance(updated_decision, dict):
+        updated_decision = evaluate_rerun_decision(
+            record,
+            supersede_reviews=load_supersede_reviews(project, alias),
+        )
     return {
         "schemaVersion": "verifysignal-spec-rerun-approval-result/v1",
         "alias": alias,

@@ -15,8 +15,13 @@ from verifysignal_spec.workflows.repair_recommendations import (
     classify_repair_findings,
     proposals_from_contradictions,
 )
-from verifysignal_spec.workflows.repository import load_golden_path_state, save_golden_path_state
+from verifysignal_spec.workflows.repository import (
+    load_active_workflow_run,
+    load_golden_path_state,
+    save_golden_path_state,
+)
 from verifysignal_spec.workflows.stage_cards import repair_stage_card
+from verifysignal_spec.workflows.transitions import transition_workflow
 from verifysignal_spec.workspace import layout
 from verifysignal_spec.workspace.models import RepairSession
 from verifysignal_spec.workspace.repository import load_use_case, now_iso, save_document, save_use_case
@@ -31,14 +36,14 @@ def run(project: Path, alias: str, from_report: str | None = None, approve: bool
         if managed_runtime.status != "ready":
             payload = _runtime_setup_blocked_payload(managed_runtime)
             return {"alias": alias, **payload, "repair": payload}
+        entitlement_api_base_url = api_base_url_for_runtime(managed_runtime, api_base_url)
         result = CoreAdapter(
             executable=managed_runtime.runtimeCommand,
             cwd=project,
         ).inspect_report(
             Path(from_report),
-            entitlement_receipt=valid_receipt_path(
-                api_base_url_for_runtime(managed_runtime, api_base_url),
-            ),
+            entitlement_receipt=valid_receipt_path(entitlement_api_base_url),
+            entitlement_api_base_url=entitlement_api_base_url,
         )
         findings = list(result.get("data", {}).get("findings", []))
     else:
@@ -252,8 +257,22 @@ def run(project: Path, alias: str, from_report: str | None = None, approve: bool
         }
     record.repair = {"repairId": session.repairId, "approvalStatus": session.approvalStatus}
     save_use_case(project, record)
-    save_document(layout.repair_path(project, session.repairId), session.to_dict())
+    repair_path = layout.repair_path(project, session.repairId)
+    save_document(repair_path, session.to_dict())
     _update_first_run_repair_state(project, alias, repair_feedback, session.approvalStatus)
+    active_run = load_active_workflow_run(project, alias)
+    if any_applied and active_run is not None and active_run.currentStage == "repair":
+        transition_workflow(
+            project,
+            alias,
+            stage="repair",
+            outcome="completed",
+            document_path=layout.to_project_relative(project, repair_path),
+            handoff_summary=(
+                "A scoped repair was persisted; protected validation is "
+                "required before another browser run."
+            ),
+        )
     return {"alias": alias, "repair": session.to_dict()}
 
 

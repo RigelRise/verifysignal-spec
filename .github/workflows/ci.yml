@@ -8,7 +8,7 @@ on:
   pull_request:
 
 jobs:
-  spec:
+  spec-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -39,6 +39,28 @@ jobs:
           # discover the server from a second clean project.
           VERIFYSIGNAL_RUN_REAL_CLAUDE_TESTS: "1"
           VERIFYSIGNAL_PLAYWRIGHT_MCP_CACHE_DIR: ${{ runner.temp }}/verifysignal-playwright-mcp
+
+  # Native coverage for the Windows-only safety primitives used by every
+  # protected run. Keep this focused: the full suite still depends on POSIX
+  # executable fixtures, while these modules are deliberately cross-platform.
+  windows-safety:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -e . pytest
+      - name: Exercise mutex, durable replacement, authority paths, and owned requests
+        run: >-
+          python -m pytest -q
+          tests/unit/test_run_invocation_lock.py
+          tests/unit/test_durable_run_persistence.py
+          tests/unit/test_authority_path_safety.py
+          tests/unit/test_run_request_preparation.py
+          tests/unit/test_workspace_layout_portability.py
+          tests/unit/test_run_history_filename_portability.py
 
   # The Windows leg of the SAME gate. Every other job in every repo runs on ubuntu, which is why
   # Windows was the one platform that broke: nobody had ever run it. A real user hit
@@ -74,3 +96,21 @@ jobs:
         run: verifysignal integration setup-playwright-mcp --json
         env:
           VERIFYSIGNAL_PLAYWRIGHT_MCP_CACHE_DIR: ${{ runner.temp }}\verifysignal-playwright-mcp
+
+  # Branch protection requires the stable `spec` context. Keep the expensive
+  # Ubuntu and Windows customer-path legs parallel, then make that protected
+  # context fail unless both platform results are green.
+  spec:
+    if: ${{ always() }}
+    needs: [spec-tests, windows-safety, windows-install]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require Ubuntu and Windows gates
+        env:
+          SPEC_TESTS_RESULT: ${{ needs.spec-tests.result }}
+          WINDOWS_SAFETY_RESULT: ${{ needs.windows-safety.result }}
+          WINDOWS_INSTALL_RESULT: ${{ needs.windows-install.result }}
+        run: |
+          test "$SPEC_TESTS_RESULT" = success
+          test "$WINDOWS_SAFETY_RESULT" = success
+          test "$WINDOWS_INSTALL_RESULT" = success

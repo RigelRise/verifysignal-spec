@@ -1,13 +1,24 @@
 from __future__ import annotations
 
-from helpers import CliTestCase
+from helpers import FAKE_CORE, CliTestCase
+from tests.fixtures.workflows.entitlement_preflight_recovery import save_protected_ready_snapshot
 from tests.fixtures.workflows.guardrails import stage_payload, write_payload
 
 
 class NonAiFlowTests(CliTestCase):
     def test_list_and_run_work_after_integration_removed(self) -> None:
-        self.cli(["init", str(self.project), "--integration", "codex"])
+        self.cli(
+            [
+                "init",
+                str(self.project),
+                "--integration",
+                "codex",
+                "--core-cmd",
+                str(FAKE_CORE),
+            ]
+        )
         self.cli(["author", "login", "Validate login.", "--project", str(self.project)])
+        save_protected_ready_snapshot(self.project, "login")
         self.cli(["integration", "remove", "codex", "--project", str(self.project), "--force"])
         self.assertEqual(self.cli(["list", "--project", str(self.project)])[0], 0)
         self.assertEqual(self.cli(["run", "login", "--project", str(self.project), "--non-interactive"])[0], 0)

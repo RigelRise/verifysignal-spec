@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-import math
-import re
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qsl, urlsplit
 
 from . import layout
 from .models import (
@@ -19,115 +16,14 @@ from .models import (
     UseCaseRecord,
 )
 from .repository import load_document, load_registry, load_use_case
-
-SECRET_FIELD_RE = re.compile(r"(password|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret|authorization)", re.I)
-BEARER_RE = re.compile(r"\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{12,}", re.I)
-HIGH_ENTROPY_RE = re.compile(r"^[A-Za-z0-9_./+=-]{32,}$")
-HEX_IDENTIFIER_RE = re.compile(r"^[a-f0-9]{7,64}$", re.I)
-PUBLIC_DIGEST_RE = re.compile(r"^(sha256:)?[a-f0-9]{64}$", re.I)
-DUMMY_VALUES = {"example", "dummy", "placeholder", "changeme", "test", "sample", "qa@example.com"}
-SECRET_QUERY_PARAM_RE = re.compile(r"(token|secret|api[_-]?key|access[_-]?key|client[_-]?secret|authorization|auth|password|pwd)", re.I)
-ENV_VAR_NAME_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
-LOCAL_CONFIG_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]*$")
-ENV_ASSIGNMENT_RE = re.compile(r"\b[A-Z_][A-Z0-9_]*\s*=\s*['\"]?[^'\"\s]+")
-
-
-def looks_secret(value: Any, field_name: str = "") -> bool:
-    if value is None:
-        return False
-    text = str(value).strip()
-    if not text:
-        return False
-    if text.lower() in DUMMY_VALUES or text.startswith("${") or text.startswith("<"):
-        return False
-    normalized_field = field_name.lower()
-    if field_name in {
-        "schemaVersion",
-        "version",
-        "id",
-        "path",
-        "file",
-        "route",
-        "surface",
-        "branch",
-        "candidateAlias",
-        "sourceInventoryItems",
-        "recordPath",
-        "reportPath",
-        "evidenceDir",
-        "planFingerprint",
-        "sha256",
-        "generatedGitHash",
-        "tokenPolicy",
-    }:
-        return False
-    if normalized_field == "hash" and HEX_IDENTIFIER_RE.match(text):
-        return False
-    if any(term in normalized_field for term in ["githash", "gitsha", "commithash", "commitsha", "revision", "sha256"]):
-        return False
-    if _url_contains_secret_locator(text):
-        return True
-    if SECRET_FIELD_RE.search(field_name) and text.lower() not in DUMMY_VALUES:
-        return True
-    if BEARER_RE.search(text):
-        return True
-    if HIGH_ENTROPY_RE.match(text) and not re.search(r"[-/\s]", text) and _entropy(text) > 3.5:
-        return True
-    return False
-
-
-def runtime_input_name_looks_secret(name: str) -> bool:
-    return bool(SECRET_FIELD_RE.search(name or ""))
-
-
-def _url_contains_secret_locator(text: str) -> bool:
-    if not re.match(r"^https?://", text, re.I):
-        return False
-    try:
-        parsed = urlsplit(text)
-    except ValueError:
-        return False
-    if parsed.username or parsed.password:
-        return True
-    for key, value in parse_qsl(parsed.query, keep_blank_values=True):
-        if SECRET_QUERY_PARAM_RE.search(key) and value and value.lower() not in DUMMY_VALUES:
-            return True
-    fragment = parsed.fragment or ""
-    if fragment:
-        if SECRET_QUERY_PARAM_RE.search(fragment):
-            return True
-        for key, value in parse_qsl(fragment, keep_blank_values=True):
-            if SECRET_QUERY_PARAM_RE.search(key) and value and value.lower() not in DUMMY_VALUES:
-                return True
-    return False
-
-
-def _entropy(text: str) -> float:
-    if not text:
-        return 0.0
-    counts = {ch: text.count(ch) for ch in set(text)}
-    return -sum((count / len(text)) * math.log2(count / len(text)) for count in counts.values())
-
-
-def validate_no_secret_values(data: Any, path: str = "") -> list[dict[str, str]]:
-    findings: list[dict[str, str]] = []
-    if isinstance(data, dict):
-        for key, value in data.items():
-            child_path = f"{path}.{key}" if path else str(key)
-            if isinstance(value, (dict, list)):
-                findings.extend(validate_no_secret_values(value, child_path))
-            elif _is_public_credential_ref_key_name(child_path, value):
-                continue
-            elif _is_public_session_ref_key_name(child_path, value):
-                continue
-            elif _is_public_artifact_fingerprint(child_path, value):
-                continue
-            elif looks_secret(value, str(key)):
-                findings.append({"severity": "blocking", "code": "secret-looking-value", "path": child_path, "message": "Secret-looking value must not be persisted."})
-    elif isinstance(data, list):
-        for index, value in enumerate(data):
-            findings.extend(validate_no_secret_values(value, f"{path}[{index}]"))
-    return findings
+from .secret_safety import (
+    ENV_ASSIGNMENT_RE,
+    ENV_VAR_NAME_RE,
+    LOCAL_CONFIG_KEY_RE,
+    looks_secret,
+    runtime_input_name_looks_secret,
+    validate_no_secret_values,
+)
 
 
 def validate_credential_readiness_hint(hint: CredentialReadinessHint | dict[str, Any]) -> list[dict[str, str]]:
@@ -165,27 +61,6 @@ def validate_credential_readiness_hint(hint: CredentialReadinessHint | dict[str,
     return findings
 
 
-def _is_public_credential_ref_key_name(path: str, value: Any) -> bool:
-    marker_path = f".{path}"
-    if ".credentialRefs." not in marker_path or ".keys." not in marker_path:
-        return False
-    return isinstance(value, str) and bool(ENV_VAR_NAME_RE.match(value.strip()))
-
-
-def _is_public_session_ref_key_name(path: str, value: Any) -> bool:
-    marker_path = f".{path}"
-    if not marker_path.endswith(".sessionRef.key"):
-        return False
-    return isinstance(value, str) and bool(LOCAL_CONFIG_KEY_RE.match(value.strip()))
-
-
-def _is_public_artifact_fingerprint(path: str, value: Any) -> bool:
-    marker_path = f".{path}"
-    if ".artifactFingerprints." not in marker_path:
-        return False
-    return isinstance(value, str) and bool(PUBLIC_DIGEST_RE.match(value.strip()))
-
-
 def validate_workspace(project: Path) -> list[dict[str, str]]:
     findings: list[dict[str, str]] = []
     root = layout.workspace_root(project)
@@ -212,7 +87,7 @@ def validate_workspace(project: Path) -> list[dict[str, str]]:
             findings.append({"severity": "blocking", "code": "missing-record", "path": record_path, "message": "Registry entry points to a missing use case record."})
             continue
         try:
-            record = UseCaseRecord.from_dict(load_document(path))
+            record = load_use_case(project, str(alias))
             findings.extend(validate_use_case(project, record))
             findings.extend(validate_no_secret_values(record.to_dict(), record_path))
         except Exception as exc:

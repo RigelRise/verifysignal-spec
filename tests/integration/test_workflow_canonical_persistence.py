@@ -2,14 +2,39 @@ from __future__ import annotations
 
 import json
 
-from helpers import CliTestCase
+from helpers import FAKE_CORE, CliTestCase
 
 from tests.fixtures.workflows.guardrails import stage_payload, write_payload
 
 
 class WorkflowCanonicalPersistenceIntegrationTests(CliTestCase):
     def test_full_cli_persistence_flow_creates_listable_use_case(self) -> None:
-        self.cli(["init", str(self.project), "--integration", "codex", "--json"])
+        self.cli(
+            [
+                "init",
+                str(self.project),
+                "--integration",
+                "codex",
+                "--core-cmd",
+                str(FAKE_CORE),
+                "--json",
+            ]
+        )
+        code, _out, err = self.cli(
+            [
+                "workflow",
+                "run",
+                "verifysignal-use-case",
+                "--goal",
+                "Validate login.",
+                "--alias",
+                "login",
+                "--project",
+                str(self.project),
+                "--json",
+            ]
+        )
+        self.assertEqual(code, 0, err)
         payloads = {
             "specify": {
                 "alias": "login",
@@ -72,7 +97,11 @@ class WorkflowCanonicalPersistenceIntegrationTests(CliTestCase):
                 "--json",
             ])
             self.assertEqual(code, 0, f"{stage}: {err}\n{out}")
-            self.assertEqual(json.loads(out)["status"], "persisted")
+            self.assertEqual(
+                json.loads(out)["status"],
+                "persisted",
+                f"{stage}: {out}",
+            )
 
         code, out, err = self.cli(["list", "--project", str(self.project), "--json"])
         self.assertEqual(code, 0, err)

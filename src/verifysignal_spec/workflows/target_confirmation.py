@@ -8,12 +8,18 @@ from verifysignal_spec.workspace.repository import (
     load_use_case,
 )
 
-from .repository import load_workflow_run
+from .models import WorkflowRun
+from .repository import load_active_workflow_run
+
+
+_UNRESOLVED_WORKFLOW_RUN = object()
 
 
 def target_confirmation_blocker(
     project: Path,
     record: Any,
+    *,
+    workflow_run: WorkflowRun | None | object = _UNRESOLVED_WORKFLOW_RUN,
 ) -> dict[str, Any] | None:
     question = next(
         (
@@ -25,22 +31,25 @@ def target_confirmation_blocker(
     )
     if not question:
         return None
-    workflow = record.workflow if isinstance(record.workflow, dict) else {}
-    run_id = workflow.get("lastWorkflowRunId")
-    if run_id:
+    authoritative_run: WorkflowRun | None
+    if workflow_run is _UNRESOLVED_WORKFLOW_RUN:
         try:
-            confirmation = (
-                load_workflow_run(project, str(run_id)).targetEnvironmentConfirmation
-                or {}
-            )
-        except FileNotFoundError:
-            confirmation = {}
-        if (
-            question.status == "answered"
-            and confirmation.get("url")
-            and confirmation.get("source") in {"direct-user", "explicit-command"}
-        ):
-            return None
+            authoritative_run = load_active_workflow_run(project, record.alias)
+        except (FileNotFoundError, ValueError):
+            authoritative_run = None
+    else:
+        authoritative_run = workflow_run if isinstance(workflow_run, WorkflowRun) else None
+    confirmation = (
+        authoritative_run.targetEnvironmentConfirmation or {}
+        if authoritative_run is not None
+        else {}
+    )
+    if (
+        question.status == "answered"
+        and confirmation.get("url")
+        and confirmation.get("source") in {"direct-user", "explicit-command"}
+    ):
+        return None
     return {
         "code": "clarification.target-environment-confirmation-required",
         "severity": "blocker",

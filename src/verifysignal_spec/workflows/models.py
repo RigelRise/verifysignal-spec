@@ -452,6 +452,10 @@ class RuntimePrerequisite:
 @dataclass(slots=True)
 class RuntimeReadinessCheck:
     useCaseAlias: str
+    commandCompatibilityStatus: Literal["not-checked", "passed", "blocked"] = "not-checked"
+    trustMaterialStatus: Literal["not-checked", "ready", "blocked"] = "not-checked"
+    protectedOperationStatus: Literal["not-checked", "passed", "blocked"] = "not-checked"
+    readinessScope: Literal["command-and-trust-inputs", "protected-operation"] = "command-and-trust-inputs"
     targetResolutionStatus: Literal["resolved", "unresolved", "stale", "contradictory"] = "unresolved"
     targetReachabilityStatus: Literal["unchecked", "reachable", "unreachable", "blocked"] = "unchecked"
     requiredPrerequisiteStatus: Literal["complete", "missing", "blocked"] = "missing"

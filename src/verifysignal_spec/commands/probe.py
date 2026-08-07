@@ -71,6 +71,7 @@ def run(
     )
     if managed_runtime.status != "ready":
         return _runtime_setup_blocked_payload(managed_runtime)
+    entitlement_api_base_url = api_base_url_for_runtime(managed_runtime, api_base_url)
     result = CoreAdapter(executable=managed_runtime.runtimeCommand, cwd=project).probe(
         run_request=run_request,
         main_skill=skills[0],
@@ -78,9 +79,8 @@ def run(
         headed=headed,
         slow_mo_ms=slow_mo_ms,
         env=environment_values,
-        entitlement_receipt=valid_receipt_path(
-            api_base_url_for_runtime(managed_runtime, api_base_url),
-        ),
+        entitlement_receipt=valid_receipt_path(entitlement_api_base_url),
+        entitlement_api_base_url=entitlement_api_base_url,
     )
     if environment_warnings and isinstance(result, dict):
         result["credentialWarnings"] = environment_warnings

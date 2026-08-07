@@ -26,7 +26,11 @@ def test_run_blocks_when_core_contract_required_section_malformed(tmp_path, monk
 
     monkeypatch.setenv("VERIFYSIGNAL_CORE_CMD", str(FAKE_CORE))
     monkeypatch.setenv("FAKE_VERIFYSIGNAL_MODE", "contracts-malformed-browser")
-    create_main_skill_coverage_workspace(tmp_path)
+    create_main_skill_coverage_workspace(
+        tmp_path,
+        core_cmd=str(FAKE_CORE),
+        protected_ready=True,
+    )
 
     result = run_command.run(tmp_path, "profile-view-unauth", interactive=False, core_cmd=str(FAKE_CORE))
 

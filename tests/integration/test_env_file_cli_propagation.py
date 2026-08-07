@@ -9,6 +9,9 @@ from verifysignal_spec.cli import main
 from verifysignal_spec.commands import probe, run, validate
 from verifysignal_spec.workspace.models import ArtifactReference, UseCaseRecord
 from verifysignal_spec.workspace.repository import init_workspace, save_use_case
+from tests.fixtures.workflows.entitlement_preflight_recovery import save_protected_ready_snapshot, write_active_run_documents
+from verifysignal_spec.workflows.engine import create_workflow_run
+from verifysignal_spec.workflows.transitions import transition_workflow
 
 
 def _record(alias: str = "credential-flow") -> UseCaseRecord:
@@ -57,6 +60,25 @@ def test_explicit_env_file_blocks_undeclared_keys_before_core_invocation(
         encoding="utf-8",
     )
     skill.write_text("# fixture\n", encoding="utf-8")
+    if command == "run":
+        write_active_run_documents(tmp_path, record.alias)
+        record.status = "ready"
+        save_use_case(tmp_path, record)
+        save_protected_ready_snapshot(tmp_path, record.alias)
+        create_workflow_run(
+            tmp_path,
+            "Validate a credential flow.",
+            alias=record.alias,
+            integration="codex",
+        )
+        for stage in ("specify", "clarify", "plan", "tasks", "implement", "validate"):
+            transition_workflow(
+                tmp_path,
+                record.alias,
+                stage=stage,
+                outcome="completed",
+                handoff_summary="Environment-file fixture setup.",
+            )
     env_file = tmp_path / ".env.verifysignal.test.local"
     env_file.write_text("UNDECLARED=secret-canary\n", encoding="utf-8")
     env_file.chmod(0o600)

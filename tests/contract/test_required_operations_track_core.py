@@ -15,20 +15,16 @@ the operations Spec requires. The local well-formedness check runs regardless. A
 
 from __future__ import annotations
 
-import os
 import re
 from pathlib import Path
 
 import pytest
 
 from verifysignal_spec.core.contracts import REQUIRED_OPERATIONS
+from verifysignal_spec.repos import resolve_sibling_repo
 
-CORE_REPOSITORY = Path(
-    os.environ.get(
-        "VERIFYSIGNAL_REAL_CORE_REPOSITORY",
-        str(Path(__file__).resolve().parents[3] / "verifysignal"),
-    )
-).expanduser()
+SPEC_REPOSITORY = Path(__file__).resolve().parents[2]
+CORE_REPOSITORY = resolve_sibling_repo("core", SPEC_REPOSITORY)
 CORE_PUBLIC_CONTRACT = (
     CORE_REPOSITORY
     / "apps"
@@ -36,6 +32,8 @@ CORE_PUBLIC_CONTRACT = (
     / "src"
     / "output"
     / "public-contract.ts"
+    if CORE_REPOSITORY is not None
+    else SPEC_REPOSITORY / ".missing-core-public-contract"
 )
 
 

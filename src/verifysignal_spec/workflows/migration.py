@@ -5,7 +5,12 @@ from typing import Any
 
 from verifysignal_spec.workspace import layout
 from verifysignal_spec.workspace.models import ArtifactReference, UseCaseRecord
-from verifysignal_spec.workspace.repository import load_document, load_registry, save_use_case
+from verifysignal_spec.workspace.repository import (
+    load_document,
+    load_registry,
+    load_use_case,
+    save_use_case,
+)
 
 from .models import WORKFLOW_MIGRATION_RESULT_SCHEMA, MigrationPlan
 
@@ -61,10 +66,10 @@ def apply_migration(project: Path, migration_id: str) -> dict[str, Any]:
     if not item or item.get("recordPath"):
         return _result(migration_id, "blocked", warnings=["Migration plan is stale; registry entry no longer matches the expected malformed state."])
 
-    existing = load_document(layout.use_case_path(project, alias), default=None)
-    if existing:
-        record = UseCaseRecord.from_dict(existing)
-    else:
+    alias = layout.ensure_path_safe_alias(alias)
+    try:
+        record = load_use_case(project, alias)
+    except FileNotFoundError:
         record = UseCaseRecord(
             alias=alias,
             title=str(item.get("title") or alias.replace("-", " ").title()),

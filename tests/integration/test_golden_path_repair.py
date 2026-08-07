@@ -3,14 +3,16 @@ from __future__ import annotations
 import json
 import os
 
-from helpers import CliTestCase
+from helpers import FAKE_CORE, CliTestCase
 from tests.fixtures.workflows.golden_path_productization import PUBLIC_ALIAS, create_golden_path_workspace
+from verifysignal_spec.workspace.repository import init_workspace
 
 
 class GoldenPathRepairIntegrationTests(CliTestCase):
     def test_repairable_first_run_failure_emits_auto_repair_feedback(self) -> None:
         os.environ["FAKE_VERIFYSIGNAL_MODE"] = "aborted-activity-wait"
         create_golden_path_workspace(self.project)
+        init_workspace(self.project, core_cmd=str(FAKE_CORE))
         self.cli(["workflow", "accept-first-run", PUBLIC_ALIAS, "--project", str(self.project), "--json"])
         report = self.project / "report.json"
         report.write_text("{}", encoding="utf-8")

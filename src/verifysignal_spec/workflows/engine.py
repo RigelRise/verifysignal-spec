@@ -18,27 +18,37 @@ from verifysignal_spec.commands import validate as validate_command
 from verifysignal_spec.workspace import layout
 from verifysignal_spec.integrations.invocation import project_integration
 from verifysignal_spec.workspace.models import ArtifactReference, AuthoringQuestion
-from verifysignal_spec.workspace.repository import get_core_command, load_document, load_use_case, now_iso, save_use_case
+from verifysignal_spec.workspace.repository import (
+    get_core_command,
+    load_document,
+    load_use_case,
+    now_iso,
+    save_use_case,
+)
 
 from .definitions import load_workflow_definition
 from .browser_authoring import browser_authoring_contract
 from .stage_contracts import stage_contracts_payload
-from .models import WORKFLOW_ID, WORKFLOW_STAGES, ArtifactPlan, WorkflowRun, native_invocation
+from .models import (
+    WORKFLOW_ID,
+    WORKFLOW_STAGES,
+    ArtifactPlan,
+    WorkflowRun,
+    native_invocation,
+)
 from .repository import (
     create_or_load_use_case,
     create_stage_states,
     ensure_workflow_workspace,
-    import_legacy_use_case,
-    link_workflow_reference,
     list_workflow_runs,
+    load_active_workflow_run,
     load_artifact_plan,
     load_workflow_run,
     load_workflow_state,
     project_relative,
+    render_workflow_state,
     save_artifact_plan,
-    save_workflow_run,
-    save_workflow_state,
-    state_document,
+    workflow_reference_document,
     workflow_dir_rel,
 )
 from .stage_documents import write_artifact_plan, write_clarifications, write_handoff, write_specification, write_validation_summary
@@ -46,6 +56,7 @@ from .stages import initialize_understanding
 from .tasks import generate_authoring_tasks
 from .stage_documents import write_task_set
 from .repository import save_task_set
+from .transitions import persist_authoritative_workflow
 
 
 def slug_from_goal(goal: str) -> str:
@@ -83,21 +94,20 @@ def create_workflow_run(project: Path, goal: str, alias: str | None = None, inte
         useCaseAlias=alias,
         integration=integration,
         status="paused",
-        currentStage="understand",
+        currentStage="specify",
         startedAt=now_iso(),
         updatedAt=now_iso(),
         workflowDir=workflow_dir_rel(project, alias),
         stageStates=create_stage_states(project, alias),
-        nextCommand=next_command("understand", alias, integration),
+        nextCommand=next_command("specify", alias, integration),
         resumeCommand=f"verifysignal workflow resume {run_id}",
     )
     run.stageStates[0].status = "completed"
+    run.stageStates[0].startedAt = run.startedAt
     run.stageStates[0].completedAt = now_iso()
+    run.stageStates[0].nextCommand = run.nextCommand
     run.stageStates[0].handoffSummary = "Product understanding initialized."
-    save_workflow_run(project, run)
-    save_workflow_state(project, alias, state_document(project, alias, run, run.currentStage, run.status))
-    link_workflow_reference(project, alias, run, run.status)
-    return run
+    return persist_authoritative_workflow(project, run).run
 
 
 def _reset_target_confirmation_for_new_run(record: Any) -> None:
@@ -155,15 +165,14 @@ def resume_workflow(project: Path, run_id: str) -> WorkflowRun:
     run.resumeCommand = f"verifysignal workflow resume {run.runId}"
     if not run.nextCommand:
         run.nextCommand = next_command(run.currentStage, run.useCaseAlias, run.integration)
-    save_workflow_run(project, run)
-    return run
+    return persist_authoritative_workflow(project, run).run
 
 
 def workflow_status(project: Path, run_id: str | None = None) -> dict[str, Any]:
     run = load_workflow_run(project, run_id) if run_id else (list_workflow_runs(project)[0] if list_workflow_runs(project) else None)
     if not run:
         return {"schemaVersion": "verifysignal-spec-workflow-status/v1", "status": "not-started", "runs": []}
-    state = load_workflow_state(project, run.useCaseAlias)
+    state = render_workflow_state(project, run)
     return {
         "schemaVersion": "verifysignal-spec-workflow-status/v1",
         "runId": run.runId,
@@ -183,14 +192,11 @@ def workflow_status(project: Path, run_id: str | None = None) -> dict[str, Any]:
 def workflow_status_for_alias(project: Path, alias: str) -> dict[str, Any]:
     alias = layout.ensure_path_safe_alias(alias)
     record = load_use_case(project, alias)
-    state = load_workflow_state(project, alias)
     workflow = record.workflow or {}
-    run_id = workflow.get("lastWorkflowRunId")
-    if run_id:
-        try:
-            return workflow_status(project, str(run_id))
-        except FileNotFoundError:
-            pass
+    run = load_active_workflow_run(project, alias)
+    if run is not None:
+        return workflow_status(project, run.runId)
+    state = load_workflow_state(project, alias)
     return {
         "schemaVersion": "verifysignal-spec-workflow-status/v1",
         "useCaseAlias": alias,
@@ -205,7 +211,19 @@ def workflow_status_for_alias(project: Path, alias: str) -> dict[str, Any]:
 def workflow_show(project: Path, alias: str) -> dict[str, Any]:
     alias = layout.ensure_path_safe_alias(alias)
     record = load_use_case(project, alias)
-    state = load_workflow_state(project, alias)
+    run = load_active_workflow_run(project, alias)
+    rendered_use_case = record.to_dict()
+    if run is not None:
+        rendered_use_case["workflow"] = workflow_reference_document(
+            project,
+            alias,
+            run,
+        )
+    state = (
+        render_workflow_state(project, run)
+        if run is not None
+        else load_workflow_state(project, alias)
+    )
     documents = {
         stage: _workflow_document(project, alias, stage)
         for stage in ["understand", "specify", "clarify", "plan", "tasks", "implement", "validate", "run", "repair"]
@@ -215,9 +233,14 @@ def workflow_show(project: Path, alias: str) -> dict[str, Any]:
     return {
         "schemaVersion": "verifysignal-spec-workflow-show/v1",
         "useCaseAlias": alias,
-        "status": state.get("status") or record.status,
-        "currentStage": state.get("currentStage") or (record.workflow or {}).get("currentStage"),
-        "useCase": record.to_dict(),
+        "status": run.status if run is not None else state.get("status") or record.status,
+        "currentStage": (
+            run.currentStage
+            if run is not None
+            else state.get("currentStage")
+            or (record.workflow or {}).get("currentStage")
+        ),
+        "useCase": rendered_use_case,
         "workflowState": state,
         "documents": documents,
         "artifactPlan": artifact_plan,

@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import os
 
-from helpers import CliTestCase
+from helpers import FAKE_CORE, CliTestCase
 
 
 class RepairFromReportTests(CliTestCase):
     def test_deterministic_report_inspection_repair_is_proposed_when_artifact_is_canonical(self) -> None:
         os.environ["FAKE_VERIFYSIGNAL_MODE"] = "report-main-skill"
-        self.cli(["init", str(self.project), "--integration", "codex"])
+        self.cli(["init", str(self.project), "--integration", "codex", "--core-cmd", str(FAKE_CORE)])
         self.cli(["author", "login", "Validate login.", "--project", str(self.project)])
         report = self.project / "report.json"
         report.write_text("{}", encoding="utf-8")
@@ -24,7 +24,7 @@ class RepairFromReportTests(CliTestCase):
         self.assertIn("readyForRun", out)
 
     def test_report_selector_repair_is_proposed_not_applied(self) -> None:
-        self.cli(["init", str(self.project), "--integration", "codex"])
+        self.cli(["init", str(self.project), "--integration", "codex", "--core-cmd", str(FAKE_CORE)])
         self.cli(["author", "login", "Validate login.", "--project", str(self.project)])
         report = self.project / "report.json"
         report.write_text("{}", encoding="utf-8")
@@ -66,7 +66,7 @@ class RepairFromReportTests(CliTestCase):
 
     def test_activity_skeleton_report_recommends_wait_flow_fix(self) -> None:
         os.environ["FAKE_VERIFYSIGNAL_MODE"] = "aborted-activity-wait"
-        self.cli(["init", str(self.project), "--integration", "codex"])
+        self.cli(["init", str(self.project), "--integration", "codex", "--core-cmd", str(FAKE_CORE)])
         self.cli(["author", "home-page-unauth", "Validate home page.", "--project", str(self.project)])
         report = self.project / "report.json"
         report.write_text("{}", encoding="utf-8")
@@ -83,7 +83,7 @@ class RepairFromReportTests(CliTestCase):
 
     def test_report_preserves_selector_repair_but_blocks_automatic_side_effect_policy_changes(self) -> None:
         os.environ["FAKE_VERIFYSIGNAL_MODE"] = "report-selector-and-side-effect"
-        self.cli(["init", str(self.project), "--integration", "codex"])
+        self.cli(["init", str(self.project), "--integration", "codex", "--core-cmd", str(FAKE_CORE)])
         self.cli(["author", "login", "Validate login.", "--project", str(self.project)])
         report = self.project / "report.json"
         report.write_text("{}", encoding="utf-8")

@@ -147,6 +147,8 @@ def _entitlement_free_discover_from_cache(
     return ManagedRuntimeReadinessResult(
         status="ready",
         source="managed-cache",
+        commandCompatibilityStatus="passed",
+        trustMaterialStatus="ready",
         runtimeCommand=entry.runtimeCommand,
         runtimeVersion=compatibility.verifysignalVersion or entry.coreVersion,
         contractVersion=compatibility.contractVersion or entry.contractVersion,
@@ -239,6 +241,8 @@ def ensure_core_runtime(
             return ManagedRuntimeReadinessResult(
                 status="ready",
                 source=source,  # type: ignore[arg-type]
+                commandCompatibilityStatus="passed",
+                trustMaterialStatus="ready",
                 runtimeCommand=command,
                 runtimeVersion=attempt.runtimeVersion,
                 contractVersion=attempt.contractVersion or PUBLIC_CONTRACT_VERSION,
@@ -399,6 +403,8 @@ def ensure_core_runtime(
                 return ManagedRuntimeReadinessResult(
                     status="ready",
                     source="managed-cache",
+                    commandCompatibilityStatus="passed",
+                    trustMaterialStatus="ready",
                     runtimeCommand=entry.runtimeCommand,
                     runtimeVersion=entry.coreVersion,
                     contractVersion=attempt.contractVersion or entry.contractVersion,
@@ -511,6 +517,8 @@ def ensure_core_runtime(
         return ManagedRuntimeReadinessResult(
             status="ready",
             source="managed-download",
+            commandCompatibilityStatus="passed",
+            trustMaterialStatus="ready",
             runtimeCommand=runtime_command,
             runtimeVersion=runtime_core_version,
             contractVersion=attempt.contractVersion or PUBLIC_CONTRACT_VERSION,
@@ -537,15 +545,20 @@ def _override_candidates(
 ) -> list[tuple[str, str]]:
     candidates: list[tuple[str, str]] = []
     if explicit_core_cmd and not ignore_explicit:
-        candidates.append(("explicit", explicit_core_cmd))
+        # Explicit/workspace/environment candidates are terminal in
+        # `_verify_command`: success returns immediately and failure blocks
+        # without falling through. Return as soon as one is selected so merely
+        # constructing this list does not perform the much more expensive
+        # ancestor-sibling scan that can never affect the result.
+        return [("explicit", explicit_core_cmd)]
     if managed_only:
         return candidates
     workspace_cmd = get_core_command(project)
     if workspace_cmd:
-        candidates.append(("workspace", workspace_cmd))
+        return [("workspace", workspace_cmd)]
     env_cmd = os.environ.get("VERIFYSIGNAL_CORE_CMD")
     if env_cmd:
-        candidates.append(("env", env_cmd))
+        return [("env", env_cmd)]
     path_core = shutil.which("verifysignal-core")
     if path_core:
         candidates.append(("path", path_core))

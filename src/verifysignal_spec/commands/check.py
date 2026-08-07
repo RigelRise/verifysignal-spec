@@ -13,7 +13,13 @@ from verifysignal_spec.workspace.validation import validate_workspace
 def run(project: Path, core_cmd: str | None = None, api_base_url: str | None = None) -> dict[str, Any]:
     workspace_exists = layout.workspace_root(project).exists()
     findings = validate_workspace(project) if workspace_exists else [{"severity": "blocking", "code": "workspace-missing", "message": "Run `verifysignal-spec init` first."}]
-    runtime = ensure_core_runtime(project, explicit_core_cmd=core_cmd, api_base_url=api_base_url, context="check")
+    runtime = ensure_core_runtime(
+        project,
+        explicit_core_cmd=core_cmd,
+        api_base_url=api_base_url,
+        context="check",
+        managed_only=True if not workspace_exists else None,
+    )
     core = {
         "available": runtime.status == "ready",
         "compatible": runtime.status == "ready",

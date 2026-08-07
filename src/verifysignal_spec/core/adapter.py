@@ -113,6 +113,7 @@ class CoreAdapter:
         runtime_readiness: bool = False,
         env: dict[str, str] | None = None,
         entitlement_receipt: Path | str | None = None,
+        entitlement_api_base_url: str | None = None,
     ) -> dict[str, Any]:
         compatibility = self.require_compatible()
         args = ["authoring-check", "run-request", str(run_request), "--skill", str(main_skill)]
@@ -126,7 +127,11 @@ class CoreAdapter:
             args,
             env={
                 **(env or {}),
-                **_receipt_env(entitlement_receipt, compatibility=compatibility),
+                **_receipt_env(
+                    entitlement_receipt,
+                    compatibility=compatibility,
+                    entitlement_api_base_url=entitlement_api_base_url,
+                ),
             },
         )
 
@@ -142,6 +147,7 @@ class CoreAdapter:
         replay: Path | str | None = None,
         env: dict[str, str] | None = None,
         entitlement_receipt: Path | str | None = None,
+        entitlement_api_base_url: str | None = None,
     ) -> dict[str, Any]:
         compatibility = self.require_compatible()
         args = ["run", str(run_request), "--skill", str(main_skill)]
@@ -166,6 +172,7 @@ class CoreAdapter:
                 **_receipt_env(
                     entitlement_receipt,
                     compatibility=compatibility,
+                    entitlement_api_base_url=entitlement_api_base_url,
                 ),
             },
         )
@@ -179,6 +186,7 @@ class CoreAdapter:
         slow_mo_ms: int = 0,
         env: dict[str, str] | None = None,
         entitlement_receipt: Path | str | None = None,
+        entitlement_api_base_url: str | None = None,
     ) -> dict[str, Any]:
         """Exercise a run request only through its pre-commit boundary.
 
@@ -203,6 +211,7 @@ class CoreAdapter:
                 **_receipt_env(
                     entitlement_receipt,
                     compatibility=compatibility,
+                    entitlement_api_base_url=entitlement_api_base_url,
                 ),
             },
         )
@@ -241,6 +250,7 @@ class CoreAdapter:
         out: Path | str | None = None,
         env: dict[str, str] | None = None,
         entitlement_receipt: Path | str | None = None,
+        entitlement_api_base_url: str | None = None,
     ) -> dict[str, Any]:
         """Crystallize a completed run into a reusable fixture via Core's
         optional, entitlement-PROTECTED `crystallize` operation (schema
@@ -258,17 +268,24 @@ class CoreAdapter:
                 **_receipt_env(
                     entitlement_receipt,
                     compatibility=compatibility,
+                    entitlement_api_base_url=entitlement_api_base_url,
                 ),
             },
         )
 
-    def inspect_report(self, report_path: Path, entitlement_receipt: Path | str | None = None) -> dict[str, Any]:
+    def inspect_report(
+        self,
+        report_path: Path,
+        entitlement_receipt: Path | str | None = None,
+        entitlement_api_base_url: str | None = None,
+    ) -> dict[str, Any]:
         compatibility = self.require_compatible()
         return self._run(
             ["report", "inspect", str(report_path), "--json"],
             env=_receipt_env(
                 entitlement_receipt,
                 compatibility=compatibility,
+                entitlement_api_base_url=entitlement_api_base_url,
             ),
         )
 
@@ -277,6 +294,7 @@ def _receipt_env(
     entitlement_receipt: Path | str | None,
     *,
     compatibility: CompatibilityResult | None = None,
+    entitlement_api_base_url: str | None = None,
 ) -> dict[str, str]:
     env: dict[str, str] = {}
     if entitlement_receipt:
@@ -288,7 +306,7 @@ def _receipt_env(
         try:
             from verifysignal_spec.runtime.distribution import load_verification_keys
 
-            cached = load_verification_keys()
+            cached = load_verification_keys(entitlement_api_base_url)
             keys = cached.get("keys") if isinstance(cached, dict) else None
             if isinstance(keys, list):
                 env["VERIFYSIGNAL_ENTITLEMENT_PUBLIC_KEYS_JSON"] = json.dumps(keys, separators=(",", ":"))

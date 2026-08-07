@@ -8,6 +8,7 @@ WORKSPACE_FILE = "workspace.yaml"
 PRODUCT_CONTEXT_FILE = "product-context.yaml"
 REGISTRY_FILE = "registry.yaml"
 USE_CASES_DIR = "use-cases"
+RUN_AUTHORITY_SUFFIX = ".run-authority.json"
 RUN_REQUESTS_DIR = "run-requests"
 SKILLS_DIR = "skills"
 RUNS_DIR = "runs"
@@ -28,6 +29,13 @@ WORKFLOW_GLOBAL_UNDERSTANDING = "understanding.md"
 
 ALIAS_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,79}$")
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,199}$")
+RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$")
+
+_WINDOWS_RESERVED_DEVICE_BASENAMES = frozenset(
+    {"con", "prn", "aux", "nul"}
+    | {f"com{index}" for index in range(1, 10)}
+    | {f"lpt{index}" for index in range(1, 10)}
+)
 
 
 def resolve_project_path(project_path: str | None = None, here: bool = False) -> Path:
@@ -50,6 +58,21 @@ def product_context_path(project: Path) -> Path:
 
 def use_case_path(project: Path, alias: str) -> Path:
     return workspace_root(project) / USE_CASES_DIR / f"{alias}.yaml"
+
+
+def run_authority_path(project: Path, alias: str) -> Path:
+    """Return the canonical safety-authority sibling for one use case.
+
+    Keeping this file in the already-created use-cases directory avoids a
+    first-run directory-creation durability gap. The JSON suffix also keeps
+    generic ``*.yaml`` use-case enumeration from treating it as a record.
+    """
+
+    return (
+        workspace_root(project)
+        / USE_CASES_DIR
+        / f"{ensure_path_safe_alias(alias)}{RUN_AUTHORITY_SUFFIX}"
+    )
 
 
 def run_request_path(project: Path, alias: str) -> Path:
@@ -89,7 +112,12 @@ def supersede_review_path(project: Path, alias: str, review_id: str) -> Path:
 
 
 def run_history_path(project: Path, alias: str, run_id: str) -> Path:
-    return workspace_root(project) / RUNS_DIR / alias / f"{run_id}.yaml"
+    return (
+        workspace_root(project)
+        / RUNS_DIR
+        / ensure_path_safe_alias(alias)
+        / f"{ensure_path_safe_run_id(run_id)}.yaml"
+    )
 
 
 def readiness_snapshot_path(project: Path, alias: str) -> Path:
@@ -176,17 +204,46 @@ def workflow_global_understanding_path(project: Path) -> Path:
 
 
 def ensure_path_safe_alias(alias: str) -> str:
-    if not ALIAS_RE.match(alias):
-        raise ValueError("Alias must be lowercase path-safe text using letters, numbers, '.', '_' or '-' and at most 80 characters.")
+    if not _is_windows_safe_path_component(alias, ALIAS_RE):
+        raise ValueError(
+            "Alias must be lowercase path-safe text using letters, numbers, "
+            "'.', '_' or '-', at most 80 characters, and a Windows-portable name."
+        )
     return alias
 
 
 def ensure_path_safe_id(value: str) -> str:
     # For SYSTEM-GENERATED ids/filenames (e.g. supersede review ids) that are charset-safe but
     # may legitimately exceed the 80-char alias bound. NOT for user-facing aliases.
-    if not ID_RE.match(value):
-        raise ValueError("Generated id must be lowercase path-safe text (letters, numbers, '.', '_', '-'), up to 200 characters.")
+    if not _is_windows_safe_path_component(value, ID_RE):
+        raise ValueError(
+            "Generated id must be lowercase path-safe text (letters, numbers, "
+            "'.', '_', '-'), up to 200 characters, and a Windows-portable name."
+        )
     return value
+
+
+def ensure_path_safe_run_id(value: str) -> str:
+    if not _is_windows_safe_path_component(value, RUN_ID_RE):
+        raise ValueError(
+            "Run id must be path-safe text using letters, numbers, '.', '_' or "
+            "'-', at most 200 characters, and a Windows-portable name."
+        )
+    return value
+
+
+def _is_windows_safe_path_component(
+    value: object,
+    pattern: re.Pattern[str],
+) -> bool:
+    """Return whether one portable workspace filename component is safe."""
+
+    if not isinstance(value, str) or pattern.fullmatch(value) is None:
+        return False
+    if value.endswith((".", " ")) or any(ord(character) < 32 for character in value):
+        return False
+    device_basename = value.partition(".")[0].casefold()
+    return device_basename not in _WINDOWS_RESERVED_DEVICE_BASENAMES
 
 
 def to_project_relative(project: Path, path: Path) -> str:

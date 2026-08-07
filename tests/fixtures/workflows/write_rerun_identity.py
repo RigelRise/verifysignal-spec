@@ -6,6 +6,7 @@ from typing import Any
 
 from verifysignal_spec.workspace.models import ArtifactReference, RuntimeInputRequirement, UseCaseRecord
 from verifysignal_spec.workspace.repository import init_workspace, save_use_case
+from tests.fixtures.workflows.entitlement_preflight_recovery import save_protected_ready_snapshot
 
 
 def write_minimal_artifacts(project: Path, alias: str, *, parameters: dict[str, str] | None = None) -> Path:
@@ -56,6 +57,7 @@ def write_use_case_record(
     last_run: dict[str, Any] | None = None,
     runtime_inputs: list[RuntimeInputRequirement] | None = None,
     resource_identity: dict[str, Any] | None = None,
+    protected_ready: bool = False,
 ) -> UseCaseRecord:
     init_workspace(project, core_cmd="verifysignal-core")
     write_minimal_artifacts(project, alias)
@@ -97,6 +99,8 @@ def write_use_case_record(
     if resource_identity:
         record.resourceIdentity = resource_identity  # type: ignore[attr-defined]
     save_use_case(project, record)
+    if protected_ready:
+        save_protected_ready_snapshot(project, alias, side_effect_class="write")
     return record
 
 
@@ -104,6 +108,8 @@ def committed_last_run(*, value: str = "VerifySignal collab seed", run_id: str =
     return {
         "runId": run_id,
         "status": "passed",
+        "startedAt": "2026-08-04T00:00:00.000000001Z",
+        "completedAt": "2026-08-04T00:00:00.000000002Z",
         "coreStatus": "passed",
         "coverageStatus": "complete",
         "resolvedRuntimeInputs": [

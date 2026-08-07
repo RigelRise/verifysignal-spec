@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from helpers import CliTestCase
+from helpers import FAKE_CORE, CliTestCase
 from verifysignal_spec.workspace.repository import load_use_case, save_use_case
 from tests.fixtures.workflows.main_skill_run_coverage import create_main_skill_coverage_workspace
 
@@ -40,7 +40,7 @@ class RepairConfirmationFlowTests(CliTestCase):
         import os
 
         os.environ["FAKE_VERIFYSIGNAL_MODE"] = "aborted-activity-wait"
-        self.cli(["init", str(self.project), "--integration", "codex"])
+        self.cli(["init", str(self.project), "--integration", "codex", "--core-cmd", str(FAKE_CORE)])
         self.cli(["author", "home-page-unauth", "Validate home page.", "--project", str(self.project)])
         report = self.project / "report.json"
         report.write_text("{}", encoding="utf-8")

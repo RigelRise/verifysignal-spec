@@ -102,6 +102,7 @@ def test_runtime_readiness_reconciles_the_last_read_only_side_effect_outcome(tmp
         side_effects=policy,
         last_run={
             "runId": "run-policy-violation",
+            "status": "failed",
             "sideEffectPolicy": policy,
             "sideEffects": {
                 "violations": [

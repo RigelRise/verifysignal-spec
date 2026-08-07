@@ -410,6 +410,10 @@ class MetadataConsentDecision:
 class ManagedRuntimeReadinessResult:
     status: RuntimeStatus
     source: RuntimeSource = "none"
+    commandCompatibilityStatus: Literal["not-checked", "passed", "blocked"] = "not-checked"
+    trustMaterialStatus: Literal["not-checked", "ready", "blocked"] = "not-checked"
+    protectedOperationStatus: Literal["not-checked", "passed", "blocked"] = "not-checked"
+    readinessScope: Literal["command-and-trust-inputs", "protected-operation"] = "command-and-trust-inputs"
     runtimeCommand: str | None = None
     runtimeVersion: str | None = None
     contractVersion: str | None = PUBLIC_CONTRACT_VERSION
@@ -424,6 +428,24 @@ class ManagedRuntimeReadinessResult:
     message: str = ""
     nextAction: str = "Continue with validation or run."
     schemaVersion: str = MANAGED_RUNTIME_READINESS_SCHEMA
+
+    def __post_init__(self) -> None:
+        if self.commandCompatibilityStatus == "not-checked":
+            if self.status == "ready" or any(item.status == "compatible" for item in self.attempts):
+                self.commandCompatibilityStatus = "passed"
+            elif any(item.status in {"missing", "incompatible", "error"} for item in self.attempts):
+                self.commandCompatibilityStatus = "blocked"
+
+        if self.trustMaterialStatus == "not-checked":
+            entitlement_ready = self.entitlement.status in {"valid", "not-required"}
+            keys_ready = self.verificationKeys.status in {"ready", "not-required"}
+            if self.status == "ready" or (entitlement_ready and keys_ready):
+                self.trustMaterialStatus = "ready"
+            elif self.commandCompatibilityStatus == "passed" and (
+                self.entitlement.status not in {"not-checked", "valid", "not-required"}
+                or self.verificationKeys.status == "blocked"
+            ):
+                self.trustMaterialStatus = "blocked"
 
     @classmethod
     def blocked(
@@ -453,6 +475,10 @@ class ManagedRuntimeReadinessResult:
             "schemaVersion": self.schemaVersion,
             "status": self.status,
             "source": self.source,
+            "commandCompatibilityStatus": self.commandCompatibilityStatus,
+            "trustMaterialStatus": self.trustMaterialStatus,
+            "protectedOperationStatus": self.protectedOperationStatus,
+            "readinessScope": self.readinessScope,
             "runtimeCommand": redact_runtime_value(self.runtimeCommand),
             "runtimeVersion": self.runtimeVersion,
             "contractVersion": self.contractVersion,

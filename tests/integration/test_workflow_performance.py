@@ -13,6 +13,7 @@ from verifysignal_spec.workflows.readiness import validation_readiness
 from verifysignal_spec.workflows.repair_recommendations import recommend_repairs_for_gate_coverage
 from verifysignal_spec.workflows.engine import create_workflow_run, generate_tasks, implement_artifacts, plan_artifacts, specify, workflow_list
 from verifysignal_spec.workflows.prerequisites import check_prerequisites
+from verifysignal_spec.workflows.transitions import transition_workflow
 from tests.fixtures.workflows.real_run_guardrails import coherent_profile_skill, create_real_run_guardrail_workspace, run_request_payload
 from tests.fixtures.workflows.skill_execution_boundary import create_planned_workspace
 
@@ -35,6 +36,14 @@ def test_representative_workflow_checks_complete_under_one_second(tmp_path) -> N
     plan_artifacts(tmp_path, "login")
     generate_tasks(tmp_path, "login")
     implement_artifacts(tmp_path, "login")
+    for stage in ("specify", "clarify", "plan", "tasks", "implement"):
+        transition_workflow(
+            tmp_path,
+            "login",
+            stage=stage,
+            outcome="completed",
+            handoff_summary="Performance fixture setup.",
+        )
 
     started = time.monotonic()
     results = [

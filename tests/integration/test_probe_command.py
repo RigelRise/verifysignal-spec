@@ -12,6 +12,7 @@ from verifysignal_spec.commands import probe as probe_command
 from verifysignal_spec.core.adapter import CoreAdapter
 from verifysignal_spec.core.contracts import core_supports_probe
 from verifysignal_spec.core.executable_contract import project_core_contract
+from verifysignal_spec.repos import resolve_sibling_repo
 from verifysignal_spec.workflows.browser_authoring import browser_authoring_contract
 from verifysignal_spec.workflows.readiness import executable_contract_blockers
 
@@ -97,40 +98,38 @@ sideEffectPolicy:
         self.assertIn('"executed": false', out)
 
 
-REAL_CORE_REPOSITORY = Path(
-    os.environ.get(
-        "VERIFYSIGNAL_REAL_CORE_REPOSITORY",
-        str(Path(__file__).resolve().parents[3] / "verifysignal"),
-    )
-).expanduser()
+SPEC_REPOSITORY = Path(__file__).resolve().parents[2]
+CORE_REPOSITORY = resolve_sibling_repo("core", SPEC_REPOSITORY)
 
 
 @pytest.mark.skipif(
-    not (REAL_CORE_REPOSITORY / "package.json").exists(),
+    CORE_REPOSITORY is None or not (CORE_REPOSITORY / "package.json").exists(),
     reason="Sibling VerifySignal Core repository is not available.",
 )
 def test_sibling_core_advertises_probe_only_through_the_public_version_contract() -> None:
-    response = CoreAdapter(executable=str(REAL_CORE_REPOSITORY)).version()
+    assert CORE_REPOSITORY is not None
+    response = CoreAdapter(executable=str(CORE_REPOSITORY)).version()
 
     # The expectation derives from the sibling source: Core's version-bump automation moves
     # every version surface together (package.json included), so a hardcoded literal here
     # would fail on every Core release without catching anything real. Exact equality against
     # the declared version still proves the probe advertises the version the source ships.
-    declared_version = json.loads((REAL_CORE_REPOSITORY / "package.json").read_text(encoding="utf-8"))["version"]
+    declared_version = json.loads((CORE_REPOSITORY / "package.json").read_text(encoding="utf-8"))["version"]
     assert response["data"]["verifysignalVersion"] == declared_version
     assert core_supports_probe(response)
 
 
 @pytest.mark.skipif(
-    not (REAL_CORE_REPOSITORY / "package.json").exists(),
+    CORE_REPOSITORY is None or not (CORE_REPOSITORY / "package.json").exists(),
     reason="Sibling VerifySignal Core repository is not available.",
 )
 def test_sibling_core_exposes_required_browser_authoring_guardrails_via_public_contract() -> None:
-    adapter = CoreAdapter(executable=str(REAL_CORE_REPOSITORY))
+    assert CORE_REPOSITORY is not None
+    adapter = CoreAdapter(executable=str(CORE_REPOSITORY))
     version = adapter.version()["data"]["verifysignalVersion"]
     projection = project_core_contract(
         adapter.contracts(),
-        runtime_identity=str(REAL_CORE_REPOSITORY),
+        runtime_identity=str(CORE_REPOSITORY),
         core_version=version,
     )
 
@@ -143,7 +142,7 @@ def test_sibling_core_exposes_required_browser_authoring_guardrails_via_public_c
     assert warnings["degenerate-text-target"]["runtimeReadinessSeverity"] == "blocking"
     assert warnings["unstable-generated-css-target"]["runtimeReadinessSeverity"] == "blocking"
     assert executable_contract_blockers(
-        REAL_CORE_REPOSITORY,
-        str(REAL_CORE_REPOSITORY),
+        CORE_REPOSITORY,
+        str(CORE_REPOSITORY),
         core_contract=projection,
     ) == []

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 
-from helpers import CliTestCase
+from helpers import FAKE_CORE, CliTestCase
 
 from tests.fixtures.workflows.guardrails import create_ready_use_case_workspace, create_registry_missing_record_path
 from tests.fixtures.workflows.main_skill_run_coverage import create_main_skill_coverage_workspace
@@ -14,11 +14,11 @@ from verifysignal_spec.workspace.repository import load_document, save_document
 
 class ValidationReadinessContractTests(CliTestCase):
     def test_structural_validation_runs_when_core_is_missing(self) -> None:
-        create_ready_use_case_workspace(self.project, "login")
-        workspace_path = self.project / ".verifysignal/workspace.yaml"
-        workspace = load_document(workspace_path)
-        workspace["coreCommand"] = "missing-verifysignal-core-for-test"
-        save_document(workspace_path, workspace)
+        create_ready_use_case_workspace(
+            self.project,
+            "login",
+            core_cmd="missing-verifysignal-core-for-test",
+        )
         code, out, err = self.cli([
             "workflow",
             "check",
@@ -43,7 +43,7 @@ class ValidationReadinessContractTests(CliTestCase):
         self.assertFalse(blocker["repairable"])
 
     def test_core_compatibility_fields_are_reported_when_core_is_available(self) -> None:
-        create_ready_use_case_workspace(self.project, "login")
+        create_ready_use_case_workspace(self.project, "login", core_cmd=str(FAKE_CORE))
         code, out, err = self.cli([
             "workflow",
             "check",
@@ -62,7 +62,7 @@ class ValidationReadinessContractTests(CliTestCase):
         self.assertEqual(result["coreReadiness"]["requiredOperationsByName"]["authoring-check"]["schemaName"], "verifysignal.authoring-check/v1")
 
     def test_structural_readiness_exposes_runtime_boundary_and_exact_next_action(self) -> None:
-        create_ready_use_case_workspace(self.project, "login")
+        create_ready_use_case_workspace(self.project, "login", core_cmd=str(FAKE_CORE))
 
         code, out, err = self.cli([
             "workflow",
@@ -89,11 +89,11 @@ class ValidationReadinessContractTests(CliTestCase):
         self.assertNotIn("complete runtime readiness passed", result["readinessSummary"].lower())
 
     def test_blocked_structural_readiness_preserves_recovery_before_runtime_validation(self) -> None:
-        create_ready_use_case_workspace(self.project, "login")
-        workspace_path = self.project / ".verifysignal/workspace.yaml"
-        workspace = load_document(workspace_path)
-        workspace["coreCommand"] = "missing-verifysignal-core-for-test"
-        save_document(workspace_path, workspace)
+        create_ready_use_case_workspace(
+            self.project,
+            "login",
+            core_cmd="missing-verifysignal-core-for-test",
+        )
 
         code, out, err = self.cli([
             "workflow",
@@ -118,7 +118,7 @@ class ValidationReadinessContractTests(CliTestCase):
         self.assertIn("must be resolved first", result["readinessSummary"])
 
     def test_core_incompatible_schema_reports_public_operation_details(self) -> None:
-        create_ready_use_case_workspace(self.project, "login")
+        create_ready_use_case_workspace(self.project, "login", core_cmd=str(FAKE_CORE))
         os.environ["FAKE_VERIFYSIGNAL_MODE"] = "incompatible-run-schema"
 
         code, out, err = self.cli([
@@ -186,7 +186,7 @@ class ValidationReadinessContractTests(CliTestCase):
         self.assertEqual(json.loads(out)["status"], "blocked")
 
     def test_validate_output_describes_authored_evidence_not_executed_browser_flow(self) -> None:
-        create_main_skill_coverage_workspace(self.project)
+        create_main_skill_coverage_workspace(self.project, core_cmd=str(FAKE_CORE))
 
         code, out, err = self.cli([
             "validate",
@@ -206,7 +206,7 @@ class ValidationReadinessContractTests(CliTestCase):
         self.assertIn("full browser flow has not executed", result["readinessSummary"])
 
     def test_execution_boundary_blocks_legacy_multi_skill_run_request_when_core_is_unsupported(self) -> None:
-        create_planned_workspace(self.project)
+        create_planned_workspace(self.project, core_cmd=str(FAKE_CORE))
         result = persist_stage(self.project, "implement", alias=ALIAS, payload=implementation_payload(composed_main=True))
         self.assertEqual(result["status"], "persisted")
         run_request_path = self.project / f".verifysignal/run-requests/{ALIAS}.yaml"

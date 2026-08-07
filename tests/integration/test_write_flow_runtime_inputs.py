@@ -6,6 +6,7 @@ from pathlib import Path
 from verifysignal_spec.commands import run as run_command
 from verifysignal_spec.workspace.models import ArtifactReference, RuntimeInputRequirement, UseCaseRecord
 from verifysignal_spec.workspace.repository import init_workspace, save_use_case
+from tests.fixtures.workflows.entitlement_preflight_recovery import save_protected_ready_snapshot
 from tests.integration.test_workflow_run import _write_minimal_artifacts
 
 
@@ -32,6 +33,7 @@ def test_generated_input_is_resolved_for_core_without_rewriting_authored_request
             sideEffects={"class": "none"},
         ),
     )
+    save_protected_ready_snapshot(tmp_path, "create-resource")
 
     result = run_command.run(tmp_path, "create-resource", interactive=False, core_cmd=str(FAKE_CORE))
 

@@ -8,6 +8,8 @@ from verifysignal_spec.workspace.models import ArtifactReference, RuntimeInputRe
 from verifysignal_spec.workspace.repository import init_workspace
 from verifysignal_spec.workspace.repository import load_use_case, save_use_case
 from verifysignal_spec.workflows.engine import create_workflow_run, generate_tasks, implement_artifacts, plan_artifacts, validate_stage
+from verifysignal_spec.workflows.transitions import transition_workflow
+from tests.fixtures.workflows.entitlement_preflight_recovery import save_protected_ready_snapshot
 from tests.fixtures.workflows.main_skill_run_coverage import create_main_skill_coverage_workspace
 
 
@@ -20,6 +22,14 @@ def test_workflow_validate_preserves_core_result(tmp_path, monkeypatch) -> None:
     plan_artifacts(tmp_path, "login")
     generate_tasks(tmp_path, "login")
     implement_artifacts(tmp_path, "login")
+    for stage in ("specify", "clarify", "plan", "tasks", "implement"):
+        transition_workflow(
+            tmp_path,
+            "login",
+            stage=stage,
+            outcome="completed",
+            handoff_summary="Canonical engine fixture setup.",
+        )
     result = validate_stage(tmp_path, "login")
     assert result["core"]["schemaVersion"]
 
@@ -76,6 +86,7 @@ browser:
         encoding="utf-8",
     )
     save_use_case(tmp_path, record)
+    save_protected_ready_snapshot(tmp_path, "login")
 
     result = run_command.run(tmp_path, "login", interactive=True, core_cmd=str(FAKE_CORE))
     assert result["status"] == "passed"
@@ -95,11 +106,12 @@ def test_run_blocks_write_without_side_effect_envelope_before_core_execution(tmp
         mainSkill=ArtifactReference(path=".verifysignal/skills/create-resource.browser.md", kind="skill", id="skill.create-resource", version="1.0.0"),
         skills=[ArtifactReference(path=".verifysignal/skills/create-resource.browser.md", kind="skill", id="skill.create-resource", version="1.0.0")],
         runtimeInputs=[RuntimeInputRequirement(name="baseUrl", source="default", value="https://example.test")],
-        sideEffects={"class": "write"},
+        sideEffects={"class": "write", "commitStepId": "submit-resource"},
         sideEffectLifecycle=_manual_cleanup_lifecycle(),
         artifactCapabilities=_current_write_capabilities(),
     )
     save_use_case(tmp_path, record)
+    save_protected_ready_snapshot(tmp_path, "create-resource", side_effect_class="write")
 
     result = run_command.run(tmp_path, "create-resource", interactive=False, core_cmd=str(FAKE_CORE))
 
@@ -127,6 +139,7 @@ def test_run_resolves_generated_inputs_in_ephemeral_request_without_rewriting_au
         sideEffects={"class": "none"},
     )
     save_use_case(tmp_path, record)
+    save_protected_ready_snapshot(tmp_path, "create-resource")
 
     result = run_command.run(tmp_path, "create-resource", interactive=False, core_cmd=str(FAKE_CORE))
 
@@ -172,6 +185,7 @@ def test_run_preserves_post_commit_interpretation_from_public_core_fields(tmp_pa
         artifactCapabilities=_current_write_capabilities(),
     )
     save_use_case(tmp_path, record)
+    save_protected_ready_snapshot(tmp_path, "create-resource", side_effect_class="write")
 
     result = run_command.run(tmp_path, "create-resource", interactive=False, core_cmd=str(FAKE_CORE))
 
@@ -206,6 +220,8 @@ def test_second_run_after_post_commit_write_is_blocked_by_rerun_policy(tmp_path,
         lastRun={
             "runId": "previous-run",
             "status": "failed",
+            "startedAt": "2026-08-04T00:00:00.000000001Z",
+            "completedAt": "2026-08-04T00:00:00.000000002Z",
             "postCommitInterpretation": {
                 "postCommit": True,
                 "sideEffectMayExist": True,
@@ -216,6 +232,7 @@ def test_second_run_after_post_commit_write_is_blocked_by_rerun_policy(tmp_path,
         },
     )
     save_use_case(tmp_path, record)
+    save_protected_ready_snapshot(tmp_path, "create-resource", side_effect_class="write")
 
     result = run_command.run(tmp_path, "create-resource", interactive=False, core_cmd=str(FAKE_CORE))
 
@@ -252,6 +269,8 @@ def test_rerun_allowed_with_new_inputs_refreshes_declared_generated_value(tmp_pa
         lastRun={
             "runId": "previous-run",
             "status": "failed",
+            "startedAt": "2026-08-04T00:00:00.000000001Z",
+            "completedAt": "2026-08-04T00:00:00.000000002Z",
             "postCommitInterpretation": {
                 "postCommit": True,
                 "sideEffectMayExist": True,
@@ -262,6 +281,7 @@ def test_rerun_allowed_with_new_inputs_refreshes_declared_generated_value(tmp_pa
         },
     )
     save_use_case(tmp_path, record)
+    save_protected_ready_snapshot(tmp_path, "create-resource", side_effect_class="write")
 
     result = run_command.run(tmp_path, "create-resource", interactive=False, core_cmd=str(FAKE_CORE))
 
@@ -278,7 +298,11 @@ def test_run_summary_shows_missing_required_gates_and_partial_diagnostics(tmp_pa
 
     monkeypatch.setenv("VERIFYSIGNAL_CORE_CMD", str(FAKE_CORE))
     monkeypatch.setenv("FAKE_VERIFYSIGNAL_MODE", "failed-with-partial")
-    create_main_skill_coverage_workspace(tmp_path)
+    create_main_skill_coverage_workspace(
+        tmp_path,
+        core_cmd=str(FAKE_CORE),
+        protected_ready=True,
+    )
 
     result = run_command.run(tmp_path, "profile-view-unauth", interactive=False, core_cmd=str(FAKE_CORE))
 
@@ -293,7 +317,11 @@ def test_failed_run_summary_uses_diagnostic_coverage_language(tmp_path, monkeypa
 
     monkeypatch.setenv("VERIFYSIGNAL_CORE_CMD", str(FAKE_CORE))
     monkeypatch.setenv("FAKE_VERIFYSIGNAL_MODE", "aborted-activity-wait")
-    create_main_skill_coverage_workspace(tmp_path)
+    create_main_skill_coverage_workspace(
+        tmp_path,
+        core_cmd=str(FAKE_CORE),
+        protected_ready=True,
+    )
 
     result = run_command.run(tmp_path, "profile-view-unauth", interactive=False, core_cmd=str(FAKE_CORE))
 
@@ -308,7 +336,11 @@ def test_conditional_gate_not_evaluated_does_not_hard_fail_required_coverage(tmp
 
     monkeypatch.setenv("VERIFYSIGNAL_CORE_CMD", str(FAKE_CORE))
     monkeypatch.setenv("FAKE_VERIFYSIGNAL_MODE", "full-coverage")
-    create_main_skill_coverage_workspace(tmp_path)
+    create_main_skill_coverage_workspace(
+        tmp_path,
+        core_cmd=str(FAKE_CORE),
+        protected_ready=True,
+    )
 
     result = run_command.run(tmp_path, "profile-view-unauth", interactive=False, core_cmd=str(FAKE_CORE))
 

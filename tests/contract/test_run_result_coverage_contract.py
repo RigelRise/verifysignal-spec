@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 
-from helpers import CliTestCase
+from helpers import FAKE_CORE, CliTestCase
 from verifysignal_spec.workflows.evidence import normalize_planned_gates
 from verifysignal_spec.workflows.gate_coverage import calculate_gate_coverage, coverage_status
 from verifysignal_spec.workflows.models import EvidenceInventory
@@ -41,7 +41,11 @@ def test_conditional_unmet_gate_does_not_make_run_incomplete() -> None:
 
 class RunResultCoverageCliContractTests(CliTestCase):
     def test_helper_only_core_success_is_incomplete_and_nonzero(self) -> None:
-        create_main_skill_coverage_workspace(self.project)
+        create_main_skill_coverage_workspace(
+            self.project,
+            core_cmd=str(FAKE_CORE),
+            protected_ready=True,
+        )
         os.environ["FAKE_VERIFYSIGNAL_MODE"] = "helper-only"
 
         code, out, err = self.cli(["run", "profile-view-unauth", "--project", str(self.project), "--json", "--non-interactive"])
@@ -60,7 +64,11 @@ class RunResultCoverageCliContractTests(CliTestCase):
         assert payload["nextAction"]
 
     def test_incomplete_summary_includes_missing_gates_reason_and_next_action(self) -> None:
-        create_main_skill_coverage_workspace(self.project)
+        create_main_skill_coverage_workspace(
+            self.project,
+            core_cmd=str(FAKE_CORE),
+            protected_ready=True,
+        )
         os.environ["FAKE_VERIFYSIGNAL_MODE"] = "helper-only"
 
         _code, out, _err = self.cli(["run", "profile-view-unauth", "--project", str(self.project), "--json", "--non-interactive"])
@@ -71,7 +79,11 @@ class RunResultCoverageCliContractTests(CliTestCase):
         assert "verifysignal repair profile-view-unauth" in payload["nextAction"]
 
     def test_failed_core_run_separates_browser_status_from_diagnostic_coverage(self) -> None:
-        create_main_skill_coverage_workspace(self.project)
+        create_main_skill_coverage_workspace(
+            self.project,
+            core_cmd=str(FAKE_CORE),
+            protected_ready=True,
+        )
         os.environ["FAKE_VERIFYSIGNAL_MODE"] = "aborted-activity-wait"
 
         code, out, err = self.cli(["run", "profile-view-unauth", "--project", str(self.project), "--json", "--non-interactive"])

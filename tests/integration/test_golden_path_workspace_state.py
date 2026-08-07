@@ -3,9 +3,11 @@ from __future__ import annotations
 import json
 import os
 
-from helpers import CliTestCase
+from helpers import FAKE_CORE, CliTestCase
+from tests.fixtures.workflows.entitlement_preflight_recovery import save_protected_ready_snapshot
 from tests.fixtures.workflows.golden_path_productization import PUBLIC_ALIAS, create_golden_path_workspace
 from tests.fixtures.workflows.golden_path_onboarding import PUBLIC_ALIAS as ONBOARDING_PUBLIC_ALIAS, create_onboarding_repository
+from verifysignal_spec.workspace.repository import init_workspace
 
 
 class GoldenPathWorkspaceStateIntegrationTests(CliTestCase):
@@ -31,6 +33,8 @@ class GoldenPathWorkspaceStateIntegrationTests(CliTestCase):
 
     def test_inspect_reports_untracked_run_history_without_implicit_acceptance(self) -> None:
         create_onboarding_repository(self.project)
+        init_workspace(self.project, core_cmd=str(FAKE_CORE))
+        save_protected_ready_snapshot(self.project, ONBOARDING_PUBLIC_ALIAS)
         old_mode = os.environ.get("FAKE_VERIFYSIGNAL_MODE")
         os.environ["FAKE_VERIFYSIGNAL_MODE"] = "full-coverage"
         try:

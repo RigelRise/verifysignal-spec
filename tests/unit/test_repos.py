@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from verifysignal_spec import repos as repo_resolution
 from verifysignal_spec.repos import (
     CORE_DEV_SCRIPT,
     CORE_EXECUTABLE_NAMES,
@@ -126,6 +127,30 @@ def test_ancestor_walk_accepts_a_checkout_identified_only_by_its_dev_script(tmp_
     # to, which is also what the test fixtures build.
     (core / "package.json").write_text(json.dumps({"scripts": {CORE_DEV_SCRIPT: "x"}}), encoding="utf-8")
     assert core in ancestor_core_candidates(project)
+
+
+def test_ancestor_walk_probes_identity_only_for_directories_with_a_manifest(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = tmp_path / "workspace" / "target"
+    project.mkdir(parents=True)
+    for index in range(5):
+        (project.parent / f"decoy-{index}").mkdir()
+    core = _repo(project.parent, "renamed-core", "verifysignal")
+    probed: list[Path] = []
+    real_probe = repo_resolution._is_core_dev_checkout
+
+    def track_identity_probe(candidate: Path) -> bool:
+        probed.append(candidate)
+        return real_probe(candidate)
+
+    monkeypatch.setattr(repo_resolution, "_is_core_dev_checkout", track_identity_probe)
+
+    assert core in ancestor_core_candidates(project)
+
+    local_probes = [candidate for candidate in probed if candidate.parent == project.parent.resolve()]
+    assert local_probes == [core.resolve()]
 
 
 def test_ancestor_walk_still_accepts_a_bare_executable(tmp_path: Path) -> None:

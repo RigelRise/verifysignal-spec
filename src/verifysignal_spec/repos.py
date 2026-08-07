@@ -195,22 +195,36 @@ def ancestor_core_candidates(project: Path) -> list[Path]:
     for node in [start, *start.parents]:
         parent = node.parent
         try:
-            entries = sorted(parent.iterdir())
+            eligible: list[tuple[Path, bool]] = []
+            with os.scandir(parent) as entries:
+                for entry in entries:
+                    # DirEntry uses the directory record's type on supported filesystems, avoiding a
+                    # separate stat merely to reject ordinary non-Core siblings. Only directories
+                    # with the one manifest that can identify a Core reach the slower path below.
+                    if entry.name.startswith(".") or entry.name == "node_modules":
+                        continue
+                    try:
+                        is_directory = entry.is_dir(follow_symlinks=True)
+                    except OSError:
+                        continue
+                    candidate = Path(entry.path)
+                    if is_directory:
+                        if not os.path.isfile(candidate / SIBLING_IDENTITY["core"].manifest):
+                            continue
+                        eligible.append((candidate, True))
+                    elif is_core_executable_name(entry.name):
+                        eligible.append((candidate, False))
         except OSError:
             continue
-        for candidate in entries:
-            # The old lookup was one stat per ancestor level; this lists each level instead, so keep
-            # the per-entry work cheap and skip what can never be a checkout.
-            if candidate.name.startswith(".") or candidate.name == "node_modules":
-                continue
+        for candidate, is_checkout in sorted(eligible, key=lambda item: item[0]):
             resolved = candidate.resolve()
             if resolved == start or resolved in seen:
                 continue
             seen.add(resolved)
-            if candidate.is_dir():
+            if is_checkout:
                 if _is_core_dev_checkout(resolved):
                     found.append(resolved)
-            elif is_core_executable_name(candidate.name):
+            else:
                 found.append(resolved)
     return found
 

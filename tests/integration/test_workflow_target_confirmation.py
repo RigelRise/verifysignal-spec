@@ -5,8 +5,14 @@ from tests.fixtures.workflows.prerequisites import create_current_understanding_
 from verifysignal_spec.workspace.repository import init_workspace, load_use_case
 from verifysignal_spec.workflows.engine import create_workflow_run
 from verifysignal_spec.workflows.repository import load_workflow_run
+from verifysignal_spec.workflows.repository import (
+    load_active_workflow_run,
+    save_workflow_run,
+)
+from verifysignal_spec.workflows.target_confirmation import target_confirmation_blocker
 from verifysignal_spec.workflows.prerequisites import check_prerequisites
 from verifysignal_spec.workflows.stage_persistence import persist_stage
+from verifysignal_spec.workflows.transitions import transition_workflow
 from verifysignal_spec.commands import probe as probe_command
 from verifysignal_spec.commands import run as run_command
 from verifysignal_spec.workspace.models import ArtifactReference
@@ -75,6 +81,12 @@ def test_plan_cannot_self_confirm_an_inferred_target(tmp_path) -> None:
         "specify",
         alias="create-project",
         payload=_specification("http://127.0.0.1:4100"),
+    )
+    transition_workflow(
+        tmp_path,
+        "create-project",
+        stage="clarify",
+        outcome="completed",
     )
 
     result = persist_stage(
@@ -167,6 +179,14 @@ def test_probe_and_run_block_before_core_when_current_workflow_target_is_unconfi
         alias="create-project",
         payload=_specification("http://127.0.0.1:4100"),
     )
+    for stage in ("clarify", "plan", "tasks", "implement", "validate"):
+        transition_workflow(
+            tmp_path,
+            "create-project",
+            stage=stage,
+            outcome="completed",
+            handoff_summary="Canonical unconfirmed-target fixture setup.",
+        )
     record = load_use_case(tmp_path, "create-project")
     record.runRequest = ArtifactReference(
         path=".verifysignal/run-requests/create-project.yaml",
@@ -192,6 +212,81 @@ def test_probe_and_run_block_before_core_when_current_workflow_target_is_unconfi
     assert probed["blockers"][0]["code"] == (
         "clarification.target-environment-confirmation-required"
     )
+    assert executed["blockers"][0]["code"] == (
+        "clarification.target-environment-confirmation-required"
+    )
+
+
+def test_recovered_newer_workflow_cannot_reuse_stale_target_confirmation(
+    tmp_path,
+) -> None:
+    init_workspace(tmp_path)
+    create_current_understanding_workspace(tmp_path)
+    active = create_workflow_run(
+        tmp_path,
+        "Create a project.",
+        alias="create-project",
+    )
+    persist_stage(
+        tmp_path,
+        "specify",
+        alias="create-project",
+        payload=_specification("http://127.0.0.1:4100"),
+    )
+    for stage in ("clarify", "plan", "tasks", "implement", "validate"):
+        transition_workflow(
+            tmp_path,
+            "create-project",
+            stage=stage,
+            outcome="completed",
+            handoff_summary="Canonical unconfirmed-target fixture setup.",
+        )
+
+    active = load_workflow_run(tmp_path, active.runId)
+    active.updatedAt = "2099-08-05T00:00:02Z"
+    save_workflow_run(tmp_path, active)
+    older = type(active).from_dict(active.to_dict())
+    older.runId = "wf-older-confirmed-target"
+    older.startedAt = "2026-08-05T00:00:00Z"
+    older.updatedAt = "2026-08-05T00:00:01Z"
+    older.targetEnvironmentConfirmation = {
+        "questionId": "browser-target-environment",
+        "url": "http://127.0.0.1:4100",
+        "source": "direct-user",
+        "confirmedAt": "2026-08-05T00:00:01Z",
+    }
+    save_workflow_run(tmp_path, older)
+    save_workflow_run(tmp_path, active)
+
+    record = load_use_case(tmp_path, "create-project")
+    assert isinstance(record.workflow, dict)
+    record.workflow["lastWorkflowRunId"] = older.runId
+    question = next(
+        item
+        for item in record.authoringQuestions
+        if item.id == "browser-target-environment"
+    )
+    question.status = "answered"
+    save_use_case(tmp_path, record)
+
+    authoritative = load_active_workflow_run(tmp_path, "create-project")
+    assert authoritative is not None
+    assert authoritative.runId == active.runId
+    assert authoritative.targetEnvironmentConfirmation is None
+
+    blocker = target_confirmation_blocker(
+        tmp_path,
+        load_use_case(tmp_path, "create-project"),
+    )
+    assert blocker is not None
+    assert blocker["code"] == (
+        "clarification.target-environment-confirmation-required"
+    )
+    checked = check_prerequisites(tmp_path, "run", "create-project")
+    assert checked["blockers"][0]["code"] == (
+        "clarification.target-environment-confirmation-required"
+    )
+    executed = run_command.run(tmp_path, "create-project")
     assert executed["blockers"][0]["code"] == (
         "clarification.target-environment-confirmation-required"
     )

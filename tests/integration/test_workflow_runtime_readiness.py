@@ -11,6 +11,7 @@ from verifysignal_spec.workspace.models import ArtifactReference, RuntimeInputRe
 from verifysignal_spec.workspace.repository import init_workspace, save_use_case
 from verifysignal_spec.workflows.core_setup import run_core_setup
 from verifysignal_spec.workflows.readiness import validation_readiness
+from tests.fixtures.workflows.entitlement_preflight_recovery import create_legacy_field_absent_workspace
 from tests.fixtures.workflows.main_skill_run_coverage import create_main_skill_coverage_workspace
 
 
@@ -112,9 +113,11 @@ browser:
     assert "runtime.side-effect-core-contract-missing" in result["runtimeReadiness"]["findingIds"]
 
 
-def test_validate_missing_core_blocker_routes_to_setup(tmp_path, monkeypatch) -> None:
-    monkeypatch.setenv("VERIFYSIGNAL_CORE_CMD", "missing-verifysignal-core-runtime")
-    create_main_skill_coverage_workspace(tmp_path)
+def test_validate_missing_core_blocker_routes_to_setup(tmp_path) -> None:
+    create_main_skill_coverage_workspace(
+        tmp_path,
+        core_cmd="missing-verifysignal-core-runtime",
+    )
 
     result = validate_run(tmp_path, "profile-view-unauth", runtime_readiness=True)
 
@@ -125,19 +128,19 @@ def test_validate_missing_core_blocker_routes_to_setup(tmp_path, monkeypatch) ->
     assert blocker["recoveryCommand"] == "verifysignal core setup --json"
 
 
-def test_core_setup_success_clears_previous_missing_core_readiness(tmp_path, monkeypatch) -> None:
+def test_core_setup_success_clears_previous_missing_core_readiness(tmp_path) -> None:
     from tests.helpers import FAKE_CORE
 
-    create_main_skill_coverage_workspace(tmp_path)
-    monkeypatch.setenv("VERIFYSIGNAL_CORE_CMD", "missing-verifysignal-core-runtime")
+    create_main_skill_coverage_workspace(
+        tmp_path,
+        core_cmd="missing-verifysignal-core-runtime",
+    )
 
     missing = validation_readiness(tmp_path, alias="profile-view-unauth")
     assert any(item["code"] == "core.missing" for item in missing["blockers"])
 
-    monkeypatch.setenv("VERIFYSIGNAL_CORE_CMD", str(FAKE_CORE))
-    setup = run_core_setup(tmp_path)
+    setup = run_core_setup(tmp_path, explicit_core_cmd=str(FAKE_CORE))
     assert setup.status == "ready"
-    monkeypatch.delenv("VERIFYSIGNAL_CORE_CMD", raising=False)
 
     ready = validation_readiness(tmp_path, alias="profile-view-unauth")
     assert ready["coreReadiness"]["status"] == "available"
@@ -151,6 +154,7 @@ def test_validation_readiness_uses_managed_runtime_discovery_not_spec_cli_on_pat
     project = workspace_root / "Demo" / "web-app"
     project.mkdir(parents=True)
     create_main_skill_coverage_workspace(project)
+    create_legacy_field_absent_workspace(project)
     shutil.copy2(FAKE_CORE, workspace_root / "verifysignal")
     os.chmod(workspace_root / "verifysignal", 0o755)
 
@@ -182,9 +186,12 @@ def test_validation_readiness_uses_managed_runtime_discovery_not_spec_cli_on_pat
     assert not result["blockers"]
 
 
-def test_run_missing_core_stderr_points_to_setup(tmp_path, monkeypatch) -> None:
-    monkeypatch.setenv("VERIFYSIGNAL_CORE_CMD", "missing-verifysignal-core-run")
-    create_main_skill_coverage_workspace(tmp_path)
+def test_run_missing_core_stderr_points_to_setup(tmp_path) -> None:
+    create_main_skill_coverage_workspace(
+        tmp_path,
+        core_cmd="missing-verifysignal-core-run",
+        protected_ready=True,
+    )
 
     code, _out, err = _cli([
         "run",

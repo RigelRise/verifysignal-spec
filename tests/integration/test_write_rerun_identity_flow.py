@@ -33,6 +33,7 @@ def test_committed_write_rerun_preflight_allows_refreshed_project_title(tmp_path
         tmp_path,
         rerun_policy={"afterCommit": "allowed-with-new-inputs", "refreshRuntimeInputs": ["projectTitle"]},
         last_run=committed_last_run(),
+        protected_ready=True,
     )
 
     result = run_command.run(tmp_path, "add-collaboration-project", interactive=False, core_cmd=str(FAKE_CORE))

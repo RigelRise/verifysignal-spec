@@ -43,12 +43,8 @@ from .repository import (
     fingerprint_text,
     project_relative,
     load_artifact_plan,
-    load_workflow_run,
     save_artifact_plan,
     save_task_set,
-    save_workflow_run,
-    save_workflow_state,
-    state_document,
 )
 from .skill_execution_boundary import multi_skill_capability, resolve_execution_boundary
 from .stage_documents import (
@@ -60,6 +56,7 @@ from .stage_documents import (
     write_task_set,
 )
 from .stage_contracts import StagePayloadContractError, missing_required_field_error, unsupported_field_warnings
+from .transitions import transition_workflow, validate_workflow_stage_position
 
 PERSISTABLE_STAGES = {"understand", "specify", "clarify", "plan", "tasks", "implement"}
 BLOCKING_CLARIFICATION_AREAS = {"runtime", "data", "credential", "credentials", "permission", "permissions", "outcome", "expectedOutcome"}
@@ -112,7 +109,9 @@ def persist_stage(
         )
 
     project = project.resolve()
-    init_workspace(project)
+    workspace_file = layout.workspace_root(project) / layout.WORKSPACE_FILE
+    if not workspace_file.exists():
+        init_workspace(project)
     try:
         if stage == "understand":
             result = _persist_understanding(project, content, normalized_scope)
@@ -334,6 +333,7 @@ def _persist_specification(project: Path, alias: str, content: dict[str, Any]) -
     _require_fields(content, ["surface", "behavior", "expectedOutcome"], stage="specify")
     if not (content.get("sourceInventoryItems") or content.get("customSourceReason")):
         raise ValueError("Specification payload requires sourceInventoryItems or customSourceReason.")
+    validate_workflow_stage_position(project, alias, "specify")
     ensure_workflow_workspace(project, alias)
     goal = str(content["behavior"])
     record = create_or_load_use_case(project, alias, goal)
@@ -354,7 +354,17 @@ def _persist_specification(project: Path, alias: str, content: dict[str, Any]) -
     save_use_case(project, record)
     runtime = [str(item) for item in content.get("runtimeAssumptions", [])]
     write_specification(project, alias, goal, runtime_assumptions=runtime)
-    save_workflow_state(project, alias, state_document(project, alias, current_stage="clarify", status="paused"))
+    transition_workflow(
+        project,
+        alias,
+        stage="specify",
+        outcome="completed",
+        document_path=project_relative(
+            project,
+            layout.workflow_stage_document_path(project, alias, "specify"),
+        ),
+        handoff_summary="The use-case specification was persisted.",
+    )
     return StagePersistenceResult(
         stage="specify",
         alias=alias,
@@ -375,6 +385,7 @@ def _persist_clarifications(project: Path, alias: str, content: dict[str, Any]) 
     record = load_use_case(project, alias)
     if "questions" not in content and not content.get("answers"):
         raise ValueError("Clarification payload requires questions or answers.")
+    validate_workflow_stage_position(project, alias, "clarify")
     if "questions" in content:
         questions = [_question_from_dict(item) for item in content.get("questions", [])]
         existing_target = next(
@@ -411,21 +422,51 @@ def _persist_clarifications(project: Path, alias: str, content: dict[str, Any]) 
         if answer_target:
             confirmed_target = answer_target
     record.authoringQuestions = questions
+    target_confirmation = None
     if confirmed_target:
         target = confirmed_target["locator"]
         _upsert_stage_handoff_decision(record, target, source_stage="clarify")
-        _confirm_target_for_active_workflow_run(
-            project,
-            record,
-            target,
-            source=confirmed_target["source"],
-        )
+        target_confirmation = {
+            "url": target,
+            "source": confirmed_target["source"],
+            "questionId": "browser-target-environment",
+        }
     _apply_write_flow_fields(project, record, content)
     save_use_case(project, record)
     write_clarifications(project, alias, [question.to_dict() for question in questions])
-    save_workflow_state(project, alias, state_document(project, alias, current_stage="plan", status="paused"))
     blockers = unresolved_blocking_questions(project, alias)
     warnings = ["Blocking environment-dependent questions remain unresolved."] if blockers else []
+    transition_blockers = (
+        [
+            ReadinessBlocker(
+                code="clarification.unresolved-blocking",
+                message=(
+                    "Runtime, data, credential, permission, or outcome "
+                    "clarifications remain unresolved."
+                ),
+                recoveryCommand=f"/verifysignal-clarify {alias}",
+            ).to_dict()
+        ]
+        if blockers
+        else []
+    )
+    transition_workflow(
+        project,
+        alias,
+        stage="clarify",
+        outcome="blocked" if blockers else "completed",
+        blockers=transition_blockers,
+        document_path=project_relative(
+            project,
+            layout.workflow_stage_document_path(project, alias, "clarify"),
+        ),
+        target_confirmation=target_confirmation,
+        handoff_summary=(
+            "Clarifications remain blocked."
+            if blockers
+            else "Clarifications were persisted and blocking questions resolved."
+        ),
+    )
     return StagePersistenceResult(
         stage="clarify",
         alias=alias,
@@ -438,7 +479,11 @@ def _persist_clarifications(project: Path, alias: str, content: dict[str, Any]) 
         ],
         updatedRecords=[f"use-cases/{alias}", "registry"],
         warnings=warnings,
-        nextCommand=f"/verifysignal-plan {alias}",
+        nextCommand=(
+            f"/verifysignal-clarify {alias}"
+            if blockers
+            else f"/verifysignal-plan {alias}"
+        ),
     )
 
 
@@ -446,6 +491,7 @@ def _persist_plan(project: Path, alias: str, content: dict[str, Any]) -> StagePe
     alias = _alias(alias)
     content = _normalize_plan_content(alias, content)
     record = load_use_case(project, alias)
+    validate_workflow_stage_position(project, alias, "plan")
     supplied_target = _extract_target_environment(content, source_stage="plan")
     if supplied_target:
         _ensure_browser_target_question(
@@ -530,7 +576,17 @@ def _persist_plan(project: Path, alias: str, content: dict[str, Any]) -> StagePe
     )
     save_artifact_plan(project, plan)
     write_artifact_plan(project, plan)
-    save_workflow_state(project, alias, state_document(project, alias, current_stage="tasks", status="paused"))
+    transition_workflow(
+        project,
+        alias,
+        stage="plan",
+        outcome="completed",
+        document_path=project_relative(
+            project,
+            layout.workflow_stage_document_path(project, alias, "plan"),
+        ),
+        handoff_summary="The artifact plan was persisted.",
+    )
     return StagePersistenceResult(
         stage="plan",
         alias=alias,
@@ -557,9 +613,20 @@ def _persist_tasks(project: Path, alias: str, content: dict[str, Any]) -> StageP
         generatedAt=now_iso(),
         tasks=tasks,
     )
+    validate_workflow_stage_position(project, alias, "tasks")
     save_task_set(project, task_set)
     write_task_set(project, task_set)
-    save_workflow_state(project, alias, state_document(project, alias, current_stage="implement", status="paused"))
+    transition_workflow(
+        project,
+        alias,
+        stage="tasks",
+        outcome="completed",
+        document_path=project_relative(
+            project,
+            layout.workflow_stage_document_path(project, alias, "tasks"),
+        ),
+        handoff_summary="The authoring task set was persisted.",
+    )
     return StagePersistenceResult(
         stage="tasks",
         alias=alias,
@@ -694,6 +761,7 @@ def _persist_implementation(project: Path, alias: str, content: dict[str, Any]) 
     record.validation = {"status": coherence.status, "authoringCoherence": coherence.to_dict()}
     record.status = "draft"
 
+    validate_workflow_stage_position(project, alias, "implement")
     run_request_schema = _artifact_schema_from_core_contract(core_contract, "runRequest", "qa-run-request/v1")
     skill_schema = _artifact_schema_from_core_contract(core_contract, "skill", "qa-skill/v1")
     run_request_content = _ensure_core_run_request_document(_artifact_content(content["runRequest"]), record, content, core_contract=core_contract)
@@ -723,7 +791,19 @@ def _persist_implementation(project: Path, alias: str, content: dict[str, Any]) 
 
     save_use_case(project, record)
     write_handoff(project, alias, "implement", "Draft canonical artifacts were persisted by verifysignal workflow persist implement. Validation is still required.")
-    save_workflow_state(project, alias, state_document(project, alias, current_stage="validate", status="paused"))
+    transition_workflow(
+        project,
+        alias,
+        stage="implement",
+        outcome="completed",
+        document_path=project_relative(
+            project,
+            layout.workflow_stage_document_path(project, alias, "implement"),
+        ),
+        handoff_summary=(
+            "Draft canonical artifacts were persisted; validation is required."
+        ),
+    )
     return StagePersistenceResult(
         stage="implement",
         alias=alias,
@@ -1190,30 +1270,6 @@ def _resolve_browser_target_questions(record: Any, locator: str) -> None:
         if question.id == "browser-target-environment":
             question.status = "answered"
             question.answerSummary = locator
-
-
-def _confirm_target_for_active_workflow_run(
-    project: Path,
-    record: Any,
-    locator: str,
-    *,
-    source: str,
-) -> None:
-    workflow = record.workflow if isinstance(record.workflow, dict) else {}
-    run_id = workflow.get("lastWorkflowRunId")
-    if not run_id:
-        return
-    try:
-        run = load_workflow_run(project, str(run_id))
-    except FileNotFoundError:
-        return
-    run.targetEnvironmentConfirmation = {
-        "url": locator,
-        "source": source,
-        "confirmedAt": now_iso(),
-        "questionId": "browser-target-environment",
-    }
-    save_workflow_run(project, run)
 
 
 def _upsert_stage_handoff_decision(record: Any, locator: str, *, source_stage: str) -> None:

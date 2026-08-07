@@ -28,6 +28,8 @@ def evaluate_runtime_readiness(
     reachability_checker: ReachabilityChecker | None = None,
     core_contract: dict[str, Any] | None = None,
     environment_values: dict[str, str] | None = None,
+    command_compatibility_status: str | None = None,
+    trust_material_status: str | None = None,
 ) -> RuntimeReadinessCheck:
     """Evaluate bounded runtime readiness without executing the browser flow."""
 
@@ -71,6 +73,22 @@ def evaluate_runtime_readiness(
             findings.append("runtime.target-unreachable")
 
     authoring_status = _authoring_status(authoring_result)
+    command_status = command_compatibility_status or (
+        "passed" if authoring_result is not None else "not-checked"
+    )
+    trust_status = trust_material_status or (
+        "ready" if authoring_result is not None else "not-checked"
+    )
+    protected_status = (
+        "not-checked"
+        if authoring_result is None
+        else ("passed" if authoring_status == "passed" else "blocked")
+    )
+    readiness_scope = (
+        "protected-operation"
+        if authoring_result is not None
+        else "command-and-trust-inputs"
+    )
     if authoring_status in {"failed", "blocked"}:
         findings.append("runtime.authoring-readiness-blocked")
 
@@ -89,11 +107,17 @@ def evaluate_runtime_readiness(
         status = "blocked"
     elif authoring_status in {"failed", "blocked"}:
         status = "blocked"
+    elif command_status != "passed" or trust_status != "ready" or protected_status != "passed":
+        status = "blocked"
     elif any(item.get("severity") == "blocking" for item in side_effect_findings):
         status = "blocked"
 
     return RuntimeReadinessCheck(
         useCaseAlias=alias,
+        commandCompatibilityStatus=command_status,  # type: ignore[arg-type]
+        trustMaterialStatus=trust_status,  # type: ignore[arg-type]
+        protectedOperationStatus=protected_status,
+        readinessScope=readiness_scope,
         targetResolutionStatus=target_resolution,
         targetReachabilityStatus=reachability_status,
         requiredPrerequisiteStatus=prerequisite_status,

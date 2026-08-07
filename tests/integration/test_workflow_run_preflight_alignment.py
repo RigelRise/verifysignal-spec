@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from verifysignal_spec.commands import run as run_command
 from verifysignal_spec.commands import validate as validate_command
 from verifysignal_spec.workspace import layout
 from verifysignal_spec.workflows.prerequisites import check_prerequisites
-from verifysignal_spec.workspace.repository import save_use_case
+from verifysignal_spec.workspace.repository import load_use_case, save_use_case
 
 from tests.fixtures.workflows.side_effect_contract_alignment import (
     blocked_write_last_run,
@@ -12,6 +13,11 @@ from tests.fixtures.workflows.side_effect_contract_alignment import (
     unsupported_dom_last_run,
 )
 from tests.fixtures.workflows.prerequisites import create_current_understanding_workspace
+from tests.fixtures.workflows.main_skill_run_coverage import (
+    ALIAS as READ_ONLY_ALIAS,
+    create_main_skill_coverage_workspace,
+)
+from tests.helpers import FAKE_CORE
 
 
 def test_validate_blocks_runtime_unsupported_confirmation_signal(tmp_path, monkeypatch) -> None:
@@ -44,7 +50,7 @@ def test_validate_blocks_runtime_unsupported_confirmation_signal(tmp_path, monke
 
 def test_workflow_check_run_surfaces_same_blocked_rerun_decision_as_run_preflight(tmp_path) -> None:
     create_current_understanding_workspace(tmp_path)
-    record = create_write_policy_workspace(tmp_path, last_run=blocked_write_last_run())
+    record = create_write_policy_workspace(tmp_path, last_run=blocked_write_last_run(), protected_ready=True)
     record.status = "ready"
     save_use_case(tmp_path, record)
     _write_minimal_stage_artifacts(tmp_path, "add-collaboration-project")
@@ -59,7 +65,7 @@ def test_workflow_check_run_surfaces_same_blocked_rerun_decision_as_run_prefligh
 
 def test_workflow_check_run_blocks_confirmable_write_rerun_with_guided_approval(tmp_path) -> None:
     create_current_understanding_workspace(tmp_path)
-    record = create_write_policy_workspace(tmp_path, last_run=confirmable_write_last_run())
+    record = create_write_policy_workspace(tmp_path, last_run=confirmable_write_last_run(), protected_ready=True)
     record.status = "ready"
     save_use_case(tmp_path, record)
     _write_minimal_stage_artifacts(tmp_path, "add-collaboration-project")
@@ -76,6 +82,35 @@ def test_workflow_check_run_blocks_confirmable_write_rerun_with_guided_approval(
     assert result["blockers"][0]["code"] == "runtime.rerun-confirmation-required"
     assert "verifysignal workflow approve-rerun --alias add-collaboration-project" in result["nextCommand"]
     assert result["rerunDecision"]["confirmationId"] in result["nextCommand"]
+
+
+def test_standalone_authored_run_uses_the_same_executable_artifacts_for_check_and_direct(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    create_current_understanding_workspace(tmp_path)
+    create_main_skill_coverage_workspace(
+        tmp_path,
+        core_cmd=str(FAKE_CORE),
+        protected_ready=True,
+    )
+    record = load_use_case(tmp_path, READ_ONLY_ALIAS)
+    record.status = "ready"
+    save_use_case(tmp_path, record)
+    monkeypatch.setenv("FAKE_VERIFYSIGNAL_MODE", "full-coverage")
+
+    check = check_prerequisites(tmp_path, "run", alias=READ_ONLY_ALIAS)
+    direct = run_command.run(
+        tmp_path,
+        READ_ONLY_ALIAS,
+        interactive=False,
+        core_cmd=str(FAKE_CORE),
+    )
+
+    assert check["status"] == "ready"
+    assert check["canProceed"] is True
+    assert check["blockers"] == []
+    assert direct["status"] == "passed"
 
 
 def _write_minimal_stage_artifacts(project, alias: str) -> None:

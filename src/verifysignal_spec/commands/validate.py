@@ -9,9 +9,9 @@ from verifysignal_spec.commands.run_request_preparation import (
     write_prepared_run_request,
 )
 from verifysignal_spec.core.adapter import CoreAdapter
-from verifysignal_spec.core.contracts import core_entitlement_blocker_code
 from verifysignal_spec.core.errors import CoreExecutionError, CoreIncompatibleError, CoreMissingError
 from verifysignal_spec.core.executable_contract import project_core_contract
+from verifysignal_spec.core.outcomes import NormalizedCoreOutcome, normalize_core_outcome
 from verifysignal_spec.runtime.entitlement import api_base_url_for_runtime, valid_receipt_path
 from verifysignal_spec.runtime.env_file import (
     EnvironmentFileError,
@@ -20,7 +20,6 @@ from verifysignal_spec.runtime.env_file import (
     load_environment_file,
     resolve_environment_file_path,
 )
-from verifysignal_spec.runtime.models import RuntimeSetupBlocker
 from verifysignal_spec.runtime.resolver import ensure_core_runtime
 from verifysignal_spec.workflows.first_run import advance_guided_first_run_state
 from verifysignal_spec.workflows.models import WORKFLOW_VALIDATION_READINESS_SCHEMA, CoreReadiness, ReadinessBlocker, ValidationReadinessSummary
@@ -33,6 +32,10 @@ from verifysignal_spec.workflows.readiness import (
     validation_readiness,
 )
 from verifysignal_spec.workflows.runtime_readiness import evaluate_runtime_readiness
+from verifysignal_spec.workflows.transitions import (
+    managed_workflow_stage_decision,
+    transition_workflow,
+)
 from verifysignal_spec.workspace.repository import create_readiness_snapshot_from_validation, load_supersede_reviews, load_use_case, resolve_artifacts, update_validation
 from verifysignal_spec.workspace.validation import validate_side_effect_declaration
 
@@ -63,11 +66,30 @@ def run(
     api_base_url: str | None = None,
     env_file: Path | None = None,
 ) -> dict[str, Any]:
+    stage_decision = managed_workflow_stage_decision(
+        project,
+        alias,
+        "validate",
+    )
+    stage_blocker = stage_decision.get("blocker")
+    if isinstance(stage_blocker, dict):
+        return {
+            "schemaVersion": WORKFLOW_VALIDATION_READINESS_SCHEMA,
+            "stage": "validate",
+            "alias": alias,
+            "status": "blocked",
+            "canProceed": False,
+            "runtimeReadinessStatus": "not-run",
+            "blockers": [stage_blocker],
+            "recommendedAction": "resume-current-stage",
+            "nextAction": stage_blocker["recoveryCommand"],
+        }
+    managed_workflow = bool(stage_decision["managed"]) and runtime_readiness
     structural = structural_validation(project, alias=alias)
     if structural.status == "blocked":
         structural_dict = structural.to_dict()
         detailed_blockers = _structural_guided_blockers(structural_dict.get("findings", []), alias)
-        return {
+        result = {
             "schemaVersion": WORKFLOW_VALIDATION_READINESS_SCHEMA,
             "alias": alias,
             "status": "blocked",
@@ -82,6 +104,12 @@ def run(
             ]
             + detailed_blockers,
         }
+        return _transition_validation_result(
+            project,
+            alias,
+            result,
+            managed_workflow=managed_workflow,
+        )
     environment_values: dict[str, str] = {}
     environment_warnings: list[dict[str, str]] = []
     if env_file:
@@ -94,13 +122,19 @@ def run(
             )
             environment_warnings = git_exposure_warnings(project, env_file_path)
         except EnvironmentFileError as exc:
-            return {
+            result = {
                 "schemaVersion": WORKFLOW_VALIDATION_READINESS_SCHEMA,
                 "alias": alias,
                 "status": "blocked",
                 "blockers": [exc.blocker()],
                 "valuesIncluded": False,
             }
+            return _transition_validation_result(
+                project,
+                alias,
+                result,
+                managed_workflow=managed_workflow,
+            )
     managed_runtime = ensure_core_runtime(project, explicit_core_cmd=core_cmd, api_base_url=api_base_url, context="validate")
     if managed_runtime.status != "ready":
         contract_blockers = managed_runtime_contract_blockers(managed_runtime)
@@ -130,8 +164,18 @@ def run(
             ],
         }
         update_validation(project, alias, result)
-        _persist_readiness_snapshot(project, alias, result)
-        return result
+        _persist_readiness_snapshot(
+            project,
+            alias,
+            result,
+            protected_operation_attempted=runtime_readiness,
+        )
+        return _transition_validation_result(
+            project,
+            alias,
+            result,
+            managed_workflow=managed_workflow,
+        )
     core_contract = _core_contract_for_coherence(project, managed_runtime.runtimeCommand)
     record, run_request, main_skill, skills = resolve_artifacts(project, alias, core_contract=core_contract)
     contract_blockers = [
@@ -148,8 +192,18 @@ def run(
             "blockers": [blocker.to_dict() for blocker in contract_blockers],
         }
         update_validation(project, alias, result)
-        _persist_readiness_snapshot(project, alias, result)
-        return result
+        _persist_readiness_snapshot(
+            project,
+            alias,
+            result,
+            protected_operation_attempted=runtime_readiness,
+        )
+        return _transition_validation_result(
+            project,
+            alias,
+            result,
+            managed_workflow=managed_workflow,
+        )
     coherence = evaluate_persisted_coherence(
         project,
         alias,
@@ -172,8 +226,18 @@ def run(
             ],
         }
         update_validation(project, alias, result)
-        _persist_readiness_snapshot(project, alias, result)
-        return result
+        _persist_readiness_snapshot(
+            project,
+            alias,
+            result,
+            protected_operation_attempted=runtime_readiness,
+        )
+        return _transition_validation_result(
+            project,
+            alias,
+            result,
+            managed_workflow=managed_workflow,
+        )
     side_effect_findings = validate_side_effect_declaration(
         record.sideEffects,
         record.rerunPolicy,
@@ -208,8 +272,18 @@ def run(
             ],
         }
         update_validation(project, alias, result)
-        _persist_readiness_snapshot(project, alias, result)
-        return result
+        _persist_readiness_snapshot(
+            project,
+            alias,
+            result,
+            protected_operation_attempted=runtime_readiness,
+        )
+        return _transition_validation_result(
+            project,
+            alias,
+            result,
+            managed_workflow=managed_workflow,
+        )
     validation_runtime_values = _validation_runtime_values(record, run_request, alias)
     prepared_document, confirmation_findings, prepared_changed = prepare_run_request_document(
         run_request,
@@ -241,42 +315,57 @@ def run(
             "blockers": blockers,
         }
         update_validation(project, alias, result)
-        _persist_readiness_snapshot(project, alias, result)
-        return result
+        _persist_readiness_snapshot(
+            project,
+            alias,
+            result,
+            protected_operation_attempted=runtime_readiness,
+        )
+        return _transition_validation_result(
+            project,
+            alias,
+            result,
+            managed_workflow=managed_workflow,
+        )
     authoring_run_request = (
         write_prepared_run_request(project / ".verifysignal" / "readiness" / alias, f"{alias}-validation", prepared_document)
         if prepared_changed and prepared_document is not None
         else run_request
     )
+    entitlement_api_base_url = api_base_url_for_runtime(managed_runtime, api_base_url)
     result = CoreAdapter(executable=managed_runtime.runtimeCommand, cwd=project).authoring_check(
         authoring_run_request,
         main_skill,
         skills,
         runtime_readiness=runtime_readiness,
         env=environment_values,
-        entitlement_receipt=valid_receipt_path(
-            api_base_url_for_runtime(managed_runtime, api_base_url),
-        ),
+        entitlement_receipt=valid_receipt_path(entitlement_api_base_url),
+        entitlement_api_base_url=entitlement_api_base_url,
     )
+    outcome = normalize_core_outcome("authoring-check", result)
+    normalized_outcome = outcome.to_dict()
     runtime_check = (
         evaluate_runtime_readiness(
             project,
             alias,
-            authoring_result=result,
+            authoring_result=normalized_outcome,
             core_contract=core_contract,
             environment_values=environment_values,
+            command_compatibility_status=managed_runtime.commandCompatibilityStatus,
+            trust_material_status=managed_runtime.trustMaterialStatus,
         )
         if runtime_readiness
         else None
     )
     wrapped = {
         "alias": alias,
-        "status": result.get("status", "error"),
+        "status": outcome.status,
         "selectedMainSkill": _selected_main_skill(record.mainSkill, main_skill),
         "skillSelectionStatus": "matched",
         "authoringCoherence": coherence.to_dict(),
         "managedRuntimeReadiness": managed_runtime.to_dict(),
-        "core": result,
+        "core": result if outcome.kind == "success" else normalized_outcome,
+        "coreOutcome": normalized_outcome,
     }
     if environment_warnings:
         wrapped["credentialWarnings"] = environment_warnings
@@ -288,15 +377,6 @@ def run(
     named_outputs = _named_output_summary(record)
     if named_outputs:
         wrapped["namedOutputs"] = named_outputs
-    entitlement_blocker_code = core_entitlement_blocker_code(result)
-    if entitlement_blocker_code:
-        blocker = RuntimeSetupBlocker(
-            code=entitlement_blocker_code,
-            message="VerifySignal Core rejected the entitlement receipt for this protected operation.",
-            recoveryCommand="Run `verifysignal init --here --integration codex` to unlock or refresh runtime entitlement.",
-        )
-        wrapped["status"] = "blocked"
-        wrapped["blockers"] = [ReadinessBlocker.from_dict(blocker.to_dict()).to_dict()]
     authored_evidence_status = _authored_evidence_coverage_status(coherence.to_dict().get("gateCoverage", []))
     runtime_status = "not-run"
     if runtime_check:
@@ -312,6 +392,10 @@ def run(
                 ).to_dict()
                 for finding in runtime_check.findingIds
             ]
+    if outcome.kind != "success":
+        blocker = _normalized_outcome_blocker(outcome, alias)
+        wrapped["status"] = "blocked"
+        wrapped["blockers"] = [blocker.to_dict()]
     summary = ValidationReadinessSummary(
         alias=alias,
         status="blocked" if wrapped.get("status") == "blocked" else ("passed" if wrapped.get("status") == "passed" else "failed"),
@@ -348,13 +432,120 @@ def run(
         )
     if guided_stage:
         wrapped["guidedFirstRunState"] = guided_stage
-    _persist_readiness_snapshot(project, alias, wrapped)
-    return wrapped
+    _persist_readiness_snapshot(
+        project,
+        alias,
+        wrapped,
+        protected_operation_attempted=runtime_readiness,
+    )
+    return _transition_validation_result(
+        project,
+        alias,
+        wrapped,
+        managed_workflow=managed_workflow,
+    )
 
 
-def _persist_readiness_snapshot(project: Path, alias: str, result: dict[str, Any]) -> None:
+def _transition_validation_result(
+    project: Path,
+    alias: str,
+    result: dict[str, Any],
+    *,
+    managed_workflow: bool,
+) -> dict[str, Any]:
+    if not managed_workflow:
+        return result
+    passed = result.get("status") == "passed"
+    blockers = [] if passed else _workflow_transition_blockers(result)
+    transition_workflow(
+        project,
+        alias,
+        stage="validate",
+        outcome="completed" if passed else "blocked",
+        blockers=blockers,
+        handoff_summary=(
+            "Protected validation passed; browser execution is ready."
+            if passed
+            else "Protected validation is blocked and must be retried."
+        ),
+    )
+    return result
+
+
+def _workflow_transition_blockers(result: dict[str, Any]) -> list[dict[str, Any]]:
+    blockers: list[dict[str, Any]] = []
+    for item in result.get("blockers", []):
+        if not isinstance(item, dict) or not item.get("code"):
+            continue
+        blockers.append(
+            {
+                key: item[key]
+                for key in (
+                    "code",
+                    "severity",
+                    "category",
+                    "message",
+                    "recoveryCommand",
+                )
+                if item.get(key) is not None
+            }
+        )
+    if blockers:
+        return blockers
+    return [
+        {
+            "code": "validation.protected-blocked",
+            "severity": "blocker",
+            "category": "validation",
+            "message": "Protected validation did not pass.",
+            "recoveryCommand": (
+                f"verifysignal workflow check validate --alias {result.get('alias', '')} --json"
+            ),
+        }
+    ]
+
+
+def _normalized_outcome_blocker(
+    outcome: NormalizedCoreOutcome,
+    alias: str,
+) -> ReadinessBlocker:
+    code = outcome.blockerCode or "core.error"
+    if code == "core.contract-invalid":
+        return ReadinessBlocker(
+            code=code,
+            category="compatibility",
+            message="VerifySignal Core returned a response that does not match the protected operation's public schema.",
+            recoveryCommand="Upgrade VerifySignal Core or VerifySignal Spec to compatible public CLI JSON schemas.",
+        )
+    if code.startswith("entitlement."):
+        return ReadinessBlocker(
+            code=code,
+            category="entitlement",
+            message="VerifySignal Core rejected the entitlement receipt for this protected operation.",
+            recoveryCommand="Refresh the managed runtime or request a new entitlement receipt, then rerun protected validation.",
+        )
+    return ReadinessBlocker(
+        code=code,
+        category="environment",
+        message="VerifySignal Core blocked the protected authoring check.",
+        recoveryCommand=f"verifysignal validate {alias} --runtime-readiness --json",
+    )
+
+
+def _persist_readiness_snapshot(
+    project: Path,
+    alias: str,
+    result: dict[str, Any],
+    *,
+    protected_operation_attempted: bool,
+) -> None:
     try:
-        create_readiness_snapshot_from_validation(project, alias, result)
+        create_readiness_snapshot_from_validation(
+            project,
+            alias,
+            result,
+            protected_operation_attempted=protected_operation_attempted,
+        )
     except Exception:
         # Readiness snapshots are advisory local metadata; validation output remains authoritative.
         pass

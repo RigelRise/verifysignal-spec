@@ -495,7 +495,8 @@ class PostCommitInterpretation:
 
     @classmethod
     def from_core_result(cls, core_result: dict[str, Any] | None) -> "PostCommitInterpretation":
-        data = core_result.get("data") if isinstance(core_result, dict) and isinstance(core_result.get("data"), dict) else core_result
+        root = core_result if isinstance(core_result, dict) else {}
+        data = root.get("data") if isinstance(root.get("data"), dict) else root
         data = data if isinstance(data, dict) else {}
         report = data.get("report") if isinstance(data.get("report"), dict) else {}
         source = report or data
@@ -506,10 +507,32 @@ class PostCommitInterpretation:
         failure_phase = str(classification.get("failurePhase") or side_effects.get("failurePhase") or "unknown")
         side_effect_status = str(classification.get("sideEffectStatus") or side_effects.get("status") or "unknown")
         post_commit = commit_reached and failure_phase in {"post-commit", "post-verification"}
-        risky_statuses = {"possible", "likely-committed", "committed-confirmed", "violated", "unknown"}
-        side_effect_may_exist = commit_reached and side_effect_status in risky_statuses
+        risky_statuses = {
+            "possible",
+            "inferred",
+            "likely-committed",
+            "committed",
+            "committed-confirmed",
+            "violated",
+        }
+        data_side_effects = data.get("sideEffects") if isinstance(data.get("sideEffects"), dict) else {}
+        report_side_effects = report.get("sideEffects") if isinstance(report.get("sideEffects"), dict) else {}
+        execution_evidence = [
+            root.get("execution") if isinstance(root.get("execution"), dict) else {},
+            data.get("execution") if isinstance(data.get("execution"), dict) else {},
+            report.get("execution") if isinstance(report.get("execution"), dict) else {},
+        ]
+        explicit_runtime_risk = any(
+            item.get("sideEffectMayExist") is True
+            for item in [*execution_evidence, data_side_effects, report_side_effects]
+        )
+        side_effect_may_exist = (
+            explicit_runtime_risk
+            or side_effect_status in risky_statuses
+            or (commit_reached and side_effect_status == "unknown")
+        )
         if post_commit or side_effect_may_exist:
-            message = "The commit step was reached; the side effect may already exist before final verification completed."
+            message = "The public Core result indicates that the side effect may already exist before final verification completed."
         else:
             message = "No committed side effect was identified from the public Core result."
         return cls(
@@ -537,6 +560,7 @@ class ConfirmationRequirement:
     recommendedAction: str
     blocksExecution: bool = True
     expiresWhen: list[str] = field(default_factory=list)
+    sourceRunId: str | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ConfirmationRequirement":
@@ -549,6 +573,7 @@ class ConfirmationRequirement:
             recommendedAction=str(data.get("recommendedAction", "")),
             blocksExecution=bool(data.get("blocksExecution", True)),
             expiresWhen=[str(item) for item in data.get("expiresWhen", [])],
+            sourceRunId=(str(data["sourceRunId"]) if data.get("sourceRunId") is not None else None),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -586,6 +611,10 @@ class ReadinessSnapshot:
     alias: str
     status: ReadinessCurrentStatus
     checkedAt: str
+    commandCompatibilityStatus: Literal["not-checked", "passed", "blocked"] = "not-checked"
+    trustMaterialStatus: Literal["not-checked", "ready", "blocked"] = "not-checked"
+    protectedOperationStatus: Literal["not-checked", "passed", "blocked"] = "not-checked"
+    readinessScope: Literal["command-and-trust-inputs", "protected-operation"] = "command-and-trust-inputs"
     artifactFingerprints: dict[str, str] = field(default_factory=dict)
     specVersion: str | None = None
     artifactContractVersion: str | None = None
@@ -606,6 +635,10 @@ class ReadinessSnapshot:
             alias=str(data.get("alias", "")),
             status=data.get("status", "unknown"),
             checkedAt=str(data.get("checkedAt", "")),
+            commandCompatibilityStatus=data.get("commandCompatibilityStatus", "not-checked"),
+            trustMaterialStatus=data.get("trustMaterialStatus", "not-checked"),
+            protectedOperationStatus=data.get("protectedOperationStatus", "not-checked"),
+            readinessScope=data.get("readinessScope", "command-and-trust-inputs"),
             artifactFingerprints={str(k): str(v) for k, v in dict(data.get("artifactFingerprints", {})).items()},
             specVersion=data.get("specVersion"),
             artifactContractVersion=data.get("artifactContractVersion"),
@@ -1027,6 +1060,51 @@ class RepairSession:
 
 
 @dataclass(slots=True)
+class LastCoreAttempt:
+    """Redacted run-invocation intent retained until a real run is durable."""
+
+    attemptedAt: str
+    operation: str
+    status: str
+    executionState: Literal["not-started", "unknown"]
+    schema: str | None = None
+    errorCode: str | None = None
+    sideEffectMayExist: bool | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "LastCoreAttempt":
+        execution_state = str(data.get("executionState") or "unknown")
+        if execution_state not in {"not-started", "unknown"}:
+            execution_state = "unknown"
+        return cls(
+            attemptedAt=str(data.get("attemptedAt", "")),
+            operation=str(data.get("operation", "")),
+            schema=(str(data["schema"]) if data.get("schema") is not None else None),
+            status=str(data.get("status", "error")),
+            errorCode=(str(data["errorCode"]) if data.get("errorCode") is not None else None),
+            executionState=execution_state,  # type: ignore[arg-type]
+            sideEffectMayExist=(
+                data.get("sideEffectMayExist")
+                if isinstance(data.get("sideEffectMayExist"), bool)
+                else None
+            ),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        # This allowlist is intentional: a Core attempt marker must never grow
+        # paths, environment values, raw output, or trust material by accident.
+        return {
+            "attemptedAt": self.attemptedAt,
+            "operation": self.operation,
+            "schema": self.schema,
+            "status": self.status,
+            "errorCode": self.errorCode,
+            "executionState": self.executionState,
+            "sideEffectMayExist": self.sideEffectMayExist,
+        }
+
+
+@dataclass(slots=True)
 class UseCaseRecord:
     alias: str
     title: str
@@ -1060,6 +1138,7 @@ class UseCaseRecord:
     authoringQuestions: list[AuthoringQuestion] = field(default_factory=list)
     validation: dict[str, Any] = field(default_factory=lambda: {"status": "unknown"})
     lastRun: dict[str, Any] | None = None
+    lastCoreAttempt: LastCoreAttempt | None = None
     repair: dict[str, Any] | None = None
     workflow: dict[str, Any] | None = None
     schemaVersion: str = "verifysignal-spec-use-case/v1"
@@ -1094,6 +1173,11 @@ class UseCaseRecord:
             authoringQuestions=[AuthoringQuestion.from_dict(item) for item in data.get("authoringQuestions", [])],
             validation=dict(data.get("validation", {"status": "unknown"})),
             lastRun=data.get("lastRun"),
+            lastCoreAttempt=(
+                LastCoreAttempt.from_dict(data["lastCoreAttempt"])
+                if isinstance(data.get("lastCoreAttempt"), dict)
+                else None
+            ),
             repair=data.get("repair"),
             workflow=data.get("workflow"),
         )
@@ -1114,6 +1198,7 @@ class UseCaseRecord:
         data["artifactCapabilities"] = dict(self.artifactCapabilities) if self.artifactCapabilities else None
         data["profiles"] = [item.to_dict() for item in self.profiles]
         data["authoringQuestions"] = [item.to_dict() for item in self.authoringQuestions]
+        data["lastCoreAttempt"] = self.lastCoreAttempt.to_dict() if self.lastCoreAttempt else None
         return _clean(data)
 
 
