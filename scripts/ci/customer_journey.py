@@ -1381,13 +1381,16 @@ def main() -> int:
 
             # Run preflight enforces the workflow order: a use case must pass
             # validation before ANY run, recorded included — the exact bypass the
-            # entitlement recovery closed. This is the blocker's own documented
-            # recovery command for a workflow paused at validate.
+            # entitlement recovery closed. --runtime-readiness is load-bearing:
+            # the managed workflow only transitions validate -> run on a
+            # readiness-scoped validate (commands/validate.py gates the
+            # transition on it), exactly as the auth leg does.
             record_validate = require_success(
                 spec_cli(
                     [
                         "validate",
                         RECORD_ALIAS,
+                        "--runtime-readiness",
                         "--project",
                         str(workspace),
                         "--json",
