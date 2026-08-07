@@ -1379,6 +1379,29 @@ def main() -> int:
                     env=spec_env,
                 )
 
+            # Run preflight enforces the workflow order: a use case must pass
+            # validation before ANY run, recorded included — the exact bypass the
+            # entitlement recovery closed. This is the blocker's own documented
+            # recovery command for a workflow paused at validate.
+            record_validate = require_success(
+                spec_cli(
+                    [
+                        "validate",
+                        RECORD_ALIAS,
+                        "--project",
+                        str(workspace),
+                        "--json",
+                    ],
+                    cwd=spec_repo,
+                    env=protected_env,
+                ),
+                "record-validate",
+            )
+            require(
+                record_validate.get("status") == "passed",
+                "record-validate-status",
+            )
+
             recorded = require_success(
                 spec_cli(
                     [
