@@ -109,10 +109,28 @@ def validate_workflow_stage_position(
         # workspaces are intentionally allowed to reach transition_workflow(),
         # which infers one authoritative run from the artifacts just persisted.
         return
-    if run.currentStage != stage:
-        raise ValueError(
-            f"Workflow current stage is {run.currentStage}; cannot persist {stage}."
-        )
+    if run.currentStage == stage:
+        return
+    if _is_authored_stage_reentry(run, stage):
+        # Re-persisting an already-passed authored stage is the documented
+        # recovery for a blocked validate/run: fix the artifact, re-enter the
+        # loop. Only forward jumps past the workflow's position are illegal.
+        return
+    raise ValueError(
+        f"Workflow current stage is {run.currentStage}; cannot persist {stage}."
+    )
+
+
+def _is_authored_stage_reentry(run: WorkflowRun, stage: str) -> bool:
+    if stage not in _MIGRATABLE_AUTHORED_STAGES:
+        return False
+    if run.status == "completed":
+        return False
+    if run.currentStage in _MIGRATABLE_AUTHORED_STAGES:
+        # The ordered authoring walk stays strict; recovery reentry exists for
+        # the execution loop (validate/run/repair) only.
+        return False
+    return WORKFLOW_STAGES.index(stage) < WORKFLOW_STAGES.index(run.currentStage)
 
 
 def resolve_managed_workflow_stage(
@@ -302,6 +320,11 @@ def transition_workflow(
         _reset_stages_after_validation(run)
     if stage == "repair" and outcome == "completed":
         _reset_stages_after_repair(run)
+    if outcome == "completed" and _is_authored_stage_reentry(run, stage):
+        # The re-persisted artifact invalidates every later stage result; the
+        # transition target then re-enters the loop at the stage's normal
+        # successor.
+        _reset_stages_after(run, stage)
 
     stage_state.status = outcome
     if outcome == "completed":
@@ -709,6 +732,8 @@ def _validate_transition_position(
         return
     if stage == "validate" and run.currentStage in {"run", "repair"}:
         return
+    if outcome == "completed" and _is_authored_stage_reentry(run, stage):
+        return
     state = _stage_state(run, stage)
     migration_includes_current_write = bool(
         migrated
@@ -724,8 +749,12 @@ def _validate_transition_position(
 
 
 def _reset_stages_after_validation(run: WorkflowRun) -> None:
-    validate_index = WORKFLOW_STAGES.index("validate")
-    for state in run.stageStates[validate_index + 1 :]:
+    _reset_stages_after(run, "validate")
+
+
+def _reset_stages_after(run: WorkflowRun, stage: str) -> None:
+    stage_index = WORKFLOW_STAGES.index(stage)
+    for state in run.stageStates[stage_index + 1 :]:
         state.status = "pending"
         state.startedAt = None
         state.completedAt = None

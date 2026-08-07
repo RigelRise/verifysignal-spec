@@ -759,7 +759,7 @@ def exit_code_for_result(command: str, result: dict[str, Any]) -> int:
     # (exit 2), never a silent success.
     if command == "repair" and result.get("repair", {}).get("approvalStatus") in {"revalidation-failed", "revalidation-unavailable"}:
         return EXIT_VALIDATION_FAILED
-    if status in {"blocked", "error", "failed", "incomplete"}:
+    if status in {"blocked", "error", "failed", "incomplete", "invalid"}:
         return EXIT_VALIDATION_FAILED
     return EXIT_SUCCESS
 
