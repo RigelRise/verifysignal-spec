@@ -833,6 +833,60 @@ def test_secret_scanner_closure_accepts_structured_public_error_codes(
     assert attempt == expected
 
 
+def test_secret_scanner_accepts_persisted_validation_public_metadata() -> None:
+    """Production-shaped regression for the fixture-trust journey restored-validate gate.
+
+    Every value below is public metadata Spec itself persists into the use-case
+    validation block; the hardened scanner must not classify any of them as a
+    secret. The three paths mirror the exact CI findings.
+    """
+
+    persisted = {
+        "validation": {
+            "managedRuntimeReadiness": {
+                "entitlement": {
+                    "receiptId": "rcpt_4e7f91aa-a749-408a-8ab0-8c2082b7c2e4",
+                }
+            },
+            "runtimeReadiness": {
+                "findingIds": [
+                    "runtime.authoring-readiness-blocked",
+                    "runtime.entitlement.receipt-invalid",
+                ]
+            },
+            "core": {
+                "data": {
+                    "findings": [
+                        {
+                            "path": "runRequest.sideEffects.policy.commitStepId",
+                            "code": "structural-validation-error",
+                        },
+                        {
+                            "path": "sideEffects.rules.0.urlPattern",
+                            "code": "structural-validation-error",
+                        },
+                    ]
+                }
+            },
+        }
+    }
+
+    assert validate_no_secret_values(persisted) == []
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"receiptId": "rcpt_zK8xQ2mVnP4rT7wYbD9fH3jL6sN1cG5uEaX0"},
+        {"findingIds": ["c3VwZXItc2VjcmV0LXZhbHVlLXNtdWdnbGVkLWluc2lkZQ"]},
+        {"path": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abc123abc123abc123abc123"},
+    ],
+    ids=["receipt-id-blob", "finding-id-blob", "path-jwt"],
+)
+def test_public_metadata_carveouts_stay_narrow(payload: dict) -> None:
+    assert validate_no_secret_values(payload)
+
+
 @pytest.mark.parametrize(
     "value",
     [
