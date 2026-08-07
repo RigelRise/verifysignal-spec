@@ -741,3 +741,163 @@ def test_implement_pairs_reordered_skill_content_with_its_own_path(tmp_path) -> 
     assert "helper-open-step" not in main_file
     assert "helper-open-step" in helper_file
     assert "main-open-step" not in helper_file
+
+
+def _persist_minimal_implement(project, alias: str, *, skill_body: str) -> dict:
+    return persist_stage(
+        project,
+        "implement",
+        alias=alias,
+        payload={
+            "artifacts": [
+                {
+                    "path": f".verifysignal/run-requests/{alias}.yaml",
+                    "kind": "run-request",
+                    "content": f"alias: {alias}\n",
+                },
+                {
+                    "path": f".verifysignal/skills/navigate-to-search.browser.md",
+                    "kind": "skill",
+                    "content": skill_body,
+                },
+            ]
+        },
+    )
+
+
+def test_repersisting_implement_after_blocked_validate_restores_artifacts(tmp_path) -> None:
+    """Journey-shaped recovery: a red validate must not strand drifted artifacts.
+
+    The documented recovery for a blocked validate is to re-persist the
+    canonical implement payload. The WorkflowRun authority must accept that
+    re-entry, rewrite the artifact files, and reset later stage results.
+    """
+
+    from verifysignal_spec.workflows.repository import load_active_workflow_run
+
+    project = tmp_path / "repo"
+    project.mkdir()
+    init_workspace(project, core_cmd=str(FAKE_CORE))
+    alias = "search-people"
+    _start_workflow(project, alias)
+    persist_stage(
+        project,
+        "specify",
+        alias=alias,
+        payload={
+            "alias": alias,
+            "surface": "/search/people",
+            "behavior": "Validate people search.",
+            "expectedOutcome": "People cards appear.",
+            "customSourceReason": "Fixture.",
+        },
+    )
+    _confirm_target(project, alias)
+    persist_stage(
+        project,
+        "plan",
+        alias=alias,
+        payload={
+            "runRequest": f".verifysignal/run-requests/{alias}.yaml",
+            "reusableSkills": [".verifysignal/skills/navigate-to-search.browser.md"],
+            "runtimeInputs": [{"name": "baseUrl", "value": "https://app.example.test"}],
+            "unresolvedBlockingClarifications": [],
+        },
+    )
+    transition_workflow(project, alias, stage="tasks", outcome="completed")
+    first = _persist_minimal_implement(
+        project, alias, skill_body="# navigate-to-search\n\nNavigate to search."
+    )
+    assert first["status"] == "persisted"
+
+    skill_path = project / ".verifysignal/skills/navigate-to-search.browser.md"
+    drifted = skill_path.read_text().replace("Navigate to search.", "DRIFTED CONTENT.")
+    skill_path.write_text(drifted)
+
+    transition_workflow(
+        project,
+        alias,
+        stage="validate",
+        outcome="blocked",
+        blockers=[
+            {
+                "code": "runtime.authoring-readiness-blocked",
+                "severity": "blocker",
+                "message": "Runtime readiness is blocked.",
+            }
+        ],
+    )
+    run = load_active_workflow_run(project, alias)
+    assert run.currentStage == "validate"
+
+    recovered = _persist_minimal_implement(
+        project, alias, skill_body="# navigate-to-search\n\nNavigate to search."
+    )
+    assert recovered["status"] == "persisted"
+    assert "DRIFTED CONTENT." not in skill_path.read_text()
+
+    run = load_active_workflow_run(project, alias)
+    assert run.currentStage == "validate"
+    assert run.status == "paused"
+    stage_by_name = {state.stage: state for state in run.stageStates}
+    assert stage_by_name["implement"].status == "completed"
+    assert stage_by_name["validate"].status == "pending"
+    assert stage_by_name["validate"].blockers == []
+
+
+def test_persisting_a_stage_ahead_of_the_workflow_stays_rejected(tmp_path) -> None:
+    project = tmp_path / "repo"
+    project.mkdir()
+    init_workspace(project, core_cmd=str(FAKE_CORE))
+    alias = "search-people"
+    _start_workflow(project, alias)
+    persist_stage(
+        project,
+        "specify",
+        alias=alias,
+        payload={
+            "alias": alias,
+            "surface": "/search/people",
+            "behavior": "Validate people search.",
+            "expectedOutcome": "People cards appear.",
+            "customSourceReason": "Fixture.",
+        },
+    )
+    _confirm_target(project, alias)
+
+    result = _persist_minimal_implement(
+        project, alias, skill_body="# navigate-to-search\n\nNavigate to search."
+    )
+    assert result["status"] == "invalid"
+    assert "cannot persist implement" in result["blockers"][0]["message"]
+
+
+def test_invalid_persistence_result_exits_nonzero() -> None:
+    from verifysignal_spec.cli import EXIT_VALIDATION_FAILED, exit_code_for_result
+
+    assert (
+        exit_code_for_result("workflow", {"status": "invalid"})
+        == EXIT_VALIDATION_FAILED
+    )
+
+
+def test_understand_accepts_dogfood_relative_inspection_paths() -> None:
+    """The dogfood/journey understand payload uses bare relative kebab paths;
+    the scanner must not read them as slash-chunked base64 payloads."""
+
+    from verifysignal_spec.workspace.validation import validate_no_secret_values
+
+    assert (
+        validate_no_secret_values(
+            {
+                "safeInspectionPaths": [
+                    "examples/targets/authenticated-project-creation-dogfood-app/",
+                    "examples/run-requests/authenticated-project-creation-dogfood.yaml",
+                ]
+            }
+        )
+        == []
+    )
+    assert validate_no_secret_values(
+        {"safeInspectionPaths": ["QWJj123SecretBlob/QWJj123SecretBlobQWJj123Blob"]}
+    )

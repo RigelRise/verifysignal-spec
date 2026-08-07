@@ -524,6 +524,12 @@ def _looks_like_opaque_secret(text: str, field_name: str) -> bool:
 
 
 def _is_encoded_secret_payload(value: str) -> bool:
+    # b64decode keeps "/" in the alphabet even with altchars, so lowercase
+    # kebab relative paths (no dots) decode "successfully". A real >=24-byte
+    # base64 payload contains an uppercase character with overwhelming
+    # probability; an all-lowercase slash path never does.
+    if not any(character.isupper() for character in value):
+        return False
     padded = value + ("=" * (-len(value) % 4))
     try:
         decoded = base64.b64decode(padded, altchars=b"-_", validate=True)
