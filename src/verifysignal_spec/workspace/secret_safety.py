@@ -159,7 +159,7 @@ PUBLIC_CODE_RE = re.compile(
 PUBLIC_REASON_CODE_RE = re.compile(
     r"^[a-z]{2,24}(?:-[a-z]{2,24}){2,}$"
 )
-PUBLIC_CODE_FIELD_NAMES = {"blockercode", "code", "errorcode"}
+PUBLIC_CODE_FIELD_NAMES = {"blockercode", "code", "errorcode", "findingids"}
 PUBLIC_SLUG_RE = re.compile(
     r"^[a-z0-9]+(?:-[a-z0-9]+){2,}(?:-\d{8}T\d{6}Z)?$"
 )
@@ -167,6 +167,16 @@ PUBLIC_STRUCTURED_ID_RE = re.compile(
     r"^[a-z][a-z0-9]*(?:[.-][a-z0-9][a-z0-9-]*)+(?:-\d{8}T\d{6}Z)?$"
 )
 PUBLIC_RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*_[0-9]{10,17}$")
+PUBLIC_PREFIXED_UUID_RE = re.compile(
+    r"^(?:[a-z][a-z0-9]{0,15}_)?"
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+)
+# Dotted document pointers as emitted by Core validation findings (zod
+# `issue.path.join(".")`): short identifier-or-index segments only. Segment
+# caps keep base64url payloads (JWT segments, signatures) out of this shape.
+PUBLIC_DOCUMENT_POINTER_RE = re.compile(
+    r"^[a-z][A-Za-z0-9]{0,23}(?:\.(?:[A-Za-z][A-Za-z0-9]{0,23}|[0-9]{1,4})){1,11}$"
+)
 PUBLIC_PATH_FIELD_NAMES = {
     "evidencedir",
     "file",
@@ -554,7 +564,10 @@ def _is_contextual_public_identifier(field_name: str, text: str) -> bool:
             or PUBLIC_STRUCTURED_ID_RE.fullmatch(text)
             or (
                 normalized_field.endswith("id")
-                and PUBLIC_RUN_ID_RE.fullmatch(text)
+                and (
+                    PUBLIC_RUN_ID_RE.fullmatch(text)
+                    or PUBLIC_PREFIXED_UUID_RE.fullmatch(text)
+                )
             )
         )
     if normalized_field in PUBLIC_PATH_FIELD_NAMES:
@@ -565,6 +578,8 @@ def _is_contextual_public_identifier(field_name: str, text: str) -> bool:
 def _looks_like_public_path(text: str) -> bool:
     if "=" in text or "\x00" in text or any(character.isspace() for character in text):
         return False
+    if PUBLIC_DOCUMENT_POINTER_RE.fullmatch(text):
+        return True
     if text.startswith(("./", "../", ".\\", "..\\", ".verifysignal/")):
         return True
     if WINDOWS_DRIVE_PATH_RE.match(text):
