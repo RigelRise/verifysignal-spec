@@ -14,6 +14,8 @@ import tempfile
 import urllib.parse
 import urllib.error
 import urllib.request
+
+from verifysignal_spec.runtime.tls import secure_ssl_context
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -455,7 +457,7 @@ class RuntimeDistributionClient:
             headers={"Accept": "application/json", "Cache-Control": "no-store", **(headers or {})},
         )
         try:
-            with urllib.request.urlopen(request, timeout=self.config.timeoutSeconds) as response:  # nosec B310 - official/explicit API URL
+            with urllib.request.urlopen(request, timeout=self.config.timeoutSeconds, context=secure_ssl_context()) as response:  # nosec B310 - official/explicit API URL
                 return response.status, _parse_json_response(response.read()), None
         except urllib.error.HTTPError as exc:
             return exc.code, _parse_json_response(exc.read()), None
@@ -647,7 +649,7 @@ def _download_artifact(url: str, destination: Path) -> None:
         shutil.copyfile(Path(urllib.request.url2pathname(parsed.path)), destination)
         return
     if parsed.scheme in {"http", "https"}:
-        with urllib.request.urlopen(url, timeout=30) as response, destination.open("wb") as handle:  # nosec B310 - official manifest controls URL
+        with urllib.request.urlopen(url, timeout=30, context=secure_ssl_context()) as response, destination.open("wb") as handle:  # nosec B310 - official manifest controls URL
             shutil.copyfileobj(response, handle)
         return
     source = Path(url).expanduser()
