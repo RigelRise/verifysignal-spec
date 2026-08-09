@@ -34,7 +34,8 @@ access, or both before authoring run requests.
 - Work in the target repository for repository/hybrid mode. For browser-first,
   an empty local engagement directory is valid even when it has no `.git/`.
 - Keep generated docs, workflow prompts, run requests, and skills in English.
-  Use pt-BR only for conversation with the product owner when appropriate.
+  Converse with the product owner in their language; the installed agent
+  context file may declare a default conversation language.
 - Use `.verifysignal/` as the only durable workspace.
 
 ## Browser-First Mapping

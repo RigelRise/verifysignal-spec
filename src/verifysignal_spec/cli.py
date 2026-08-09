@@ -24,6 +24,7 @@ from .commands import run as run_command
 from .commands import validate as validate_command
 from .commands import workflow as workflow_command
 from .core.errors import CoreIncompatibleError, CoreMissingError, RuntimeInputError
+from .language import ConversationLanguage, language_flag
 from .workspace.layout import resolve_project_path
 
 EXIT_SUCCESS = 0
@@ -45,6 +46,11 @@ def create_parser(prog: str | None = None) -> argparse.ArgumentParser:
     init_parser.add_argument("--force", action="store_true")
     init_parser.add_argument("--core-cmd", help="VerifySignal Core executable, command string, or local Core repository path")
     init_parser.add_argument("--api-base-url", help="Override the VerifySignal entitlement API base URL for staging, local development, or tests")
+    init_parser.add_argument(
+        "--language",
+        type=language_flag,
+        help="Default conversation language code for the installed agent guidance (e.g. pt, en, et, ru); detected from the system locale on first init when omitted",
+    )
     init_parser.add_argument("--json", action="store_true")
 
     check_parser = subparsers.add_parser("check", help="Check workspace and Core readiness")
@@ -258,6 +264,12 @@ def create_parser(prog: str | None = None) -> argparse.ArgumentParser:
         child.add_argument("key", choices=["codex", "claude"])
         child.add_argument("--project", default=".")
         child.add_argument("--force", action="store_true")
+        if action == "install":
+            child.add_argument(
+                "--language",
+                type=language_flag,
+                help="Default conversation language code for the installed agent guidance (e.g. pt, en, et, ru)",
+            )
         child.add_argument("--json", action="store_true")
     upgrade = integration_sub.add_parser("upgrade")
     upgrade.add_argument("key", choices=["codex", "claude"], nargs="?")
@@ -358,7 +370,7 @@ def dispatch(args: argparse.Namespace) -> tuple[dict[str, Any], bool]:
     command = args.command
     if command == "init":
         project = resolve_project_path(args.project_path, here=args.here)
-        return init_command.run(project, args.integration, force=args.force, core_cmd=args.core_cmd, api_base_url=args.api_base_url), args.json
+        return init_command.run(project, args.integration, force=args.force, core_cmd=args.core_cmd, api_base_url=args.api_base_url, language=args.language), args.json
     if command == "check":
         return check_command.run(Path(args.project).resolve(), core_cmd=args.core_cmd, api_base_url=args.api_base_url), args.json
     if command == "author":
@@ -485,7 +497,13 @@ def dispatch(args: argparse.Namespace) -> tuple[dict[str, Any], bool]:
         if args.integration_command == "list":
             return integration_command.list_integrations(project), args.json
         if args.integration_command == "install":
-            return integration_command.install(project, args.key, force=args.force), args.json
+            return integration_command.install(
+                project,
+                args.key,
+                force=args.force,
+                language=ConversationLanguage(args.language, "flag") if args.language else None,
+                persist_language=bool(args.language),
+            ), args.json
         if args.integration_command == "use":
             return integration_command.use(project, args.key), args.json
         if args.integration_command == "upgrade":
@@ -495,6 +513,19 @@ def dispatch(args: argparse.Namespace) -> tuple[dict[str, Any], bool]:
         if args.integration_command == "setup-playwright-mcp":
             return integration_command.setup_playwright_mcp(), args.json
     raise ValueError(f"Unsupported command: {command}")
+
+
+def _emit_conversation_language(result: dict[str, Any]) -> None:
+    if "conversationLanguageSource" not in result:
+        return
+    code = result.get("conversationLanguage")
+    source = result.get("conversationLanguageSource")
+    if source == "flag":
+        print(f"Conversation language: {code} (set via --language)")
+    elif source == "detected":
+        print(f"Conversation language: {code} (from system locale; override with --language)")
+    else:
+        print("Conversation language: none resolved (mirroring the user; set with --language)")
 
 
 def _emit_mcp(mcp: dict[str, Any] | None) -> None:
@@ -604,6 +635,7 @@ def emit(result: dict[str, Any], json_output: bool = False) -> None:
     if "workspacePath" in result:
         print(f"Workspace: {result['workspacePath']}")
         print(f"Integration: {result['integration']}")
+        _emit_conversation_language(result)
         print(f"Core: {result['core'].get('message')}")
         _emit_mcp(result.get("mcp"))
         print(result.get("next", ""))

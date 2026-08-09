@@ -270,6 +270,31 @@ def get_entitlement_api_base_url(project: Path) -> str | None:
     return workspace.get("entitlementApiBaseUrl")
 
 
+def get_conversation_language(project: Path) -> dict[str, str] | None:
+    workspace = load_document(layout.workspace_root(project) / layout.WORKSPACE_FILE, default={}) or {}
+    code = workspace.get("conversationLanguage")
+    if not code:
+        return None
+    return {
+        "code": str(code),
+        "source": str(workspace.get("conversationLanguageSource") or "flag"),
+    }
+
+
+def save_conversation_language(project: Path, code: str, source: str) -> dict[str, Any]:
+    root = layout.workspace_root(project)
+    workspace_path = root / layout.WORKSPACE_FILE
+    if not workspace_path.exists():
+        workspace = init_workspace(project)
+    else:
+        workspace = load_document(workspace_path, default={}) or {}
+    workspace["conversationLanguage"] = code
+    workspace["conversationLanguageSource"] = source
+    workspace["updatedAt"] = now_iso()
+    save_document(workspace_path, workspace)
+    return workspace
+
+
 def get_core_configuration(project: Path) -> dict[str, Any]:
     workspace = load_document(layout.workspace_root(project) / layout.WORKSPACE_FILE, default={}) or {}
     return {

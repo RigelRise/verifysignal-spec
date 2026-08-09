@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from verifysignal_spec.language import ConversationLanguage
 from verifysignal_spec.templates.agent_guidance import (
     FIRST_RUN_STAGE_CARD_GUIDANCE,
     MISSING_UNDERSTANDING_AUTO_PREPARE,
     PLAYWRIGHT_MCP_GUIDANCE,
     REAL_TARGET_FIRST_RECOMMENDATION,
+    conversation_language_guidance,
 )
 
 from .base import AgentIntegration, RenderedFile, build_onboarding_guidance, render_onboarding_guide, render_workflow_skill_files
@@ -20,11 +22,17 @@ class CodexIntegration(AgentIntegration):
     invoke_style = "Codex skills under .agents/skills/verifysignal-*; invoke as $verifysignal-*"
     mcp_config_format = "codex-toml"
 
-    def render_files(self, project: Path, core_status: dict[str, object] | None = None) -> list[RenderedFile]:
+    def render_files(
+        self,
+        project: Path,
+        core_status: dict[str, object] | None = None,
+        *,
+        language: ConversationLanguage | None = None,
+    ) -> list[RenderedFile]:
         files = [
             RenderedFile(
                 "AGENTS.md",
-                render_agent_invocations(_context("AGENTS.md"), self.key),
+                render_agent_invocations(_context("AGENTS.md", language), self.key),
                 "codex/context",
                 "context",
             ),
@@ -51,13 +59,12 @@ class CodexIntegration(AgentIntegration):
         }
 
 
-def _context(filename: str) -> str:
+def _context(filename: str, language: ConversationLanguage | None = None) -> str:
     return f"""# VerifySignal Spec Agent Guidance
 
 Use `$verifysignal-*` workflow skills for staged VerifySignal use case authoring.
 Use `verifysignal` commands from the target repository root for deterministic
-non-AI operations. Keep generated project artifacts and guidance in English.
-Use pt-BR only for conversation with the project owner when appropriate. Store
+non-AI operations. {conversation_language_guidance(language)} Store
 VerifySignal Spec state in `.verifysignal/`. Do not import private VerifySignal
 Core packages.
 

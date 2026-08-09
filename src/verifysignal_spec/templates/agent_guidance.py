@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from verifysignal_spec.language import ConversationLanguage
+
 BROWSER_TARGET_BEFORE_PLANNING = "Confirm the browser target environment before planning executable artifacts"
 RUNTIME_READINESS_BOUNDARY = (
     "workflow check validate reports structural readiness only; runtime readiness separately reports command compatibility "
@@ -28,6 +30,33 @@ PUBLIC_WORKFLOW_CONTRACT_BOUNDARY = (
     "Use the public workflow contract from `verifysignal workflow info verifysignal-use-case --json` "
     "and `stagePayloadContracts`; Do not inspect installed package source to infer payload schemas"
 )
+ARTIFACT_LANGUAGE_BOUNDARY = (
+    "Quote CLI output, blocker codes, and JSON fields verbatim; keep aliases and "
+    "identifiers ASCII; persist workflow artifacts and clarification answers in English."
+)
+
+
+def conversation_language_guidance(language: ConversationLanguage | None) -> str:
+    """The one sentence pair that governs conversation language in generated context files.
+
+    Always English (constitution: generated guidance stays English); a declared
+    language appears as a code value, never as translated prose.
+    """
+    if language is None:
+        declared = (
+            "Converse and guide in the language the user writes in; default to English."
+        )
+    else:
+        note = " (detected at init)" if language.source == "detected" else ""
+        declared = (
+            f"Default conversation language: {language.code}{note}. Converse and guide "
+            "in it; mirror the user when they write in another language."
+        )
+    return (
+        f"Keep generated project artifacts in English. {declared} {ARTIFACT_LANGUAGE_BOUNDARY}"
+    )
+
+
 PLAYWRIGHT_MCP_GUIDANCE = (
     "If you have a Playwright MCP server available (live browser tools such as `browser_navigate` and "
     "`browser_snapshot`), you MAY use it to author and repair browser selectors against the live page instead "

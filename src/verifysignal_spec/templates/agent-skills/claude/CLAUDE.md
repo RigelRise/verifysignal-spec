@@ -1,7 +1,8 @@
 # VerifySignal Spec Agent Guidance
 
 Use `verifysignal-spec` from the target repository root. Keep generated project
-artifacts and guidance in English, write run requests under
+artifacts in English and converse in the project's default conversation language
+when one is declared, write run requests under
 `.verifysignal/run-requests/`, write reusable skills under `.verifysignal/skills/`,
 and never persist credential values.
 

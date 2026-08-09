@@ -26,6 +26,46 @@ class InitCheckContractTests(CliTestCase):
         self.assertEqual(check["schemaVersion"], "verifysignal-spec-check/v1")
         self.assertEqual(check["status"], "passed")
 
+    def test_init_language_flag_json_contract(self) -> None:
+        code, out, err = self.cli(
+            ["init", str(self.project), "--integration", "codex", "--language", "pt", "--core-cmd", str(FAKE_CORE), "--json"]
+        )
+        self.assertEqual(code, 0, err)
+        payload = json.loads(out)
+        self.assertEqual(payload["conversationLanguage"], "pt")
+        self.assertEqual(payload["conversationLanguageSource"], "flag")
+        workspace = load_document(self.project / ".verifysignal" / "workspace.yaml")
+        self.assertEqual(workspace["conversationLanguage"], "pt")
+        self.assertEqual(workspace["conversationLanguageSource"], "flag")
+        agents = (self.project / "AGENTS.md").read_text(encoding="utf-8")
+        self.assertIn("Default conversation language: pt.", agents)
+
+    def test_init_detects_system_language_when_flag_absent(self) -> None:
+        with patch("verifysignal_spec.commands.init.detect_system_language", return_value="ru"):
+            code, out, err = self.cli(
+                ["init", str(self.project), "--integration", "codex", "--core-cmd", str(FAKE_CORE), "--json"]
+            )
+        self.assertEqual(code, 0, err)
+        payload = json.loads(out)
+        self.assertEqual(payload["conversationLanguage"], "ru")
+        self.assertEqual(payload["conversationLanguageSource"], "detected")
+        agents = (self.project / "AGENTS.md").read_text(encoding="utf-8")
+        self.assertIn("Default conversation language: ru (detected at init).", agents)
+
+    def test_init_without_language_or_detection_mirrors_the_user(self) -> None:
+        with patch("verifysignal_spec.commands.init.detect_system_language", return_value=None):
+            code, out, err = self.cli(
+                ["init", str(self.project), "--integration", "codex", "--core-cmd", str(FAKE_CORE), "--json"]
+            )
+        self.assertEqual(code, 0, err)
+        payload = json.loads(out)
+        self.assertIsNone(payload["conversationLanguage"])
+        self.assertEqual(payload["conversationLanguageSource"], "none")
+        workspace = load_document(self.project / ".verifysignal" / "workspace.yaml")
+        self.assertNotIn("conversationLanguage", workspace)
+        agents = (self.project / "AGENTS.md").read_text(encoding="utf-8")
+        self.assertIn("Converse and guide in the language the user writes in; default to English.", agents)
+
     def test_check_core_cmd_override_does_not_persist_to_workspace(self) -> None:
         code, _out, err = self.cli(["init", str(self.project), "--integration", "codex", "--core-cmd", str(FAKE_CORE), "--json"])
         self.assertEqual(code, 0, err)

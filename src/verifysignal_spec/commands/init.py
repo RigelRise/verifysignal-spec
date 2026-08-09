@@ -7,6 +7,7 @@ from typing import Any
 
 from verifysignal_spec.commands.integration import install as install_integration
 from verifysignal_spec.core.adapter import readiness, resolve_persistable_core_command
+from verifysignal_spec.language import ConversationLanguage, detect_system_language
 from verifysignal_spec.core.contracts import PUBLIC_CONTRACT_VERSION
 from verifysignal_spec.runtime.entitlement import resolve_entitlement_config
 from verifysignal_spec.runtime.models import ManagedRuntimeReadinessResult, RuntimeSourceAttempt
@@ -15,6 +16,7 @@ from verifysignal_spec.workflows.models import CoreCandidateAttempt, CoreSetupRe
 from verifysignal_spec.workflows.core_setup import run_core_setup
 from verifysignal_spec.workspace import layout
 from verifysignal_spec.workspace.repository import (
+    get_conversation_language,
     init_workspace,
     load_document,
     save_core_configuration,
@@ -24,7 +26,15 @@ from verifysignal_spec.integrations.invocation import native_invocation
 CORE_SETUP_ATTEMPT_SOURCES = {"explicit", "workspace", "env", "path", "ancestor-sibling"}
 
 
-def run(project: Path, integration: str, force: bool = False, core_cmd: str | None = None, api_base_url: str | None = None) -> dict[str, Any]:
+def run(
+    project: Path,
+    integration: str,
+    force: bool = False,
+    core_cmd: str | None = None,
+    api_base_url: str | None = None,
+    language: str | None = None,
+) -> dict[str, Any]:
+    workspace_file_existed = (layout.workspace_root(project) / layout.WORKSPACE_FILE).exists()
     entitlement_config = resolve_entitlement_config(api_base_url=api_base_url)
     persisted_api_base_url = entitlement_config.apiBaseUrl if api_base_url or entitlement_config.source == "environment" else None
     workspace_path = layout.workspace_root(project) / layout.WORKSPACE_FILE
@@ -89,7 +99,17 @@ def run(project: Path, integration: str, force: bool = False, core_cmd: str | No
             version=core_setup.version or runtime.runtimeVersion,
             api_base_url=persisted_api_base_url,
         )
-    installed = install_integration(project, integration, force=force, default=True)
+    resolved_language, persist_language = _resolve_conversation_language(
+        project, language, fresh_workspace=not workspace_file_existed
+    )
+    installed = install_integration(
+        project,
+        integration,
+        force=force,
+        default=True,
+        language=resolved_language,
+        persist_language=persist_language,
+    )
     mcp = installed.get("mcp")
     mcp_runtime = (
         mcp.get("runtime")
@@ -131,6 +151,8 @@ def run(project: Path, integration: str, force: bool = False, core_cmd: str | No
         "workspace": workspace,
         "integration": installed["integration"]["key"],
         "installedFiles": installed["installedFiles"],
+        "conversationLanguage": resolved_language.code if resolved_language else None,
+        "conversationLanguageSource": resolved_language.source if resolved_language else "none",
         "mcp": mcp,
         "coreSetup": core_setup.to_dict(),
         "runtime": runtime.to_dict(),
@@ -155,6 +177,28 @@ def run(project: Path, integration: str, force: bool = False, core_cmd: str | No
             )
         ),
     }
+
+
+def _resolve_conversation_language(
+    project: Path, flag_code: str | None, *, fresh_workspace: bool
+) -> tuple[ConversationLanguage | None, bool]:
+    """Resolve flag > persisted > detected > none; return (language, persist?).
+
+    Detection runs only for a brand-new workspace: a re-init must never mutate an
+    existing workspace.yaml with this machine's locale (failed re-inits are
+    contractually byte-preserving), and an existing project keeps rendering the
+    same files on every machine.
+    """
+    if flag_code:
+        return ConversationLanguage(flag_code, "flag"), True
+    stored = get_conversation_language(project)
+    if stored:
+        return ConversationLanguage(stored["code"], stored["source"]), False
+    if fresh_workspace:
+        detected = detect_system_language()
+        if detected:
+            return ConversationLanguage(detected, "detected"), True
+    return None, False
 
 
 def _prompt(message: str) -> str:
