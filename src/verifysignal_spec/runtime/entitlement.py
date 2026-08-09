@@ -6,6 +6,8 @@ import socket
 import urllib.error
 import urllib.parse
 import urllib.request
+
+from verifysignal_spec.runtime.tls import secure_ssl_context
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -504,7 +506,7 @@ class EntitlementClient:
             },
         )
         try:
-            with urllib.request.urlopen(request, timeout=self.config.timeoutSeconds) as response:  # nosec B310 - official/explicit API URL
+            with urllib.request.urlopen(request, timeout=self.config.timeoutSeconds, context=secure_ssl_context()) as response:  # nosec B310 - official/explicit API URL
                 data = _parse_json_response(response.read())
                 return response.status, data, None
         except urllib.error.HTTPError as exc:

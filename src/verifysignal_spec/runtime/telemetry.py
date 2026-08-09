@@ -15,6 +15,8 @@ import os
 import sys
 import threading
 import urllib.request
+
+from verifysignal_spec.runtime.tls import secure_ssl_context
 from typing import Any
 
 from .cache import cache_root
@@ -117,7 +119,7 @@ def _post_usage(config: Any, command: str, outcome: str, bearer: str | None) -> 
             method="POST",
             headers=headers,
         )
-        with urllib.request.urlopen(request, timeout=config.timeoutSeconds):  # nosec B310 - official/explicit API URL
+        with urllib.request.urlopen(request, timeout=config.timeoutSeconds, context=secure_ssl_context()):  # nosec B310 - official/explicit API URL
             pass
     except Exception:
         # Fire-and-forget: telemetry must NEVER surface or block. Offline is fine.
