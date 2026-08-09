@@ -16,8 +16,13 @@ from verifysignal_spec.integrations.mcp import (
     register_agent_user_mcp,
     run_playwright_mcp,
 )
+from verifysignal_spec.language import ConversationLanguage
 from verifysignal_spec.runtime.resolver import ensure_core_runtime
-from verifysignal_spec.workspace.repository import get_core_configuration
+from verifysignal_spec.workspace.repository import (
+    get_conversation_language,
+    get_core_configuration,
+    save_conversation_language,
+)
 from verifysignal_spec.workflows.core_setup import onboarding_core_status, run_core_setup
 
 INTEGRATIONS = {
@@ -40,8 +45,19 @@ def get_integration(key: str):
     return INTEGRATIONS[key]()
 
 
-def install(project: Path, key: str, force: bool = False, default: bool = True) -> dict[str, Any]:
+def install(
+    project: Path,
+    key: str,
+    force: bool = False,
+    default: bool = True,
+    language: ConversationLanguage | None = None,
+    persist_language: bool = False,
+) -> dict[str, Any]:
     integration = get_integration(key)
+    if language is not None and persist_language:
+        save_conversation_language(project, language.code, language.source)
+    if language is None:
+        language = _stored_conversation_language(project)
     runtime = ensure_core_runtime(project, context="integration")
     core_setup_result = run_core_setup(project, persist=False)
     core_setup = core_setup_result.to_dict()
@@ -51,7 +67,7 @@ def install(project: Path, key: str, force: bool = False, default: bool = True) 
         integration.key,
         integration.display_name,
         integration.invoke_style,
-        integration.render_files(project, core_status=core_status),
+        integration.render_files(project, core_status=core_status, language=language),
         force=force,
         default=default,
     )
@@ -71,12 +87,21 @@ def install(project: Path, key: str, force: bool = False, default: bool = True) 
         ),
         "integration": state.to_dict(),
         "installedFiles": [item.path for item in state.managedFiles],
+        "conversationLanguage": language.code if language else None,
+        "conversationLanguageSource": language.source if language else "none",
         "coreSetup": core_setup,
         "runtime": runtime.to_dict(),
         "managedRuntimeReadiness": runtime.to_dict(),
         "onboardingGuide": guide,
         "mcp": mcp,
     }
+
+
+def _stored_conversation_language(project: Path) -> ConversationLanguage | None:
+    stored = get_conversation_language(project)
+    if not stored:
+        return None
+    return ConversationLanguage(stored["code"], stored["source"])
 
 
 def _configure_integration_mcp(project: Path, integration) -> dict[str, Any] | None:
@@ -238,7 +263,9 @@ def _upgrade_without_core_resolution(
         integration.key,
         integration.display_name,
         integration.invoke_style,
-        integration.render_files(project, core_status=core_status),
+        # Upgrades regenerate from persisted state only — no fresh locale detection,
+        # so the same project renders the same files on every machine.
+        integration.render_files(project, core_status=core_status, language=_stored_conversation_language(project)),
         force=force,
         default=default,
     )

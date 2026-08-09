@@ -159,6 +159,18 @@ verifysignal init --here --integration claude
 claude
 ```
 
+### Conversation language
+
+`init` accepts `--language <code>` (for example `pt`, `en`, `et`, `ru`) to
+declare the default language the agent converses in; generated project
+artifacts always stay English. On the first init of a workspace, when the flag
+is omitted, the language is detected from the system locale and announced. The
+choice is stored in `.verifysignal/workspace.yaml`, and
+`verifysignal integration install [--language <code>]` and
+`verifysignal integration upgrade` reuse it, so regenerated guidance never
+silently reverts. Without a declared language, the agent mirrors whatever
+language you write in.
+
 Initialization installs the pinned Playwright MCP provider and registers its
 VerifySignal launcher in the selected agent's user scope through the agent's
 public MCP command. It preserves an existing differing `playwright` entry and

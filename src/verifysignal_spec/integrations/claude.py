@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from verifysignal_spec.language import ConversationLanguage
 from verifysignal_spec.templates.agent_guidance import (
     FIRST_RUN_STAGE_CARD_GUIDANCE,
     MISSING_UNDERSTANDING_AUTO_PREPARE,
     PLAYWRIGHT_MCP_GUIDANCE,
     REAL_TARGET_FIRST_RECOMMENDATION,
+    conversation_language_guidance,
 )
 
 from .base import AgentIntegration, RenderedFile, build_onboarding_guidance, render_onboarding_guide, render_workflow_skill_files
@@ -19,9 +21,15 @@ class ClaudeIntegration(AgentIntegration):
     invoke_style = "Claude Code slash skills under .claude/skills/verifysignal-*; invoke as /verifysignal-*"
     mcp_config_format = "claude-json"
 
-    def render_files(self, project: Path, core_status: dict[str, object] | None = None) -> list[RenderedFile]:
+    def render_files(
+        self,
+        project: Path,
+        core_status: dict[str, object] | None = None,
+        *,
+        language: ConversationLanguage | None = None,
+    ) -> list[RenderedFile]:
         files = [
-            RenderedFile("CLAUDE.md", _context(), "claude/context", "context"),
+            RenderedFile("CLAUDE.md", _context(language), "claude/context", "context"),
         ]
         guide = build_onboarding_guidance(
             integration_key=self.key,
@@ -45,13 +53,12 @@ class ClaudeIntegration(AgentIntegration):
         return {"playwright": managed_playwright_mcp_server()}
 
 
-def _context() -> str:
+def _context(language: ConversationLanguage | None = None) -> str:
     return f"""# VerifySignal Spec Agent Guidance
 
 Use `/verifysignal-*` workflow skills for staged VerifySignal use case authoring.
 Use `verifysignal` commands from the target repository root for deterministic
-non-AI operations. Keep generated project artifacts and guidance in English.
-Use pt-BR only for conversation with the project owner when appropriate. Store
+non-AI operations. {conversation_language_guidance(language)} Store
 VerifySignal Spec state in `.verifysignal/`. Do not import private VerifySignal
 Core packages.
 

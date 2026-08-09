@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from verifysignal_spec.language import ConversationLanguage
 from verifysignal_spec.templates.agent_guidance import (
     MISSING_UNDERSTANDING_AUTO_PREPARE,
     REAL_TARGET_FIRST_RECOMMENDATION,
@@ -30,7 +31,13 @@ class AgentIntegration:
     invoke_style: str
     mcp_config_format: str | None = None
 
-    def render_files(self, project: Path, core_status: dict[str, object] | None = None) -> list[RenderedFile]:
+    def render_files(
+        self,
+        project: Path,
+        core_status: dict[str, object] | None = None,
+        *,
+        language: ConversationLanguage | None = None,
+    ) -> list[RenderedFile]:
         raise NotImplementedError
 
     def mcp_servers(self) -> dict[str, object]:

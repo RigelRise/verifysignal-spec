@@ -1,8 +1,9 @@
 # Bundled Templates
 
-Templates are copied into target repositories by `verifysignal init`.
-Generated text is English-only and points agents at the `.verifysignal/`
-workspace and public VerifySignal Core CLI boundary.
+Templates are rendered into target repositories by `verifysignal init`.
+Generated artifacts are English; the installed context file may declare a
+default conversation language for chat. Generated text points agents at the
+`.verifysignal/` workspace and public VerifySignal Core CLI boundary.
 
 Every staged `/verifysignal-*` template must start with the installed
 `verifysignal workflow check <stage>` command and require the

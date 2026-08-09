@@ -159,7 +159,7 @@ means the same thing for everyone. See [GOVERNANCE.md](GOVERNANCE.md).
 
 | Command | Purpose |
 | --- | --- |
-| `verifysignal init --here --integration claude\|codex` | Create `.verifysignal/` and install agent skills |
+| `verifysignal init --here --integration claude\|codex [--language <code>]` | Create `.verifysignal/` and install agent skills; declare or detect the default conversation language |
 | `verifysignal check` | Workspace, runtime, and entitlement readiness |
 | `verifysignal core update` | Remove local Core selection and install the latest verified managed runtime |
 | `verifysignal author <alias> "<description>"` | Register a use case |
