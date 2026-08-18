@@ -13,19 +13,19 @@ a prerequisite.
 **macOS**
 
 ```sh
-curl -LsSf https://verifysignal.io/install.sh | sh
+curl -LsSf https://www.verifysignal.io/install.sh | sh
 ```
 
 **Linux**
 
 ```sh
-curl -LsSf https://verifysignal.io/install.sh | sh
+curl -LsSf https://www.verifysignal.io/install.sh | sh
 ```
 
 **Windows (PowerShell)**
 
 ```powershell
-powershell -ExecutionPolicy Bypass -c "irm https://verifysignal.io/install.ps1 | iex"
+powershell -ExecutionPolicy Bypass -c "irm https://www.verifysignal.io/install.ps1 | iex"
 ```
 
 Then verify:
@@ -72,13 +72,13 @@ Piping a script into a shell is only as trustworthy as the source. Download,
 read, then run:
 
 ```sh
-curl -LsSf https://verifysignal.io/install.sh -o verifysignal-install.sh
+curl -LsSf https://www.verifysignal.io/install.sh -o verifysignal-install.sh
 less verifysignal-install.sh
 sh verifysignal-install.sh
 ```
 
 ```powershell
-irm https://verifysignal.io/install.ps1 -OutFile verifysignal-install.ps1
+irm https://www.verifysignal.io/install.ps1 -OutFile verifysignal-install.ps1
 notepad verifysignal-install.ps1
 powershell -ExecutionPolicy Bypass -File verifysignal-install.ps1
 ```
@@ -95,7 +95,7 @@ Both URLs redirect to the scripts in this repository
 | `--no-modify-path` (`-NoModifyPath`) | Leave shell profiles and `PATH` untouched. |
 | `--skip-playwright-mcp` (`-SkipPlaywrightMcp`) | Do not pre-install the Playwright MCP provider. |
 
-Pass them after `--` when piping: `curl -LsSf https://verifysignal.io/install.sh | sh -s -- --version 0.22.0`.
+Pass them after `--` when piping: `curl -LsSf https://www.verifysignal.io/install.sh | sh -s -- --version 0.22.0`.
 
 The sections below install directly from the Git repository. Useful for the
 bleeding edge, a fork, or a commit that is not on PyPI yet.
@@ -244,7 +244,7 @@ verifysignal init --here --integration codex
 
 When no override or verified cache exists, VerifySignal asks for the email unlock
 token from the official unlock flow, exchanges it for a signed entitlement
-receipt through `https://verifysignal.io/api`, requests authorized runtime
+receipt through `https://www.verifysignal.io/api`, requests authorized runtime
 metadata/download from the backend, verifies the package, and stores the runtime
 in the user cache. The backend owns email delivery, token expiry, exchange
 limits, refresh policy, throttling, receipt signing, and runtime download

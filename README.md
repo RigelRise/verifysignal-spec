@@ -38,13 +38,13 @@ running validations.
 macOS and Linux:
 
 ```sh
-curl -LsSf https://verifysignal.io/install.sh | sh
+curl -LsSf https://www.verifysignal.io/install.sh | sh
 ```
 
 Windows (PowerShell):
 
 ```powershell
-powershell -ExecutionPolicy Bypass -c "irm https://verifysignal.io/install.ps1 | iex"
+powershell -ExecutionPolicy Bypass -c "irm https://www.verifysignal.io/install.ps1 | iex"
 ```
 
 Already have uv or pipx? `uv tool install verifysignal-spec` (or

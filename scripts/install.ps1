@@ -35,7 +35,7 @@
     Do not pre-install the Playwright MCP provider (offline installs, CI).
 
 .EXAMPLE
-    powershell -ExecutionPolicy Bypass -c "irm https://verifysignal.io/install.ps1 | iex"
+    powershell -ExecutionPolicy Bypass -c "irm https://www.verifysignal.io/install.ps1 | iex"
 
 .EXAMPLE
     .\install.ps1 -Version 0.22.0

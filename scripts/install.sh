@@ -18,8 +18,8 @@
 # written to help. It warns instead, and names the command that fixes each gap.
 #
 # Usage:
-#   curl -LsSf https://verifysignal.io/install.sh | sh
-#   curl -LsSf https://verifysignal.io/install.sh | sh -s -- --version 0.22.0
+#   curl -LsSf https://www.verifysignal.io/install.sh | sh
+#   curl -LsSf https://www.verifysignal.io/install.sh | sh -s -- --version 0.22.0
 #
 # Options:
 #   --version <X.Y.Z>       Install an exact release from PyPI instead of the latest.
@@ -39,7 +39,8 @@ PYTHON_VERSION="3.12"
 UV_INSTALLER_URL="https://astral.sh/uv/install.sh"
 PLAYWRIGHT_MCP_SETUP="verifysignal integration setup-playwright-mcp"
 DOCS_URL="https://github.com/RigelRise/verifysignal-spec/blob/main/docs/installation.md"
-WINDOWS_ONELINER='powershell -ExecutionPolicy Bypass -c "irm https://verifysignal.io/install.ps1 | iex"'
+# www, not the apex: the apex 308-redirects, and PowerShell 5.1's irm does not follow 308.
+WINDOWS_ONELINER='powershell -ExecutionPolicy Bypass -c "irm https://www.verifysignal.io/install.ps1 | iex"'
 
 version="${VERIFYSIGNAL_INSTALL_VERSION:-}"
 from_spec="${VERIFYSIGNAL_INSTALL_FROM:-}"
@@ -85,8 +86,8 @@ Install the VerifySignal CLI on macOS or Linux. Installs uv when it is missing; 
 a managed Python 3.11+, so no pre-existing Python is required.
 
 Usage:
-  curl -LsSf https://verifysignal.io/install.sh | sh
-  curl -LsSf https://verifysignal.io/install.sh | sh -s -- --version 0.22.0
+  curl -LsSf https://www.verifysignal.io/install.sh | sh
+  curl -LsSf https://www.verifysignal.io/install.sh | sh -s -- --version 0.22.0
 
 Options:
   --version <X.Y.Z>       Install an exact release from PyPI instead of the latest.
