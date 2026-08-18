@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.26.1 - 2026-08-18
+
+- Bumped VerifySignal Spec to `0.26.1`.
+
 ## 0.26.0 - 2026-08-09
 
 - Bumped VerifySignal Spec to `0.26.0`.
