@@ -11,7 +11,7 @@ executable bit, a shebang typo, a renamed package, a syntax error, or docs that 
 scripts do not serve — and it pins the SAME one-liners the website publishes, because the two live
 in different repositories and drift the moment one of them is edited alone.
 
-What it cannot prove: that the download URLs resolve. Serving https://verifysignal.io/install.sh is
+What it cannot prove: that the download URLs resolve. Serving https://www.verifysignal.io/install.sh is
 an ops action in verifysignal-website (tests/contract/install-endpoint-contract.test.ts pins the
 redirect from that side). What it proves is that the docs, the scripts, and the advertised commands
 all agree on ONE set of URLs.
@@ -35,9 +35,17 @@ README = ROOT / "README.md"
 INSTALL_DOC = ROOT / "docs/installation.md"
 
 # The one-liners advertised to users. Byte-exact, because a user copies them verbatim.
-POSIX_ONELINER = "curl -LsSf https://verifysignal.io/install.sh | sh"
+#
+# The host is www, not the apex. verifysignal.io 308-redirects to www.verifysignal.io, and
+# Windows PowerShell 5.1 -- the shell a stock Windows 11 opens, and the one the Windows
+# one-liner is written for -- runs Invoke-RestMethod on .NET HttpWebRequest, which follows
+# 301/302/303 and refuses 307/308. Advertising the apex fails before the script is fetched,
+# with an error naming the redirect and not the cause. Same reasoning as the API host in
+# runtime/entitlement.py; curl -L would survive either host, so the two stay on www together
+# rather than splitting the copy a reader compares side by side.
+POSIX_ONELINER = "curl -LsSf https://www.verifysignal.io/install.sh | sh"
 WINDOWS_ONELINER = (
-    'powershell -ExecutionPolicy Bypass -c "irm https://verifysignal.io/install.ps1 | iex"'
+    'powershell -ExecutionPolicy Bypass -c "irm https://www.verifysignal.io/install.ps1 | iex"'
 )
 
 
